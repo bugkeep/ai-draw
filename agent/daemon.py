@@ -34,14 +34,15 @@ class TCPServer:
         )
 
         try:
-            server = await asyncio.start_server(
+            self._server = await asyncio.start_server(
                 self._handle_client, self.host, self.port
             )
-            addr = server.sockets[0].getsockname()
+            addr = self._server.sockets[0].getsockname()
+            self.port = addr[1]
             print(f"TCP Server listening on {addr[0]}:{addr[1]}")
 
-            async with server:
-                await server.serves_forever()
+            async with self._server:
+                await self._server.serve_forever()
         except Exception as e:
             await self.event_bus.dispatch(
                 SocketErrorEvent(error=str(e), host=self.host, port=self.port)
@@ -49,6 +50,10 @@ class TCPServer:
             raise
         finally:
             await self.event_bus.dispatch(SocketStopEvent(reason="server shutdown"))
+
+    def stop(self):
+        if hasattr(self, "_server") and self._server:
+            self._server.close()
 
     async def _handle_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
