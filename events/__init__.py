@@ -1,3 +1,39 @@
 from .base import EventBus, BaseEvent, EventType
+from .diagnostic import (
+    SocketStartEvent,
+    SocketStopEvent,
+    SocketErrorEvent,
+    ClientConnectEvent,
+    ClientDisconnectEvent,
+    ClientErrorEvent,
+    LLMRequestEvent,
+    LLMResponseEvent,
+    LLMErrorEvent,
+    ToolCallEvent,
+    ToolResultEvent,
+    ToolErrorEvent,
+    AgentStartEvent,
+    AgentStopEvent,
+    AgentErrorEvent,
+)
 
-__all__ = ["EventBus", "BaseEvent", "EventType"]
+__all__ = [
+    "EventBus",
+    "BaseEvent",
+    "EventType",
+    "SocketStartEvent",
+    "SocketStopEvent",
+    "SocketErrorEvent",
+    "ClientConnectEvent",
+    "ClientDisconnectEvent",
+    "ClientErrorEvent",
+    "LLMRequestEvent",
+    "LLMResponseEvent",
+    "LLMErrorEvent",
+    "ToolCallEvent",
+    "ToolResultEvent",
+    "ToolErrorEvent",
+    "AgentStartEvent",
+    "AgentStopEvent",
+    "AgentErrorEvent",
+]
