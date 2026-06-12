@@ -1,6 +1,7 @@
 import asyncio
 import json
-from typing import Callable, Any
+import inspect
+from typing import Callable
 from events import EventBus, BaseEvent, EventType
 
 
@@ -12,6 +13,8 @@ class TCPServer:
         self._handlers: dict[str, Callable] = {}
     
     def register_handler(self, action: str, handler: Callable):
+        if not inspect.iscoroutinefunction(handler):
+            raise ValueError(f"Handler for '{action}' must be async")
         self._handlers[action] = handler
     
     async def start(self):
@@ -34,7 +37,14 @@ class TCPServer:
                 if not data:
                     break
                 
-                message = json.loads(data.decode().strip())
+                try:
+                    message = json.loads(data.decode().strip())
+                except json.JSONDecodeError as e:
+                    error_response = json.dumps({"error": f"Invalid JSON: {e}"}) + "\n"
+                    writer.write(error_response.encode())
+                    await writer.drain()
+                    continue
+                
                 action = message.get("action")
                 payload = message.get("payload", {})
                 
