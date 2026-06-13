@@ -1,0 +1,272 @@
+import pytest
+import re
+import json
+from unittest.mock import AsyncMock, MagicMock
+from agent.runner import (
+    AgentRunner, AgentConfig, AgentResponse,
+    ToolResultStatus, new_run_id, classify_tool_error,
+)
+from providers.base import LLMProvider, LLMResponse, ToolCall
+from tools.base import ToolResult
+from tools.registry import ToolRegistry
+from tools import ALL_TOOLS
+from events import EventBus, EventType
+
+
+class TestNewRunId:
+    def test_format(self):
+        rid = new_run_id()
+        assert re.match(r"\d{6}-\d{6}-\d{6}", rid)
+
+    def test_uniqueness(self):
+        ids = {new_run_id() for _ in range(100)}
+        assert len(ids) == 100
+
+    def test_timestamp_component(self):
+        import time
+        rid = new_run_id()
+        ts_part = rid[:13]
+        assert len(ts_part) == 13
+        assert ts_part[6] == "-"
+
+
+class TestClassifyToolError:
+    def test_success(self):
+        result = ToolResult()
+        assert classify_tool_error(result, "draw_circle", ToolRegistry()) == ToolResultStatus.SUCCESS
+
+    def test_not_found(self):
+        result = ToolResult(is_error=True, error="Unknown tool: nope")
+        assert classify_tool_error(result, "nope", ToolRegistry()) == ToolResultStatus.FAILED_NOT_FOUND
+
+    def test_invalid_args(self):
+        result = ToolResult(is_error=True, error="Text content is required")
+        assert classify_tool_error(result, "draw_text", ToolRegistry()) == ToolResultStatus.FAILED_INVALID_ARGS
+
+    def test_execution_error(self):
+        result = ToolResult(is_error=True, error="Tool execution failed: boom")
+        assert classify_tool_error(result, "draw_circle", ToolRegistry()) == ToolResultStatus.FAILED_EXECUTION
+
+    def test_unknown_error(self):
+        result = ToolResult(is_error=True, error="something weird")
+        assert classify_tool_error(result, "x", ToolRegistry()) == ToolResultStatus.FAILED_UNKNOWN
+
+
+class TestAgentConfig:
+    def test_requires_provider(self):
+        with pytest.raises(ValueError, match="required"):
+            AgentRunner(AgentConfig(provider=None))
+
+
+def make_provider(responses):
+    responses = list(responses)
+    call_count = 0
+
+    async def achat(messages, tools=None, model=None):
+        nonlocal call_count
+        if call_count < len(responses):
+            resp = responses[call_count]
+            call_count += 1
+            return resp
+        return LLMResponse(content="Done")
+
+    provider = MagicMock()
+    provider.achat = achat
+    return provider
+
+
+def make_registry():
+    reg = ToolRegistry()
+    for tool_cls in ALL_TOOLS:
+        reg.register(tool_cls())
+    return reg
+
+
+class TestAgentRunnerPlan:
+    @pytest.mark.asyncio
+    async def test_plan_calls_provider(self):
+        provider = make_provider([LLMResponse(content="hello")])
+        runner = AgentRunner(AgentConfig(provider=provider, registry=make_registry()))
+        result = await runner.run("hi")
+        assert result.success
+        assert result.content == "hello"
+
+    @pytest.mark.asyncio
+    async def test_plan_llm_error(self):
+        async def fail_achat(**kwargs):
+            raise RuntimeError("API down")
+        provider = MagicMock()
+        provider.achat = fail_achat
+
+        runner = AgentRunner(AgentConfig(provider=provider, registry=make_registry()))
+        result = await runner.run("test")
+        assert not result.success
+        assert "API down" in result.error
+
+
+class TestAgentRunnerObserve:
+    @pytest.mark.asyncio
+    async def test_observe_merges_response(self):
+        tc = ToolCall(id="c1", name="draw_circle", arguments={"color": "red"})
+        provider = make_provider([
+            LLMResponse(content="Drawing", tool_calls=[tc]),
+            LLMResponse(content="Done"),
+        ])
+        runner = AgentRunner(AgentConfig(provider=provider, registry=make_registry()))
+        result = await runner.run("draw")
+        assert result.success
+        assert len(result.tool_calls) == 1
+
+
+class TestAgentRunnerAct:
+    @pytest.mark.asyncio
+    async def test_act_executes_tool(self):
+        tc = ToolCall(id="c1", name="draw_circle", arguments={"center_x": 100, "center_y": 100, "radius": 50, "color": "red"})
+        provider = make_provider([
+            LLMResponse(content="Drawing", tool_calls=[tc]),
+            LLMResponse(content="Done"),
+        ])
+        runner = AgentRunner(AgentConfig(provider=provider, registry=make_registry()))
+        result = await runner.run("draw circle")
+        assert "fabric.Circle" in result.code
+        assert result.tool_calls[0]["is_error"] is False
+
+    @pytest.mark.asyncio
+    async def test_act_tool_failure(self):
+        tc = ToolCall(id="c1", name="nonexistent_tool", arguments={})
+        provider = make_provider([
+            LLMResponse(content="Trying", tool_calls=[tc]),
+            LLMResponse(content="Done"),
+        ])
+        runner = AgentRunner(AgentConfig(provider=provider, registry=make_registry()))
+        result = await runner.run("do something")
+        assert result.tool_calls[0]["is_error"] is True
+        assert result.tool_calls[0]["status"] == "failed_not_found"
+
+
+class TestAgentRunnerLoop:
+    @pytest.mark.asyncio
+    async def test_multi_round(self):
+        tc1 = ToolCall(id="c1", name="draw_circle", arguments={"color": "red"})
+        tc2 = ToolCall(id="c2", name="draw_rect", arguments={"color": "blue"})
+
+        call_count = 0
+        async def achat(messages, tools=None, model=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return LLMResponse(content="Step 1", tool_calls=[tc1])
+            elif call_count == 2:
+                return LLMResponse(content="Step 2", tool_calls=[tc2])
+            return LLMResponse(content="Done")
+
+        provider = MagicMock()
+        provider.achat = achat
+
+        runner = AgentRunner(AgentConfig(provider=provider, registry=make_registry(), max_rounds=5))
+        result = await runner.run("draw two things")
+        assert result.tool_calls[0]["name"] == "draw_circle"
+        assert result.tool_calls[1]["name"] == "draw_rect"
+        assert result.rounds == 3
+
+    @pytest.mark.asyncio
+    async def test_max_rounds_limit(self):
+        call_count = 0
+        async def achat(messages, tools=None, model=None):
+            nonlocal call_count
+            call_count += 1
+            tc = ToolCall(id=f"c{call_count}", name="draw_circle", arguments={})
+            return LLMResponse(content=f"Round {call_count}", tool_calls=[tc])
+
+        provider = MagicMock()
+        provider.achat = achat
+
+        runner = AgentRunner(AgentConfig(provider=provider, registry=make_registry(), max_rounds=3))
+        result = await runner.run("keep drawing")
+        assert result.rounds == 3
+        assert len(result.tool_calls) == 3
+
+    @pytest.mark.asyncio
+    async def test_stops_on_no_tool_calls(self):
+        provider = make_provider([LLMResponse(content="All done")])
+        runner = AgentRunner(AgentConfig(provider=provider, registry=make_registry()))
+        result = await runner.run("hello")
+        assert result.rounds == 1
+
+
+class TestAgentRunnerEvents:
+    @pytest.mark.asyncio
+    async def test_dispatches_events(self):
+        bus = EventBus()
+        events = []
+
+        async def handler(event):
+            events.append(event.event_type)
+
+        bus.register(EventType.AGENT_START, handler)
+        bus.register(EventType.AGENT_STOP, handler)
+        bus.register(EventType.TOOL_CALL, handler)
+        bus.register(EventType.TOOL_RESULT, handler)
+
+        provider = make_provider([
+            LLMResponse(content="Drawing", tool_calls=[
+                ToolCall(id="c1", name="draw_circle", arguments={"color": "red"})
+            ]),
+            LLMResponse(content="Done"),
+        ])
+        runner = AgentRunner(AgentConfig(provider=provider, registry=make_registry(), event_bus=bus))
+        await runner.run("draw")
+
+        assert EventType.AGENT_START in events
+        assert EventType.AGENT_STOP in events
+        assert EventType.TOOL_CALL in events
+        assert EventType.TOOL_RESULT in events
+
+
+class TestAgentRunnerCanvasState:
+    @pytest.mark.asyncio
+    async def test_canvas_state_in_prompt(self):
+        provider = make_provider([LLMResponse(content="ok")])
+        runner = AgentRunner(AgentConfig(provider=provider, registry=make_registry()))
+        canvas = {"objects": [{"type": "circle", "left": 100, "top": 100, "fill": "red"}]}
+        await runner.run("what's on canvas", canvas_state=canvas)
+
+    @pytest.mark.asyncio
+    def test_format_canvas_state_empty(self):
+        runner = AgentRunner(AgentConfig(provider=make_provider([]), registry=make_registry()))
+        assert runner._format_canvas_state({}) == "Empty canvas"
+        assert runner._format_canvas_state({"objects": []}) == "Empty canvas"
+
+    @pytest.mark.asyncio
+    def test_format_canvas_state_with_objects(self):
+        runner = AgentRunner(AgentConfig(provider=make_provider([]), registry=make_registry()))
+        state = {"objects": [
+            {"type": "circle", "left": 10, "top": 20, "fill": "red"},
+            {"type": "rect", "left": 30, "top": 40, "fill": "blue"},
+        ]}
+        desc = runner._format_canvas_state(state)
+        assert "2 objects" in desc
+        assert "circle" in desc
+        assert "rect" in desc
+
+
+class TestAgentRunnerAssemble:
+    def test_assemble_chaining(self):
+        runner = AgentRunner(AgentConfig(provider=make_provider([]), registry=ToolRegistry()))
+        result = runner.assemble(tools=[ALL_TOOLS[0]()])
+        assert result is runner
+        assert len(runner.registry) == 1
+
+
+class TestAgentResponse:
+    def test_to_dict(self):
+        resp = AgentResponse(run_id="250101-120000-123456", content="hi", rounds=1)
+        d = resp.to_dict()
+        assert d["run_id"] == "250101-120000-123456"
+        assert d["content"] == "hi"
+        assert d["rounds"] == 1
+
+    def test_to_dict_error(self):
+        resp = AgentResponse(success=False, error="bad")
+        d = resp.to_dict()
+        assert d["error"] == "bad"
