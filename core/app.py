@@ -72,3 +72,47 @@ class TraceHandler:
 
     async def _on_event(self, event: BaseEvent):
         await self.tracer.on_eventbus_event(event)
+
+
+class AgentRunHandler:
+    """Non-blocking agent run dispatcher.
+
+    Generates a ``run_id`` in the handler (before the run starts), hands it
+    to ``runner.run()`` so the frontend gets the id immediately, then
+    kicks off the actual execution via ``asyncio.create_task()``.
+    ``_running_runs`` tracks active tasks so shutdown can cancel them.
+    """
+
+    def __init__(self, daemon):
+        self._daemon = daemon
+        self._running_runs: dict[str, asyncio.Task] = {}
+
+    async def handle_run(self, payload: dict) -> dict:
+        from agent.runner import new_run_id
+
+        message = payload.get("message", "")
+        canvas_state = payload.get("canvas_state", {})
+        provider = payload.get("provider", "openai")
+        api_key = payload.get("api_key", "")
+
+        run_id = new_run_id()
+        self._daemon.init_runner(provider, api_key)
+
+        task = asyncio.create_task(
+            self._daemon._runner.run(
+                message=message,
+                canvas_state=canvas_state,
+                run_id=run_id,
+            )
+        )
+        self._running_runs[run_id] = task
+        task.add_done_callback(lambda _: self._running_runs.pop(run_id, None))
+
+        return {"run_id": run_id}
+
+    async def cancel_all_runs(self):
+        for run_id, task in list(self._running_runs.items()):
+            task.cancel()
+        if self._running_runs:
+            await asyncio.gather(*self._running_runs.values(), return_exceptions=True)
+        self._running_runs.clear()

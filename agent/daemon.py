@@ -87,7 +87,7 @@ class TCPServer:
         }
 
     async def start(self):
-        self.register_handler("chat", self.handle_chat)
+        self._handlers.setdefault("chat", self.handle_chat)
         await self.event_bus.dispatch(
             SocketStartEvent(host=self.host, port=self.port)
         )

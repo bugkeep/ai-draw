@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from events import EventBus, EventBroadcaster
 from agent.daemon import TCPServer
-from core.app import JsonlRecorder, TraceHandler
+from core.app import JsonlRecorder, TraceHandler, AgentRunHandler
 from traces import DaemonTracer
 from .routes import router
 from .daemon_client import DaemonClient
@@ -23,12 +23,15 @@ def create_app() -> FastAPI:
     broadcaster = EventBroadcaster(event_bus, tracer=tracer)
     _recorder = JsonlRecorder(event_bus)
     daemon = TCPServer(port=DAEMON_PORT, broadcaster=broadcaster, event_bus=event_bus, tracer=tracer)
+    agent_handler = AgentRunHandler(daemon)
+    daemon.register_handler("run", agent_handler.handle_run)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         tracer.start()
         asyncio.create_task(daemon.start())
         yield
+        await agent_handler.cancel_all_runs()
         await tracer.stop()
         daemon.stop()
 

@@ -110,8 +110,9 @@ class AgentRunner:
                 self.registry.register(tool)
         return self
 
-    async def run(self, message: str, canvas_state: dict | None = None) -> AgentResponse:
-        run_id = new_run_id()
+    async def run(self, message: str, canvas_state: dict | None = None, run_id: str | None = None) -> AgentResponse:
+        if run_id is None:
+            run_id = new_run_id()
         canvas_state = canvas_state or {}
         canvas_desc = self._format_canvas_state(canvas_state)
         system_prompt = self.system_prompt.format(canvas_state=canvas_desc)
