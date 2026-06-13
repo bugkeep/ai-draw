@@ -69,6 +69,8 @@ class BailianProvider:
         messages: list[dict],
         tools: list[dict] | None = None,
         model: str | None = None,
+        *,
+        step: int = 0,
     ) -> LLMResponse:
         client = self._get_async_client()
         kwargs: dict = {

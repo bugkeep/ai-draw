@@ -80,5 +80,7 @@ class LLMProvider(Protocol):
         messages: list[dict],
         tools: list[dict] | None = None,
         model: str | None = None,
+        *,
+        step: int = 0,
     ) -> LLMResponse:
         ...

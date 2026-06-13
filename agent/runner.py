@@ -88,6 +88,9 @@ class AgentRunner:
 
         if not self.provider:
             raise ValueError("LLMProvider is required")
+        if self.tracer:
+            from providers.tracing_provider import TracingProvider
+            self.provider = TracingProvider(inner=self.provider, tracer=self.tracer)
 
     def assemble(
         self,
@@ -210,14 +213,12 @@ class AgentRunner:
             "tool_count": tool_count,
         }, run_id=run_id, round_num=round_num)
 
-        if self.tracer:
-            self.tracer.on_llm_request(model, len(messages), tool_count, run_id=run_id, step=round_num)
-
         t0 = time.time()
         try:
             response = await self.provider.achat(
                 messages=messages,
                 tools=tools if tools else None,
+                step=round_num,
             )
             latency_ms = round((time.time() - t0) * 1000, 1)
 
@@ -230,12 +231,6 @@ class AgentRunner:
                 "latency_ms": latency_ms,
             }, run_id=run_id, round_num=round_num)
 
-            if self.tracer:
-                self.tracer.on_llm_response(
-                    model, content_snippet, len(response.tool_calls),
-                    response.tokens_used, latency_ms, run_id=run_id, step=round_num,
-                )
-
             return response, None
         except Exception as e:
             latency_ms = round((time.time() - t0) * 1000, 1)
@@ -244,9 +239,6 @@ class AgentRunner:
                 "error": str(e),
                 "latency_ms": latency_ms,
             }, run_id=run_id, round_num=round_num)
-
-            if self.tracer:
-                self.tracer.on_llm_error(model, str(e), latency_ms, run_id=run_id, step=round_num)
 
             return None, f"LLM call failed: {e}"
 

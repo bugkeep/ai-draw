@@ -96,27 +96,33 @@ class DaemonTracer:
     # ── LLM helpers ──────────────────────────────────────────────────
 
     def on_llm_request(self, model: str, message_count: int,
-                       tool_count: int, *, run_id: str = "", step: int = 0):
+                       tool_count: int, *, run_id: str = "", step: int = 0,
+                       messages: list | None = None):
+        data: dict = {
+            "model": model,
+            "message_count": message_count,
+            "tool_count": tool_count,
+        }
+        if messages is not None:
+            data["messages"] = messages
         self.record("llm", "core->llm", kind="request",
-                    run_id=run_id, step=step,
-                    data={
-                        "model": model,
-                        "message_count": message_count,
-                        "tool_count": tool_count,
-                    })
+                    run_id=run_id, step=step, data=data)
 
     def on_llm_response(self, model: str, content_preview: str,
                         tool_calls: int, tokens_used: int,
-                        latency_ms: float, *, run_id: str = "", step: int = 0):
+                        latency_ms: float, *, run_id: str = "", step: int = 0,
+                        content: str | None = None):
+        data: dict = {
+            "model": model,
+            "content_preview": content_preview,
+            "tool_calls": tool_calls,
+            "tokens_used": tokens_used,
+            "latency_ms": latency_ms,
+        }
+        if content is not None:
+            data["content"] = content
         self.record("llm", "llm->core", kind="response",
-                    run_id=run_id, step=step,
-                    data={
-                        "model": model,
-                        "content_preview": content_preview,
-                        "tool_calls": tool_calls,
-                        "tokens_used": tokens_used,
-                        "latency_ms": latency_ms,
-                    })
+                    run_id=run_id, step=step, data=data)
 
     def on_llm_error(self, model: str, error: str, latency_ms: float, *,
                      run_id: str = "", step: int = 0):

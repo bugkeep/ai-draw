@@ -62,7 +62,7 @@ def make_provider(responses):
     responses = list(responses)
     call_count = 0
 
-    async def achat(messages, tools=None, model=None):
+    async def achat(messages, tools=None, model=None, **kwargs):
         nonlocal call_count
         if call_count < len(responses):
             resp = responses[call_count]
@@ -151,7 +151,7 @@ class TestAgentRunnerLoop:
         tc2 = ToolCall(id="c2", name="draw_rect", arguments={"color": "blue"})
 
         call_count = 0
-        async def achat(messages, tools=None, model=None):
+        async def achat(messages, tools=None, model=None, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -172,7 +172,7 @@ class TestAgentRunnerLoop:
     @pytest.mark.asyncio
     async def test_max_rounds_limit(self):
         call_count = 0
-        async def achat(messages, tools=None, model=None):
+        async def achat(messages, tools=None, model=None, **kwargs):
             nonlocal call_count
             call_count += 1
             tc = ToolCall(id=f"c{call_count}", name="draw_circle", arguments={})
