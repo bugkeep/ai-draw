@@ -2,6 +2,14 @@ from dataclasses import dataclass, field
 from typing import Any
 import uuid
 import time
+from pydantic import BaseModel
+
+
+class JsonRpcRequest(BaseModel):
+    """Validated JSON-RPC-like request from a TCP client."""
+    model_config = {"extra": "ignore"}
+    action: str
+    payload: dict = {}
 
 
 @dataclass

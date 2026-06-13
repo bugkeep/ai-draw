@@ -17,6 +17,7 @@ from events import (
     EventBroadcaster,
     Subscription,
 )
+from protocol import JsonRpcRequest
 from core.app import _replay_events, events_file
 from traces import DaemonTracer
 from providers.openai_provider import OpenAIProvider
@@ -139,18 +140,16 @@ class TCPServer:
                     break
 
                 try:
-                    message = json.loads(data.decode().strip())
-                except json.JSONDecodeError as e:
-                    error_response = json.dumps({"error": f"Invalid JSON: {e}"}) + "\n"
-                    writer.write(error_response.encode())
+                    raw = json.loads(data.decode().strip())
+                    req = JsonRpcRequest.model_validate(raw)
+                except Exception:
+                    err = json.dumps({"error": "parse error"}) + "\n"
+                    writer.write(err.encode())
                     await writer.drain()
-                    if self.tracer:
-                        self.tracer.on_ipc_request("_parse_error", {"raw": data.decode().strip()[:200]}, client_id=client_id)
-                        self.tracer.on_ipc_response("_parse_error", {"error": str(e)}, client_id=client_id)
                     continue
 
-                action = message.get("action")
-                payload = message.get("payload", {})
+                action = req.action
+                payload = req.payload
 
                 if self.tracer:
                     self.tracer.on_ipc_request(action, payload, client_id=client_id)
