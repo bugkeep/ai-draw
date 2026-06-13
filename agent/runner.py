@@ -331,5 +331,8 @@ class AgentRunner:
         task_manager = TaskManager(run_id)
         self._build_task_registry(task_manager)
 
+        from .prompts import PLANNING_SYSTEM_PROMPT
+        self.system_prompt = PLANNING_SYSTEM_PROMPT
+
         return await self.run(message=message, canvas_state=canvas_state,
                               run_id=run_id)
