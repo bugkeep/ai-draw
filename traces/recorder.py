@@ -74,6 +74,13 @@ class DaemonTracer:
                     run_id=run_id, client_id=client_id,
                     data={"action": action, "result": result})
 
+    def on_ipc_push(self, sub_id: str, event_type: str, *,
+                    run_id: str = ""):
+        """Push trace — lightweight, no event body (already in event layer)."""
+        self.record("ipc", "core->client", kind="push",
+                    run_id=run_id,
+                    data={"sub_id": sub_id, "event_type": event_type})
+
     # ── EventBus helper ──────────────────────────────────────────────
 
     async def on_eventbus_event(self, event):

@@ -20,7 +20,7 @@ def create_app() -> FastAPI:
     event_bus = EventBus()
     tracer = DaemonTracer()
     event_bus.register_global(tracer.on_eventbus_event)
-    broadcaster = EventBroadcaster(event_bus)
+    broadcaster = EventBroadcaster(event_bus, tracer=tracer)
     _recorder = JsonlRecorder(event_bus)
     daemon = TCPServer(port=DAEMON_PORT, broadcaster=broadcaster, event_bus=event_bus, tracer=tracer)
 

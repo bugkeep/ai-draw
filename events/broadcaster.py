@@ -1,14 +1,19 @@
+from __future__ import annotations
 import json
 import asyncio
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from fastapi import WebSocket
 from .base import EventBus, BaseEvent, format_event_push
 from .subscription import Subscription
 
+if TYPE_CHECKING:
+    from traces.recorder import DaemonTracer
+
 
 class EventBroadcaster:
-    def __init__(self, event_bus: EventBus):
+    def __init__(self, event_bus: EventBus, tracer: DaemonTracer | None = None):
         self.event_bus = event_bus
+        self.tracer = tracer
         self._ws_clients: dict[str, WebSocket] = {}
         self._subscriptions: dict[str, Subscription] = {}
         event_bus.register_global(self._on_event)
@@ -48,6 +53,9 @@ class EventBroadcaster:
                 continue
             try:
                 await sub.send(message)
+                if self.tracer:
+                    self.tracer.on_ipc_push(sid, event.event_type.value,
+                                            run_id=event.run_id or "")
             except Exception:
                 dead_subs.append(sid)
         for sid in dead_subs:
