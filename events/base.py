@@ -1,3 +1,4 @@
+import json
 from enum import Enum
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -131,3 +132,15 @@ class EventBus:
                 self._global_handlers.remove(entry)
             elif entry in self._handlers.get(event.event_type, []):
                 self._handlers[event.event_type].remove(entry)
+
+
+def format_event_push(event: BaseEvent) -> str:
+    """Serialize an event into the standard EventPushEnvelope wire format."""
+    return json.dumps({
+        "type": "event_push",
+        "topic": event.get_topic(),
+        "event_type": event.event_type.value,
+        "data": event.data,
+        "timestamp": event.timestamp,
+        "run_id": event.run_id or event.data.get("run_id", ""),
+    }, ensure_ascii=False)

@@ -84,3 +84,25 @@ class QueuedMessage:
 
     def can_retry(self) -> bool:
         return self.retries < self.max_retries
+
+
+@dataclass
+class EventPushEnvelope:
+    """Wire format for event pushes — used identically for replay and live."""
+
+    topic: str
+    event_type: str
+    data: dict
+    timestamp: float
+    run_id: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "type": "event_push",
+            "topic": self.topic,
+            "event_type": self.event_type,
+            "data": self.data,
+            "timestamp": self.timestamp,
+            "run_id": self.run_id,
+        }
+

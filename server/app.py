@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from events import EventBus, EventBroadcaster
 from agent.daemon import TCPServer
+from core.app import JsonlRecorder
 from .routes import router
 from .daemon_client import DaemonClient
 
@@ -18,6 +19,7 @@ def create_app() -> FastAPI:
 
     event_bus = EventBus()
     broadcaster = EventBroadcaster(event_bus)
+    _recorder = JsonlRecorder(event_bus)
     daemon = TCPServer(port=DAEMON_PORT, broadcaster=broadcaster, event_bus=event_bus)
     app.state.event_bus = event_bus
     app.state.broadcaster = broadcaster

@@ -2,7 +2,7 @@ import json
 import asyncio
 from typing import Any
 from fastapi import WebSocket
-from .base import EventBus, BaseEvent
+from .base import EventBus, BaseEvent, format_event_push
 from .subscription import Subscription
 
 
@@ -31,13 +31,7 @@ class EventBroadcaster:
             self._subscriptions.pop(sid, None)
 
     async def _on_event(self, event: BaseEvent):
-        message = json.dumps({
-            "type": "event",
-            "event_type": event.event_type.value,
-            "topic": event.get_topic(),
-            "data": event.data,
-            "timestamp": event.timestamp,
-        }, ensure_ascii=False)
+        message = format_event_push(event)
 
         dead_ws = []
         for cid, ws in self._ws_clients.items():

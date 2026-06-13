@@ -1,4 +1,4 @@
-from .models import ProtocolMessage, ProtocolResponse, Session, QueuedMessage
+from .models import ProtocolMessage, ProtocolResponse, Session, QueuedMessage, EventPushEnvelope
 from .handler import ProtocolHandler
 from .session import SessionManager
 from .queue import MessageQueue

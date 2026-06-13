@@ -17,6 +17,7 @@ from events import (
     EventBroadcaster,
     Subscription,
 )
+from core.app import _replay_events
 from providers.openai_provider import OpenAIProvider
 from providers.bailian_provider import BailianProvider
 from tools import ALL_TOOLS
@@ -150,7 +151,24 @@ class TCPServer:
                     BaseEvent(EventType.VOICE_RECEIVED, payload)
                 )
 
-                if action in self._handlers:
+                if action == "event_subscribe":
+                    topics = payload.get("topics", ["*"])
+                    scope = payload.get("scope", "global")
+
+                    count = 0
+                    if scope.startswith("run:"):
+                        count = await _replay_events(scope[4:], writer)
+
+                    if self.broadcaster:
+                        self.broadcaster.subscribe(Subscription(
+                            sub_id=f"sub-{client_id}",
+                            writer=writer,
+                            topics=topics,
+                            scope=scope,
+                        ))
+
+                    result = {"replayed_count": count}
+                elif action in self._handlers:
                     result = await self._handlers[action](payload)
                 else:
                     result = {"error": f"Unknown action: {action}"}
