@@ -42,6 +42,15 @@ class BaseEvent:
     event_type: EventType = EventType.SYSTEM
     data: dict = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
+    topic: str = ""
+    run_id: str = ""
+
+    def get_topic(self) -> str:
+        """Derive dot-separated topic from event_type if not explicitly set.
+
+        e.g. EventType.LLM_REQUEST → "llm.request"
+        """
+        return self.topic or self.event_type.name.lower().replace("_", ".")
 
 
 @dataclass
