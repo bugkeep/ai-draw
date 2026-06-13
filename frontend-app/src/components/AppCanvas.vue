@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, defineExpose } from 'vue'
-import * as fabric from 'fabric'
+import { fabric } from 'fabric'
 
 const canvasEl = ref(null)
 let canvas = null
@@ -53,8 +53,8 @@ function clear() {
 
 function executeCode(code) {
   try {
-    const fn = new Function('canvas', code)
-    fn(canvas)
+    const fn = new Function('canvas', 'fabric', code)
+    fn(canvas, fabric)
     canvas.renderAll()
     saveState()
     return true
@@ -92,8 +92,18 @@ defineExpose({ undo, redo, clear, executeCode, getState })
 
 <style scoped>
 canvas {
-  background: white;
+  background: #FAFAF9;
   border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  box-shadow:
+    0 0 0 1px rgba(99, 102, 241, 0.1),
+    0 4px 24px rgba(0, 0, 0, 0.4),
+    0 0 60px rgba(99, 102, 241, 0.05);
+  transition: box-shadow 0.3s ease;
+}
+canvas:hover {
+  box-shadow:
+    0 0 0 1px rgba(99, 102, 241, 0.2),
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 0 80px rgba(99, 102, 241, 0.1);
 }
 </style>

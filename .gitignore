@@ -22,3 +22,4 @@ wheels/
 .env.local
 venv/
 .venv/
+.idea/
