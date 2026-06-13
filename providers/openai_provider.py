@@ -9,10 +9,12 @@ class OpenAIProvider:
         api_key: str | None = None,
         model: str = "gpt-4o",
         base_url: str | None = None,
+        enable_prompt_caching: bool = False,
     ):
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
         self.default_model = model
         self.base_url = base_url
+        self.enable_prompt_caching = enable_prompt_caching
         self._client = None
         self._async_client = None
 
@@ -32,6 +34,24 @@ class OpenAIProvider:
             self._async_client = AsyncOpenAI(**kwargs)
         return self._async_client
 
+    def _inject_cache_control(self, messages: list[dict]) -> list[dict]:
+        """Mark system prompt for prompt caching.
+
+        Creates a deep copy so the original messages are not mutated.
+        Uses the Anthropic-style ``cache_control`` marker.  Many
+        OpenAI-compatible providers (e.g. Alibaba Cloud 百炼) support
+        this; providers that don't recognise the field simply ignore it.
+        """
+        if not self.enable_prompt_caching:
+            return messages
+
+        import copy
+        cached = copy.deepcopy(messages)
+        for msg in cached:
+            if msg.get("role") == "system":
+                msg["cache_control"] = {"type": "ephemeral"}
+        return cached
+
     def chat(
         self,
         messages: list[dict],
@@ -41,7 +61,7 @@ class OpenAIProvider:
         client = self._get_client()
         kwargs: dict = {
             "model": model or self.default_model,
-            "messages": messages,
+            "messages": self._inject_cache_control(messages),
         }
         if tools:
             kwargs["tools"] = tools
@@ -75,7 +95,7 @@ class OpenAIProvider:
         client = self._get_async_client()
         kwargs: dict = {
             "model": model or self.default_model,
-            "messages": messages,
+            "messages": self._inject_cache_control(messages),
         }
         if tools:
             kwargs["tools"] = tools

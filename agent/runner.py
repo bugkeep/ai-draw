@@ -51,6 +51,7 @@ class AgentResponse:
     success: bool = True
     error: str = ""
     rounds: int = 0
+    new_messages: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         result = {
@@ -112,12 +113,23 @@ class AgentRunner:
 
     async def run(self, message: str, canvas_state: dict | None = None,
                    run_id: str | None = None,
-                   history: list[dict] | None = None) -> AgentResponse:
+                   history: list[dict] | None = None,
+                   session: dict | None = None,
+                   store=None) -> AgentResponse:
         if run_id is None:
             run_id = new_run_id()
         canvas_state = canvas_state or {}
         canvas_desc = self._format_canvas_state(canvas_state)
+
+        # ── restore context from session store ─────────────────────────
+        if store is not None:
+            history = store.read_messages()  # full thread replay, no truncation
+
+        # ── inject notes into system prompt ────────────────────────────
+        notes = store.read_notes() if store is not None else ""
         system_prompt = self.system_prompt.format(canvas_state=canvas_desc)
+        if notes:
+            system_prompt += "\n\nRemembered facts:\n" + notes
 
         messages: list[dict] = [
             {"role": "system", "content": system_prompt},
@@ -130,6 +142,7 @@ class AgentRunner:
         all_code: list[str] = []
         all_desc: list[str] = []
         all_tool_calls: list[dict] = []
+        new_messages: list[dict] = []
         last_content = ""
         round_num = 0
 
@@ -174,11 +187,13 @@ class AgentRunner:
                     "status": tr["status"].value,
                 })
 
-            messages.append({
+            assistant_msg = {
                 "role": "assistant",
                 "content": response.content or "",
                 "tool_calls": [tc.to_dict() for tc in response.tool_calls],
-            })
+            }
+            messages.append(assistant_msg)
+            new_messages.append(assistant_msg)
 
             tool_result_msgs = []
             for tr in act_results:
@@ -194,8 +209,15 @@ class AgentRunner:
                     }, ensure_ascii=False),
                 })
             messages.extend(tool_result_msgs)
+            new_messages.extend(tool_result_msgs)
 
             messages.append({"role": "user", "content": observe_msg})
+
+        # ── persist final assistant answer ──────────────────────────────
+        if last_content:
+            final_msg = {"role": "assistant", "content": last_content}
+            messages.append(final_msg)
+            new_messages.append(final_msg)
 
         await self._dispatch_event(EventType.AGENT_STOP, {"rounds": round_num}, run_id=run_id)
 
@@ -206,6 +228,7 @@ class AgentRunner:
             description="\n".join(all_desc),
             tool_calls=all_tool_calls,
             rounds=round_num,
+            new_messages=new_messages,
         )
 
     async def _plan(self, messages: list[dict], tools: list[dict], run_id: str = "", round_num: int = 0) -> tuple[LLMResponse, str | None] | None:
@@ -321,13 +344,18 @@ class AgentRunner:
 
     async def run_and_capture(self, message: str, canvas_state: dict | None = None,
                                run_id: str | None = None,
-                               history: list[dict] | None = None) -> AgentResponse:
+                               history: list[dict] | None = None,
+                               session: dict | None = None,
+                               store=None) -> AgentResponse:
         """Run with task-planning tools enabled.
 
         Creates a ``TaskManager`` bound to this run's ``.tasks/``
         directory and registers the 4 task tools (create / update /
         list / get) into the tool registry so the LLM can autonomously
         plan and track its own tasks.
+
+        When ``session`` and ``store`` are provided, context is restored
+        from the session (full thread replay + notes injection).
         """
         if run_id is None:
             run_id = new_run_id()
@@ -340,4 +368,5 @@ class AgentRunner:
         self.system_prompt = PLANNING_SYSTEM_PROMPT
 
         return await self.run(message=message, canvas_state=canvas_state,
-                              run_id=run_id, history=history)
+                              run_id=run_id, history=history,
+                              session=session, store=store)

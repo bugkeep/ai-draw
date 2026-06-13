@@ -10,9 +10,11 @@ class BailianProvider:
         self,
         api_key: str | None = None,
         model: str = "qwen-plus",
+        enable_prompt_caching: bool = False,
     ):
         self.api_key = api_key or os.environ.get("DASHSCOPE_API_KEY", "")
         self.default_model = model
+        self.enable_prompt_caching = enable_prompt_caching
         self._client = None
         self._async_client = None
 
@@ -32,6 +34,20 @@ class BailianProvider:
             )
         return self._async_client
 
+    def _inject_cache_control(self, messages: list[dict]) -> list[dict]:
+        """Mark system messages for prompt caching.
+
+        Creates a deep copy so the original messages are not mutated.
+        """
+        if not self.enable_prompt_caching:
+            return messages
+        import copy
+        cached = copy.deepcopy(messages)
+        for msg in cached:
+            if msg.get("role") == "system":
+                msg["cache_control"] = {"type": "ephemeral"}
+        return cached
+
     def chat(
         self,
         messages: list[dict],
@@ -41,7 +57,7 @@ class BailianProvider:
         client = self._get_client()
         kwargs: dict = {
             "model": model or self.default_model,
-            "messages": messages,
+            "messages": self._inject_cache_control(messages),
         }
         if tools:
             kwargs["tools"] = tools
@@ -75,7 +91,7 @@ class BailianProvider:
         client = self._get_async_client()
         kwargs: dict = {
             "model": model or self.default_model,
-            "messages": messages,
+            "messages": self._inject_cache_control(messages),
         }
         if tools:
             kwargs["tools"] = tools

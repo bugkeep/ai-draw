@@ -133,65 +133,67 @@ class SessionHandler:
         self._running_runs: dict[str, asyncio.Task] = {}
 
     async def handle_create(self, payload: dict) -> dict:
-        from agent.runner import new_run_id
-
         provider = payload.get("provider", "openai")
         api_key = payload.get("api_key", "")
-        session_id = self._session_manager.create(provider, api_key)
+        mode = payload.get("mode", "agent")
+        title = payload.get("title", "")
 
+        session_id = self._session_manager.create(
+            mode=mode, title=title, provider=provider, api_key=api_key,
+        )
+
+        session_meta = self._session_manager.get_session(session_id)
         await self._daemon.event_bus.dispatch(
-            BaseEvent(EventType.SESSION_CREATED, {"session_id": session_id},
+            BaseEvent(EventType.SESSION_CREATED, dict(session_meta),
                       run_id=session_id)
         )
 
         return {"session_id": session_id}
 
     async def handle_send_message(self, payload: dict) -> dict:
-        from agent.runner import new_run_id
-
         session_id = payload.get("session_id", "")
         message = payload.get("message", "")
 
         if not session_id or not message:
             return {"error": "session_id and message are required"}
 
-        session = self._session_manager.get_session(session_id)
-        if session is None:
-            return {"error": f"Session not found: {session_id}"}
+        # 1. write user message to thread first, then get context
+        from agent.runner import new_run_id
+        run_id = new_run_id()
+        ctx = self._session_manager.send_message(session_id, message, run_id)
+        if "error" in ctx:
+            return ctx
 
-        history = self._session_manager.get_history(session_id)
+        session = ctx["session"]
+        store = ctx["store"]
+
+        # 2. init runner from session config
         provider = session.get("provider", "openai")
         api_key = session.get("api_key", "")
-
-        run_id = new_run_id()
         self._daemon.init_runner(provider, api_key)
 
+        # 3. start run with session context restored
         task = asyncio.create_task(
-            self._run_and_save(session_id, history, message, run_id)
+            self._run_with_session(message, session, store, run_id)
         )
         self._running_runs[run_id] = task
         task.add_done_callback(lambda _: self._running_runs.pop(run_id, None))
 
         return {"run_id": run_id}
 
-    async def _run_and_save(self, session_id: str, history: list[dict],
-                             message: str, run_id: str):
-        self._session_manager.append_message(session_id, "user", message)
+    async def _run_with_session(self, message: str, session: dict,
+                                 store, run_id: str):
         try:
             result = await self._daemon._runner.run_and_capture(
                 message=message,
-                history=history,
                 run_id=run_id,
+                session=session,
+                store=store,
             )
-            self._session_manager.append_message(
-                session_id, "assistant", result.content,
-                tool_calls=[{"name": tc["name"], "status": tc.get("status")}
-                            for tc in result.tool_calls],
-            )
+            # persist only the new messages produced in this run
+            store.append_messages(result.new_messages)
         except Exception as e:
-            self._session_manager.append_message(
-                session_id, "assistant", f"Error: {e}",
-            )
+            store.append_message("assistant", f"Error: {e}")
 
     async def cancel_all_runs(self):
         for run_id, task in list(self._running_runs.items()):
