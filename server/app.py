@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
@@ -16,14 +17,22 @@ DAEMON_PORT = 8765
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="AI Voice Draw", version="0.1.0")
-
     event_bus = EventBus()
     tracer = DaemonTracer()
     event_bus.register_global(tracer.on_eventbus_event)
     broadcaster = EventBroadcaster(event_bus)
     _recorder = JsonlRecorder(event_bus)
     daemon = TCPServer(port=DAEMON_PORT, broadcaster=broadcaster, event_bus=event_bus, tracer=tracer)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        tracer.start()
+        asyncio.create_task(daemon.start())
+        yield
+        await tracer.stop()
+        daemon.stop()
+
+    app = FastAPI(title="AI Voice Draw", version="0.1.0", lifespan=lifespan)
     app.state.event_bus = event_bus
     app.state.broadcaster = broadcaster
     app.state.daemon = daemon
@@ -42,10 +51,6 @@ def create_app() -> FastAPI:
             pass
         finally:
             broadcaster.disconnect(client_id)
-
-    @app.on_event("startup")
-    async def startup_daemon():
-        asyncio.create_task(daemon.start())
 
     if FRONTEND_DIR.exists():
         app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")
