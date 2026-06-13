@@ -1,15 +1,13 @@
 import os
-import json
 import time
-import asyncio
+from .writer import TraceWriter
 
 
 TRACES_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "traces"))
-_SENTINEL = object()
 
 
 class DaemonTracer:
-    """System-wide timeline recorder with async drain.
+    """Build trace records and hand them to a background ``TraceWriter``.
 
     Each trace record is a dict with fields:
 
@@ -29,52 +27,24 @@ class DaemonTracer:
     event core           internal EventBus dispatch        kind=<topic>
     llm   core→llm       LLM API request                   kind="request"
     llm   llm→core       LLM API response or error         kind="response"|"error"
-
-    ``record()`` (called from sync and async contexts) only enqueues a
-    dict to an ``asyncio.Queue`` -- O(1), no blocking.  A background
-    ``_drain`` task continuously dequeues records and appends them to
-    ``daemon.jsonl``, isolating file I/O from the main event loop.
-
-    Call ``start()`` during daemon startup to spawn the drain task and
-    ``await stop()`` during shutdown to flush remaining records.
     """
 
     def __init__(self, path: str | None = None):
-        self.path = path or os.path.join(TRACES_DIR, "daemon.jsonl")
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        self._queue: asyncio.Queue = asyncio.Queue()
-        self._drain_task: asyncio.Task | None = None
+        path = path or os.path.join(TRACES_DIR, "daemon.jsonl")
+        self._writer = TraceWriter(path)
 
     # ── lifecycle ────────────────────────────────────────────────────
 
     def start(self):
-        if self._drain_task is None:
-            self._drain_task = asyncio.create_task(self._drain())
+        self._writer.start()
 
     async def stop(self):
-        if self._drain_task is None:
-            return
-        self._queue.put_nowait(_SENTINEL)
-        await self._drain_task
-        self._drain_task = None
-
-    # ── emit / drain ─────────────────────────────────────────────────
-
-    def _emit(self, record: dict):
-        self._queue.put_nowait(record)
-
-    async def _drain(self):
-        with open(self.path, "a", encoding="utf-8") as f:
-            while True:
-                record = await self._queue.get()
-                if record is _SENTINEL:
-                    self._queue.task_done()
-                    break
-                f.write(json.dumps(record, ensure_ascii=False) + "\n")
-                f.flush()
-                self._queue.task_done()
+        await self._writer.stop()
 
     # ── core record builder ──────────────────────────────────────────
+
+    def _emit(self, record: dict):
+        self._writer.emit(record)
 
     def record(self, layer: str, direction: str, kind: str = "",
                run_id: str = "", step: int = 0, client_id: str = "",

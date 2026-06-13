@@ -1,2 +1,3 @@
 from .recorder import DaemonTracer
-__all__ = ["DaemonTracer"]
+from .writer import TraceWriter
+__all__ = ["DaemonTracer", "TraceWriter"]
