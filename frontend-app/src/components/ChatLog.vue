@@ -60,9 +60,9 @@ function escapeHtml(text) {
 .code-block {
   margin-top: 0.5rem; padding: 0.5rem 0.75rem;
   background: rgba(15, 23, 42, 0.8); border-radius: 6px;
-  font-size: 0.75rem; line-height: 1.5; overflow-x: auto;
+  font-size: 0.75rem; line-height: 1.5; overflow: auto;
   border: 1px solid rgba(99, 102, 241, 0.15);
-  color: #A5B4FC;
+  color: #A5B4FC; white-space: pre; max-height: 200px;
 }
 .code-block code {
   font-family: 'Fira Code', monospace;

@@ -1,5 +1,5 @@
 import os
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from typing import Optional
 from providers.openai_provider import OpenAIProvider
@@ -26,10 +26,13 @@ for tool_cls in ALL_TOOLS:
     _registry.register(tool_cls())
 
 
-def _get_runner(provider: str = "openai", api_key: str = "") -> AgentRunner:
+def _get_runner(provider: str = "openai", api_key: str = "", event_bus=None) -> AgentRunner:
     provider_fn = _providers.get(provider, _providers["openai"])
     prov = provider_fn(api_key)
-    return AgentRunner(AgentConfig(provider=prov, registry=_registry))
+    config = AgentConfig(provider=prov, registry=_registry)
+    if event_bus:
+        config.event_bus = event_bus
+    return AgentRunner(config)
 
 
 class ChatRequest(BaseModel):
@@ -51,14 +54,16 @@ class ChatResponse(BaseModel):
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(request: Request, body: ChatRequest):
+    event_bus = request.app.state.event_bus
     runner = _get_runner(
-        provider=request.provider or "openai",
-        api_key=request.api_key or "",
+        provider=body.provider or "openai",
+        api_key=body.api_key or "",
+        event_bus=event_bus,
     )
     result = await runner.run(
-        message=request.message,
-        canvas_state=request.canvas_state,
+        message=body.message,
+        canvas_state=body.canvas_state,
     )
     return ChatResponse(
         run_id=result.run_id,

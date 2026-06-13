@@ -1,4 +1,5 @@
 from .base import EventBus, BaseEvent, EventType
+from .broadcaster import EventBroadcaster
 from .diagnostic import (
     SocketStartEvent,
     SocketStopEvent,
@@ -21,6 +22,7 @@ __all__ = [
     "EventBus",
     "BaseEvent",
     "EventType",
+    "EventBroadcaster",
     "SocketStartEvent",
     "SocketStopEvent",
     "SocketErrorEvent",
