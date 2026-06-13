@@ -201,10 +201,12 @@ class TestAgentRunnerEvents:
         events = []
 
         async def handler(event):
-            events.append(event.event_type)
+            events.append(event)
 
         bus.register(EventType.AGENT_START, handler)
         bus.register(EventType.AGENT_STOP, handler)
+        bus.register(EventType.LLM_REQUEST, handler)
+        bus.register(EventType.LLM_RESPONSE, handler)
         bus.register(EventType.TOOL_CALL, handler)
         bus.register(EventType.TOOL_RESULT, handler)
 
@@ -217,10 +219,30 @@ class TestAgentRunnerEvents:
         runner = AgentRunner(AgentConfig(provider=provider, registry=make_registry(), event_bus=bus))
         await runner.run("draw")
 
-        assert EventType.AGENT_START in events
-        assert EventType.AGENT_STOP in events
-        assert EventType.TOOL_CALL in events
-        assert EventType.TOOL_RESULT in events
+        types = [e.event_type for e in events]
+
+        # Full timeline: start → llm_req → llm_resp → tool_call → tool_result → llm_req → llm_resp → stop
+        assert EventType.AGENT_START in types
+        assert EventType.AGENT_STOP in types
+        assert EventType.LLM_REQUEST in types
+        assert EventType.LLM_RESPONSE in types
+        assert EventType.TOOL_CALL in types
+        assert EventType.TOOL_RESULT in types
+
+        # Check ordering
+        start_idx = types.index(EventType.AGENT_START)
+        stop_idx = types.index(EventType.AGENT_STOP)
+        assert start_idx < stop_idx
+
+        # Check events carry run_id
+        for e in events:
+            assert e.run_id, f"event {e.event_type} missing run_id"
+
+        # Check round_num in step-level events
+        for e in events:
+            if e.event_type in (EventType.LLM_REQUEST, EventType.LLM_RESPONSE,
+                                EventType.TOOL_CALL, EventType.TOOL_RESULT):
+                assert "round" in e.data, f"event {e.event_type} missing round"
 
 
 class TestAgentRunnerCanvasState:

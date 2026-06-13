@@ -122,16 +122,16 @@ class AgentRunner:
         last_content = ""
         round_num = 0
 
-        await self._dispatch_event(EventType.AGENT_START, {"run_id": run_id, "message": message})
+        await self._dispatch_event(EventType.AGENT_START, {"message": message}, run_id=run_id)
 
         for round_num in range(1, self.max_rounds + 1):
-            plan_result = await self._plan(messages, tool_defs)
+            plan_result = await self._plan(messages, tool_defs, run_id=run_id, round_num=round_num)
             if plan_result is None:
                 break
 
             response, error = plan_result
             if error:
-                await self._dispatch_event(EventType.AGENT_ERROR, {"run_id": run_id, "error": error})
+                await self._dispatch_event(EventType.AGENT_ERROR, {"error": error}, run_id=run_id)
                 return AgentResponse(
                     run_id=run_id,
                     success=False,
@@ -148,7 +148,7 @@ class AgentRunner:
                 break
 
             observe_msg = self._observe(response)
-            act_results = await self._act(response.tool_calls)
+            act_results = await self._act(response.tool_calls, run_id=run_id, round_num=round_num)
 
             for tr in act_results:
                 if not tr["is_error"]:
@@ -186,7 +186,7 @@ class AgentRunner:
 
             messages.append({"role": "user", "content": observe_msg})
 
-        await self._dispatch_event(EventType.AGENT_STOP, {"run_id": run_id, "rounds": round_num})
+        await self._dispatch_event(EventType.AGENT_STOP, {"rounds": round_num}, run_id=run_id)
 
         return AgentResponse(
             run_id=run_id,
@@ -197,14 +197,41 @@ class AgentRunner:
             rounds=round_num,
         )
 
-    async def _plan(self, messages: list[dict], tools: list[dict]) -> tuple[LLMResponse, str | None] | None:
+    async def _plan(self, messages: list[dict], tools: list[dict], run_id: str = "", round_num: int = 0) -> tuple[LLMResponse, str | None] | None:
+        model = getattr(self.provider, "model", "")
+        tool_count = len(tools) if tools else 0
+
+        await self._dispatch_event(EventType.LLM_REQUEST, {
+            "model": model,
+            "message_count": len(messages),
+            "tool_count": tool_count,
+        }, run_id=run_id, round_num=round_num)
+
+        t0 = time.time()
         try:
             response = await self.provider.achat(
                 messages=messages,
                 tools=tools if tools else None,
             )
+            latency_ms = round((time.time() - t0) * 1000, 1)
+
+            content_snippet = (response.content or "")[:200]
+            await self._dispatch_event(EventType.LLM_RESPONSE, {
+                "model": model,
+                "content": content_snippet,
+                "tool_calls": len(response.tool_calls),
+                "tokens_used": response.tokens_used,
+                "latency_ms": latency_ms,
+            }, run_id=run_id, round_num=round_num)
+
             return response, None
         except Exception as e:
+            latency_ms = round((time.time() - t0) * 1000, 1)
+            await self._dispatch_event(EventType.LLM_ERROR, {
+                "model": model,
+                "error": str(e),
+                "latency_ms": latency_ms,
+            }, run_id=run_id, round_num=round_num)
             return None, f"LLM call failed: {e}"
 
     def _observe(self, response: LLMResponse) -> str:
@@ -215,17 +242,28 @@ class AgentRunner:
             parts.append(f"Tool call: {tc.name}({json.dumps(tc.arguments, ensure_ascii=False)})")
         return "\n".join(parts) if parts else "No response"
 
-    async def _act(self, tool_calls: list[ToolCall]) -> list[dict]:
+    async def _act(self, tool_calls: list[ToolCall], run_id: str = "", round_num: int = 0) -> list[dict]:
         results = []
         for tc in tool_calls:
-            await self._dispatch_event(EventType.TOOL_CALL, {"name": tc.name, "arguments": tc.arguments})
+            await self._dispatch_event(EventType.TOOL_CALL, {
+                "name": tc.name, "arguments": tc.arguments,
+            }, run_id=run_id, round_num=round_num)
 
+            t0 = time.time()
             result = self.registry.execute(tc.name, **tc.arguments)
             status = classify_tool_error(result, tc.name, self.registry)
+            latency_ms = round((time.time() - t0) * 1000, 1)
 
             await self._dispatch_event(
                 EventType.TOOL_RESULT if not result.is_error else EventType.TOOL_ERROR,
-                {"name": tc.name, "is_error": result.is_error, "status": status.value, "error": result.error},
+                {
+                    "name": tc.name,
+                    "is_error": result.is_error,
+                    "status": status.value,
+                    "latency_ms": latency_ms,
+                    "error": result.error,
+                },
+                run_id=run_id, round_num=round_num,
             )
 
             results.append({
@@ -255,5 +293,9 @@ class AgentRunner:
             parts.append(f"  [{i}] {obj_type} at ({left},{top}) fill={fill}")
         return f"{len(objects)} objects:\n" + "\n".join(parts)
 
-    async def _dispatch_event(self, event_type: EventType, data: dict):
-        await self.event_bus.dispatch(BaseEvent(event_type, data))
+    async def _dispatch_event(self, event_type: EventType, data: dict, run_id: str = "", round_num: int = 0):
+        payload = dict(data)
+        payload.setdefault("run_id", run_id)
+        if round_num:
+            payload["round"] = round_num
+        await self.event_bus.dispatch(BaseEvent(event_type, payload, run_id=run_id))
