@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from events import EventBus, EventBroadcaster
 from agent.daemon import TCPServer
-from core.app import JsonlRecorder
+from core.app import JsonlRecorder, TraceHandler
 from traces import DaemonTracer
 from .routes import router
 from .daemon_client import DaemonClient
@@ -19,7 +19,7 @@ DAEMON_PORT = 8765
 def create_app() -> FastAPI:
     event_bus = EventBus()
     tracer = DaemonTracer()
-    event_bus.register_global(tracer.on_eventbus_event)
+    _trace_handler = TraceHandler(event_bus, tracer)
     broadcaster = EventBroadcaster(event_bus, tracer=tracer)
     _recorder = JsonlRecorder(event_bus)
     daemon = TCPServer(port=DAEMON_PORT, broadcaster=broadcaster, event_bus=event_bus, tracer=tracer)
