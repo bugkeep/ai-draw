@@ -99,7 +99,7 @@ class AgentRunHandler:
         self._daemon.init_runner(provider, api_key)
 
         task = asyncio.create_task(
-            self._daemon._runner.run(
+            self._daemon._runner.run_and_capture(
                 message=message,
                 canvas_state=canvas_state,
                 run_id=run_id,

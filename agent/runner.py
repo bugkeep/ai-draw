@@ -308,3 +308,28 @@ class AgentRunner:
         if round_num:
             payload["round"] = round_num
         await self.event_bus.dispatch(BaseEvent(event_type, payload, run_id=run_id))
+
+    def _build_task_registry(self, task_manager):
+        """Register the 4 task-planning tools into the current registry."""
+        from agent.task_tools import TASK_TOOLS
+        for tool_cls in TASK_TOOLS:
+            self.registry.register(tool_cls(task_manager))
+
+    async def run_and_capture(self, message: str, canvas_state: dict | None = None,
+                               run_id: str | None = None) -> AgentResponse:
+        """Run with task-planning tools enabled.
+
+        Creates a ``TaskManager`` bound to this run's ``.tasks/``
+        directory and registers the 4 task tools (create / update /
+        list / get) into the tool registry so the LLM can autonomously
+        plan and track its own tasks.
+        """
+        if run_id is None:
+            run_id = new_run_id()
+
+        from agent.task_manager import TaskManager
+        task_manager = TaskManager(run_id)
+        self._build_task_registry(task_manager)
+
+        return await self.run(message=message, canvas_state=canvas_state,
+                              run_id=run_id)
