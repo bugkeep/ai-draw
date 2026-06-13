@@ -1,3 +1,4 @@
+import time
 from tools.base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 from agent.task_manager import TaskManager
 
@@ -43,7 +44,7 @@ class TaskCreateTool(BaseTool):
 
 
 class TaskUpdateTool(BaseTool):
-    """Update an existing task — status, subject, description, or dependencies."""
+    """Update an existing task with revision-based conflict detection."""
 
     def __init__(self, task_manager: TaskManager):
         self._tm = task_manager
@@ -51,19 +52,30 @@ class TaskUpdateTool(BaseTool):
     def definition(self) -> ToolDefinition:
         return ToolDefinition(
             name="task_update",
-            description="Update a task's status or content",
+            description=(
+                "Update a task's status, content, owner, or renew its lease. "
+                "Include ``revision`` (the number you last read) for safe "
+                "conflict-free updates.  Use ``lease_seconds`` as heartbeat."
+            ),
             parameters=[
                 ToolParameter(name="task_id", type="integer",
                               description="Task ID to update", required=True),
                 ToolParameter(name="status", type="string",
                               description="New status",
-                              enum=["pending", "in_progress", "completed"]),
+                              enum=["pending", "in_progress", "completed",
+                                    "failed", "cancelled"]),
                 ToolParameter(name="subject", type="string",
                               description="New subject"),
                 ToolParameter(name="description", type="string",
                               description="New description"),
                 ToolParameter(name="blocked_by", type="string",
                               description="Comma-separated dependency task IDs, e.g. '1,3'"),
+                ToolParameter(name="assigned_agent", type="string",
+                              description="Agent name that owns this task (e.g. 'drawing-agent-1')"),
+                ToolParameter(name="revision", type="integer",
+                              description="Expected revision for conflict check (omit to skip check)"),
+                ToolParameter(name="lease_seconds", type="integer",
+                              description="Extend lease by N seconds (heartbeat)"),
             ],
         )
 
@@ -71,15 +83,38 @@ class TaskUpdateTool(BaseTool):
         task_id = kwargs.get("task_id")
         if task_id is None:
             return ToolResult(is_error=True, error="task_id is required")
+
         updates = {}
         for key in ("subject", "description", "status"):
             if key in kwargs and kwargs[key] is not None:
                 updates[key] = kwargs[key]
         if "blocked_by" in kwargs and kwargs["blocked_by"] is not None:
             updates["blocked_by"] = _parse_blocked_by(kwargs["blocked_by"])
-        task = self._tm.update(task_id, **updates)
-        if task is None:
-            return ToolResult(is_error=True, error=f"Task #{task_id} not found")
+        if "assigned_agent" in kwargs and kwargs["assigned_agent"] is not None:
+            updates["assigned_agent"] = kwargs["assigned_agent"]
+        if "revision" in kwargs and kwargs["revision"] is not None:
+            updates["revision"] = kwargs["revision"]
+        if "lease_seconds" in kwargs and kwargs["lease_seconds"] is not None:
+            updates["lease_seconds"] = kwargs["lease_seconds"]
+
+        result = self._tm.update(task_id, **updates)
+
+        if not result["ok"]:
+            if result["error"] == "TASK_CONFLICT":
+                return ToolResult(
+                    is_error=True,
+                    error=(
+                        f"TASK_CONFLICT: owned by {result['current_owner']} "
+                        f"at revision {result['current_revision']}"
+                    ),
+                    data={
+                        "current_revision": result["current_revision"],
+                        "current_owner": result["current_owner"],
+                    },
+                )
+            return ToolResult(is_error=True, error=result["error"])
+
+        task = result["task"]
         return ToolResult(
             data=task,
             description=f"Updated task #{task_id}: {task['status']}",
@@ -87,7 +122,7 @@ class TaskUpdateTool(BaseTool):
 
 
 class TaskListTool(BaseTool):
-    """List all tasks, optionally filtered by status."""
+    """List all tasks in a compact sectioned view."""
 
     def __init__(self, task_manager: TaskManager):
         self._tm = task_manager
@@ -95,23 +130,16 @@ class TaskListTool(BaseTool):
     def definition(self) -> ToolDefinition:
         return ToolDefinition(
             name="task_list",
-            description="List all tasks, optionally filtered by status",
-            parameters=[
-                ToolParameter(name="status", type="string",
-                              description="Filter by status",
-                              enum=["pending", "in_progress", "completed"]),
-            ],
+            description="List all tasks in sectioned format (READY / RUNNING / BLOCKED / DONE / FAILED / CANCELLED)",
+            parameters=[],
         )
 
     def execute(self, **kwargs) -> ToolResult:
-        status = kwargs.get("status")
-        tasks = self._tm.list(status=status)
-        summary = f"{len(tasks)} task(s)"
-        if status:
-            summary += f" with status '{status}'"
+        formatted = self._tm.format_list()
+        tasks = self._tm.list()
         return ToolResult(
             data=tasks,
-            description=summary,
+            description=formatted or "No tasks yet",
         )
 
 
@@ -124,7 +152,7 @@ class TaskGetTool(BaseTool):
     def definition(self) -> ToolDefinition:
         return ToolDefinition(
             name="task_get",
-            description="Get details of a specific task by ID",
+            description="Get full details of a specific task by ID",
             parameters=[
                 ToolParameter(name="task_id", type="integer",
                               description="Task ID", required=True),
