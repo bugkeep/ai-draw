@@ -342,6 +342,12 @@ class AgentRunner:
         for tool_cls in TASK_TOOLS:
             self.registry.register(tool_cls(task_manager))
 
+    def _build_session_tools(self, store):
+        """Register session-aware tools (e.g. note_save)."""
+        from agent.session_tools import SESSION_TOOLS
+        for tool_cls in SESSION_TOOLS:
+            self.registry.register(tool_cls(store))
+
     async def run_and_capture(self, message: str, canvas_state: dict | None = None,
                                run_id: str | None = None,
                                history: list[dict] | None = None,
@@ -355,7 +361,8 @@ class AgentRunner:
         plan and track its own tasks.
 
         When ``session`` and ``store`` are provided, context is restored
-        from the session (full thread replay + notes injection).
+        from the session (full thread replay + notes injection) and
+        session-aware tools (note_save) are registered.
         """
         if run_id is None:
             run_id = new_run_id()
@@ -363,6 +370,9 @@ class AgentRunner:
         from agent.task_manager import TaskManager
         task_manager = TaskManager(run_id)
         self._build_task_registry(task_manager)
+
+        if store is not None:
+            self._build_session_tools(store)
 
         from .prompts import PLANNING_SYSTEM_PROMPT
         self.system_prompt = PLANNING_SYSTEM_PROMPT
