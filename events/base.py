@@ -26,11 +26,14 @@ class EventType(Enum):
     LLM_REQUEST = "llm_request"
     LLM_RESPONSE = "llm_response"
     LLM_ERROR = "llm_error"
+    LLM_RETRY = "llm_retry"
 
     # 诊断事件 - Tool
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
     TOOL_ERROR = "tool_error"
+    TOOL_BLOCKED = "tool_blocked"        # 权限审批拒绝
+    TOOL_VALIDATION_ERROR = "tool_validation_error"  # 参数校验失败
 
     # 诊断事件 - Agent
     AGENT_START = "agent_start"

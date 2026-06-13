@@ -45,7 +45,8 @@
       "Bash(git *)",
       "Bash(python -m pytest tests/ -x -q --ignore=tests/test_e2e.py --tb=short)",
       "Bash(timeout 60 python -m pytest tests/ -x -q --ignore=tests/test_e2e.py --tb=short -k \"not Tcp\")",
-      "Bash(timeout 60 python -m pytest tests/ -x -q --ignore=tests/test_e2e.py --tb=short -k \"not Tcp and not test_register_all_drawing_tools\")"
+      "Bash(timeout 60 python -m pytest tests/ -x -q --ignore=tests/test_e2e.py --tb=short -k \"not Tcp and not test_register_all_drawing_tools\")",
+      "Bash(python -c \"import pydantic; print\\(pydantic.__version__\\)\")"
     ]
   }
 }

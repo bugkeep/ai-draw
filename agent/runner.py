@@ -31,6 +31,16 @@ class ToolResultStatus(Enum):
 def classify_tool_error(result: ToolResult, tool_name: str, registry: ToolRegistry) -> ToolResultStatus:
     if not result.is_error:
         return ToolResultStatus.SUCCESS
+    et = result.error_type
+    if et == "not_found":
+        return ToolResultStatus.FAILED_NOT_FOUND
+    if et == "invalid_args":
+        return ToolResultStatus.FAILED_INVALID_ARGS
+    if et == "permission_denied" or et == "execution_error":
+        return ToolResultStatus.FAILED_EXECUTION
+    if et == "exception":
+        return ToolResultStatus.FAILED_UNKNOWN
+    # fallback: string matching (backward compat)
     error = result.error.lower()
     if "unknown tool" in error:
         return ToolResultStatus.FAILED_NOT_FOUND
@@ -242,11 +252,30 @@ class AgentRunner:
         }, run_id=run_id, round_num=round_num)
 
         t0 = time.time()
-        try:
-            response = await self.provider.achat(
+
+        async def _call_llm():
+            return await self.provider.achat(
                 messages=messages,
                 tools=tools if tools else None,
                 step=round_num,
+            )
+
+        try:
+            from .retry import retry_with_backoff
+
+            async def _on_retry(attempt: int, delay: float, err: str):
+                await self._dispatch_event(EventType.LLM_RETRY, {
+                    "model": model,
+                    "attempt": attempt + 1,
+                    "delay_ms": round(delay * 1000),
+                    "error": err[:200],
+                }, run_id=run_id, round_num=round_num)
+
+            response, attempts = await retry_with_backoff(
+                _call_llm,
+                max_retries=2,
+                base_delay=1.0,
+                on_retry=_on_retry,
             )
             latency_ms = round((time.time() - t0) * 1000, 1)
 
@@ -257,6 +286,7 @@ class AgentRunner:
                 "tool_calls": len(response.tool_calls),
                 "tokens_used": response.tokens_used,
                 "latency_ms": latency_ms,
+                "retries": attempts - 1,
             }, run_id=run_id, round_num=round_num)
 
             return response, None
@@ -290,11 +320,20 @@ class AgentRunner:
             status = classify_tool_error(result, tc.name, self.registry)
             latency_ms = round((time.time() - t0) * 1000, 1)
 
+            # pick the right event type based on error_type
+            if result.error_type == "permission_denied":
+                event_type = EventType.TOOL_BLOCKED
+            elif result.error_type == "invalid_args":
+                event_type = EventType.TOOL_VALIDATION_ERROR
+            else:
+                event_type = EventType.TOOL_RESULT if not result.is_error else EventType.TOOL_ERROR
+
             await self._dispatch_event(
-                EventType.TOOL_RESULT if not result.is_error else EventType.TOOL_ERROR,
+                event_type,
                 {
                     "name": tc.name,
                     "is_error": result.is_error,
+                    "error_type": result.error_type,
                     "status": status.value,
                     "latency_ms": latency_ms,
                     "error": result.error,
@@ -308,6 +347,7 @@ class AgentRunner:
                 "arguments": tc.arguments,
                 "is_error": result.is_error,
                 "status": status,
+                "error_type": result.error_type,
                 "code": result.code,
                 "description": result.description,
                 "error": result.error,

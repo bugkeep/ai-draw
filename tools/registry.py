@@ -1,10 +1,13 @@
 from typing import Any
-from .base import BaseTool, ToolDefinition, ToolResult
+from pydantic import ValidationError
+from .base import BaseTool, ToolResult
+from .permissions import PermissionChecker
 
 
 class ToolRegistry:
-    def __init__(self):
+    def __init__(self, permissions: PermissionChecker | None = None):
         self._tools: dict[str, BaseTool] = {}
+        self.permissions = permissions or PermissionChecker()
 
     def register(self, tool: BaseTool) -> "ToolRegistry":
         defn = tool.definition()
@@ -23,15 +26,39 @@ class ToolRegistry:
         return [tool.definition().to_openai() for tool in self._tools.values()]
 
     def execute(self, name: str, **kwargs) -> ToolResult:
-        if name not in self._tools:
-            return ToolResult(is_error=True, error=f"Unknown tool: {name}", error_type="not_found")
+        tool = self._tools.get(name)
+        if tool is None:
+            return ToolResult(is_error=True, error=f"Unknown tool: {name}",
+                              error_type="not_found")
+
+        # 1. Permission approval
+        if not self.permissions.approve(name, kwargs):
+            return ToolResult(
+                is_error=True,
+                error=f"Permission denied: tool '{name}' is not allowed",
+                error_type="permission_denied",
+            )
+
+        # 2. Pydantic parameter validation
         try:
-            result = self._tools[name].execute(**kwargs)
+            validated = tool.validate_params(kwargs)
+        except ValidationError as e:
+            return ToolResult(
+                is_error=True,
+                error=f"Invalid arguments for '{name}': {e}",
+                error_type="invalid_args",
+            )
+
+        # 3. Execute
+        try:
+            result = tool.execute(**validated)
             if result.is_error and not result.error_type:
                 result.error_type = "execution_error"
             return result
         except Exception as e:
-            return ToolResult(is_error=True, error=f"Tool execution failed: {e}", error_type="exception")
+            return ToolResult(is_error=True,
+                              error=f"Tool execution failed: {e}",
+                              error_type="exception")
 
     def list_tools(self) -> list[str]:
         return list(self._tools.keys())

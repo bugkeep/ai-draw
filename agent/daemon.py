@@ -44,7 +44,9 @@ class TCPServer:
             raise ValueError(f"Handler for '{action}' must be async")
         self._handlers[action] = handler
 
-    def init_runner(self, provider: str = "openai", api_key: str = ""):
+    def init_runner(self, provider: str = "openai", api_key: str = "",
+                     block_tools: list[str] | None = None,
+                     allow_tools: list[str] | None = None):
         providers = {
             "openai": lambda key: OpenAIProvider(
                 api_key=key or os.environ.get("OPENAI_API_KEY", ""),
@@ -57,7 +59,15 @@ class TCPServer:
         }
         provider_fn = providers.get(provider, providers["openai"])
         prov = provider_fn(api_key)
-        registry = ToolRegistry()
+
+        from tools.permissions import PermissionChecker
+        perms = PermissionChecker()
+        if block_tools:
+            perms.block(*block_tools)
+        if allow_tools:
+            perms.allow_only(*allow_tools)
+
+        registry = ToolRegistry(permissions=perms)
         for tool_cls in ALL_TOOLS:
             registry.register(tool_cls())
         config = AgentConfig(provider=prov, registry=registry, event_bus=self.event_bus, tracer=self.tracer)
@@ -86,8 +96,39 @@ class TCPServer:
             "rounds": result.rounds,
         }
 
+    async def handle_update_permissions(self, payload: dict) -> dict:
+        """Update tool permissions at runtime.
+
+        Payload::
+
+            {
+              "block": ["bash"],          // add to blocklist
+              "unblock": ["search_text"], // remove from blocklist
+              "allow_only": null,         // set to [] to allow all
+            }
+        """
+        if self._runner is None:
+            return {"error": "No active runner"}
+
+        perms = self._runner.registry.permissions
+
+        blocked = payload.get("block")
+        if blocked:
+            perms.block(*blocked)
+
+        unblocked = payload.get("unblock")
+        if unblocked:
+            perms.unblock(*unblocked)
+
+        allow_only = payload.get("allow_only")
+        if allow_only is not None:
+            perms.allow_only(*allow_only)
+
+        return {"status": "ok"}
+
     async def start(self):
         self._handlers.setdefault("chat", self.handle_chat)
+        self._handlers.setdefault("update_permissions", self.handle_update_permissions)
         await self.event_bus.dispatch(
             SocketStartEvent(host=self.host, port=self.port)
         )
