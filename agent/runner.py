@@ -110,7 +110,9 @@ class AgentRunner:
                 self.registry.register(tool)
         return self
 
-    async def run(self, message: str, canvas_state: dict | None = None, run_id: str | None = None) -> AgentResponse:
+    async def run(self, message: str, canvas_state: dict | None = None,
+                   run_id: str | None = None,
+                   history: list[dict] | None = None) -> AgentResponse:
         if run_id is None:
             run_id = new_run_id()
         canvas_state = canvas_state or {}
@@ -119,8 +121,10 @@ class AgentRunner:
 
         messages: list[dict] = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": message},
         ]
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": message})
         tool_defs = self.registry.get_tool_definitions()
 
         all_code: list[str] = []
@@ -316,7 +320,8 @@ class AgentRunner:
             self.registry.register(tool_cls(task_manager))
 
     async def run_and_capture(self, message: str, canvas_state: dict | None = None,
-                               run_id: str | None = None) -> AgentResponse:
+                               run_id: str | None = None,
+                               history: list[dict] | None = None) -> AgentResponse:
         """Run with task-planning tools enabled.
 
         Creates a ``TaskManager`` bound to this run's ``.tasks/``
@@ -335,4 +340,4 @@ class AgentRunner:
         self.system_prompt = PLANNING_SYSTEM_PROMPT
 
         return await self.run(message=message, canvas_state=canvas_state,
-                              run_id=run_id)
+                              run_id=run_id, history=history)

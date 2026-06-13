@@ -37,6 +37,9 @@ class EventType(Enum):
     AGENT_STOP = "agent_stop"
     AGENT_ERROR = "agent_error"
 
+    # 会话事件
+    SESSION_CREATED = "session_created"
+
 
 @dataclass
 class BaseEvent:

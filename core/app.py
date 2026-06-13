@@ -116,3 +116,86 @@ class AgentRunHandler:
         if self._running_runs:
             await asyncio.gather(*self._running_runs.values(), return_exceptions=True)
         self._running_runs.clear()
+
+
+class SessionHandler:
+    """Manages persistent conversation sessions.
+
+    ``session.create`` returns a new ``session_id``.
+    ``session.send_message`` injects past history into the agent run so the
+    LLM sees the full conversation — not just the current turn.
+    """
+
+    def __init__(self, daemon):
+        self._daemon = daemon
+        from agent.session_manager import SessionManager
+        self._session_manager = SessionManager()
+        self._running_runs: dict[str, asyncio.Task] = {}
+
+    async def handle_create(self, payload: dict) -> dict:
+        from agent.runner import new_run_id
+
+        provider = payload.get("provider", "openai")
+        api_key = payload.get("api_key", "")
+        session_id = self._session_manager.create(provider, api_key)
+
+        await self._daemon.event_bus.dispatch(
+            BaseEvent(EventType.SESSION_CREATED, {"session_id": session_id},
+                      run_id=session_id)
+        )
+
+        return {"session_id": session_id}
+
+    async def handle_send_message(self, payload: dict) -> dict:
+        from agent.runner import new_run_id
+
+        session_id = payload.get("session_id", "")
+        message = payload.get("message", "")
+
+        if not session_id or not message:
+            return {"error": "session_id and message are required"}
+
+        session = self._session_manager.get_session(session_id)
+        if session is None:
+            return {"error": f"Session not found: {session_id}"}
+
+        history = self._session_manager.get_history(session_id)
+        provider = session.get("provider", "openai")
+        api_key = session.get("api_key", "")
+
+        run_id = new_run_id()
+        self._daemon.init_runner(provider, api_key)
+
+        task = asyncio.create_task(
+            self._run_and_save(session_id, history, message, run_id)
+        )
+        self._running_runs[run_id] = task
+        task.add_done_callback(lambda _: self._running_runs.pop(run_id, None))
+
+        return {"run_id": run_id}
+
+    async def _run_and_save(self, session_id: str, history: list[dict],
+                             message: str, run_id: str):
+        self._session_manager.append_message(session_id, "user", message)
+        try:
+            result = await self._daemon._runner.run_and_capture(
+                message=message,
+                history=history,
+                run_id=run_id,
+            )
+            self._session_manager.append_message(
+                session_id, "assistant", result.content,
+                tool_calls=[{"name": tc["name"], "status": tc.get("status")}
+                            for tc in result.tool_calls],
+            )
+        except Exception as e:
+            self._session_manager.append_message(
+                session_id, "assistant", f"Error: {e}",
+            )
+
+    async def cancel_all_runs(self):
+        for run_id, task in list(self._running_runs.items()):
+            task.cancel()
+        if self._running_runs:
+            await asyncio.gather(*self._running_runs.values(), return_exceptions=True)
+        self._running_runs.clear()
