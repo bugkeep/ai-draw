@@ -61,13 +61,24 @@ class TCPServer:
         prov = provider_fn(api_key)
 
         from tools.permissions import PermissionChecker
-        perms = PermissionChecker()
+
+        def _on_permission_request(req_id: str, tool_name: str, args: dict):
+            asyncio.ensure_future(self.event_bus.dispatch(
+                BaseEvent(EventType.PERMISSION_REQUESTED, {
+                    "request_id": req_id,
+                    "tool_name": tool_name,
+                    "arguments": args,
+                })
+            ))
+
+        perms = PermissionChecker(on_request=_on_permission_request)
         if block_tools:
             perms.block(*block_tools)
         if allow_tools:
             perms.allow_only(*allow_tools)
 
-        registry = ToolRegistry(permissions=perms)
+        registry = ToolRegistry()
+        registry.permissions = perms
         for tool_cls in ALL_TOOLS:
             registry.register(tool_cls())
         config = AgentConfig(provider=prov, registry=registry, event_bus=self.event_bus, tracer=self.tracer)
@@ -126,9 +137,33 @@ class TCPServer:
 
         return {"status": "ok"}
 
+    async def handle_permission_respond(self, payload: dict) -> dict:
+        """Resolve a pending permission request.
+
+        Called by the frontend after the user sees the approval card::
+
+            {"action": "permission_respond",
+             "payload": {"request_id": "...", "approved": true}}
+        """
+        if self._runner is None:
+            return {"error": "No active runner"}
+        perms = self._runner.registry.permissions
+        req_id = payload.get("request_id", "")
+        approved = payload.get("approved", False)
+        found = perms.respond(req_id, approved)
+        if found:
+            await self.event_bus.dispatch(
+                BaseEvent(EventType.PERMISSION_RESPONDED, {
+                    "request_id": req_id, "approved": approved,
+                })
+            )
+            return {"status": "ok"}
+        return {"status": "not_found"}
+
     async def start(self):
         self._handlers.setdefault("chat", self.handle_chat)
         self._handlers.setdefault("update_permissions", self.handle_update_permissions)
+        self._handlers.setdefault("permission_respond", self.handle_permission_respond)
         await self.event_bus.dispatch(
             SocketStartEvent(host=self.host, port=self.port)
         )

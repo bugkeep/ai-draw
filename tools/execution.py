@@ -166,20 +166,45 @@ class BashTool(BaseTool):
                 cwd=PROJECT_ROOT,
             )
         except subprocess.TimeoutExpired:
-            return ToolResult(is_error=True, error=f"Command timed out after {timeout}s")
+            return ToolResult(
+                is_error=True, error_type="timeout",
+                error=f"Command timed out after {timeout}s",
+            )
+        except FileNotFoundError as e:
+            return ToolResult(
+                is_error=True, error_type="execution_error",
+                error=f"Command not found: {e}",
+            )
+        except PermissionError as e:
+            return ToolResult(
+                is_error=True, error_type="execution_error",
+                error=f"Permission denied: {e}",
+            )
         except Exception as e:
-            return ToolResult(is_error=True, error=f"Command failed: {e}")
+            return ToolResult(
+                is_error=True, error_type="exception",
+                error=f"Command failed: {e}",
+            )
 
         stdout = result.stdout.decode("utf-8", errors="replace")
         stderr = result.stderr.decode("utf-8", errors="replace")
         output = stdout + stderr
 
+        if result.returncode != 0:
+            # non-zero exit — execution error
+            return ToolResult(
+                is_error=True, error_type="execution_error",
+                error=f"Exit code {result.returncode}",
+                data={"exit_code": result.returncode, "output": output},
+                description=f"Exit code: {result.returncode} ({len(output)} bytes)",
+            )
+
         if len(output) > self.MAX_OUTPUT:
             output = output[:self.MAX_OUTPUT] + "\n... (truncated at 64KB)"
 
         return ToolResult(
-            data={"exit_code": result.returncode, "output": output},
-            description=f"Exit code: {result.returncode} ({len(output)} bytes)",
+            data={"exit_code": 0, "output": output},
+            description=f"Exit code: 0 ({len(output)} bytes)",
         )
 
 

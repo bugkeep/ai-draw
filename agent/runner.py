@@ -22,9 +22,12 @@ def new_run_id() -> str:
 
 class ToolResultStatus(Enum):
     SUCCESS = "success"
-    FAILED_EXECUTION = "failed_execution"
-    FAILED_NOT_FOUND = "failed_not_found"
     FAILED_INVALID_ARGS = "failed_invalid_args"
+    FAILED_NOT_FOUND = "failed_not_found"
+    FAILED_PERMISSION = "failed_permission"
+    FAILED_TIMEOUT = "failed_timeout"
+    FAILED_RATE_LIMITED = "failed_rate_limited"
+    FAILED_EXECUTION = "failed_execution"
     FAILED_UNKNOWN = "failed_unknown"
 
 
@@ -32,20 +35,30 @@ def classify_tool_error(result: ToolResult, tool_name: str, registry: ToolRegist
     if not result.is_error:
         return ToolResultStatus.SUCCESS
     et = result.error_type
-    if et == "not_found":
-        return ToolResultStatus.FAILED_NOT_FOUND
     if et == "invalid_args":
         return ToolResultStatus.FAILED_INVALID_ARGS
-    if et == "permission_denied" or et == "execution_error":
+    if et == "not_found":
+        return ToolResultStatus.FAILED_NOT_FOUND
+    if et == "permission_denied":
+        return ToolResultStatus.FAILED_PERMISSION
+    if et == "timeout":
+        return ToolResultStatus.FAILED_TIMEOUT
+    if et == "rate_limited":
+        return ToolResultStatus.FAILED_RATE_LIMITED
+    if et in ("execution_error", "exception"):
         return ToolResultStatus.FAILED_EXECUTION
-    if et == "exception":
-        return ToolResultStatus.FAILED_UNKNOWN
-    # fallback: string matching (backward compat)
+    # fallback: string matching
     error = result.error.lower()
+    if "timed out" in error or "timeout" in error:
+        return ToolResultStatus.FAILED_TIMEOUT
+    if "rate limit" in error or "too many requests" in error or "429" in error:
+        return ToolResultStatus.FAILED_RATE_LIMITED
     if "unknown tool" in error:
         return ToolResultStatus.FAILED_NOT_FOUND
     if "required" in error or "missing" in error or "invalid" in error:
         return ToolResultStatus.FAILED_INVALID_ARGS
+    if "permission" in error or "not allowed" in error:
+        return ToolResultStatus.FAILED_PERMISSION
     if "failed" in error or "error" in error or "exception" in error:
         return ToolResultStatus.FAILED_EXECUTION
     return ToolResultStatus.FAILED_UNKNOWN
@@ -311,6 +324,64 @@ class AgentRunner:
     async def _act(self, tool_calls: list[ToolCall], run_id: str = "", round_num: int = 0) -> list[dict]:
         results = []
         for tc in tool_calls:
+            tool = self.registry.get(tc.name)
+
+            # ── 0. tool not found ─────────────────────────────────────────
+            if tool is None:
+                await self._dispatch_event(EventType.TOOL_ERROR, {
+                    "name": tc.name, "is_error": True,
+                    "error_type": "not_found", "status": "failed_not_found",
+                    "error": f"Unknown tool: {tc.name}",
+                }, run_id=run_id, round_num=round_num)
+                results.append({
+                    "tool_call_id": tc.id,
+                    "name": tc.name, "arguments": tc.arguments,
+                    "is_error": True, "status": ToolResultStatus.FAILED_NOT_FOUND,
+                    "error_type": "not_found", "code": "", "description": "",
+                    "error": f"Unknown tool: {tc.name}",
+                })
+                continue
+
+            # ── 1. Pydantic parameter validation ──────────────────────────
+            try:
+                validated = tool.validate_params(tc.arguments)
+            except Exception as e:
+                await self._dispatch_event(EventType.TOOL_VALIDATION_ERROR, {
+                    "name": tc.name, "is_error": True,
+                    "error_type": "invalid_args",
+                    "status": "failed_invalid_args",
+                    "error": str(e),
+                }, run_id=run_id, round_num=round_num)
+                results.append({
+                    "tool_call_id": tc.id,
+                    "name": tc.name, "arguments": tc.arguments,
+                    "is_error": True, "status": ToolResultStatus.FAILED_INVALID_ARGS,
+                    "error_type": "invalid_args", "code": "", "description": "",
+                    "error": str(e),
+                })
+                continue
+
+            # ── 2. Permission check (may wait for user) ────────────────────
+            perms = self.registry.permissions
+            approved, req_id = await perms.check_and_wait(tc.name, validated)
+
+            if not approved:
+                await self._dispatch_event(EventType.TOOL_BLOCKED, {
+                    "name": tc.name, "is_error": True,
+                    "error_type": "permission_denied",
+                    "status": "failed_permission",
+                    "error": f"Permission denied: '{tc.name}'",
+                }, run_id=run_id, round_num=round_num)
+                results.append({
+                    "tool_call_id": tc.id,
+                    "name": tc.name, "arguments": tc.arguments,
+                    "is_error": True, "status": ToolResultStatus.FAILED_PERMISSION,
+                    "error_type": "permission_denied", "code": "", "description": "",
+                    "error": f"Permission denied: '{tc.name}'",
+                })
+                continue
+
+            # ── 3. Execute tool ───────────────────────────────────────────
             await self._dispatch_event(EventType.TOOL_CALL, {
                 "name": tc.name, "arguments": tc.arguments,
             }, run_id=run_id, round_num=round_num)
@@ -320,14 +391,7 @@ class AgentRunner:
             status = classify_tool_error(result, tc.name, self.registry)
             latency_ms = round((time.time() - t0) * 1000, 1)
 
-            # pick the right event type based on error_type
-            if result.error_type == "permission_denied":
-                event_type = EventType.TOOL_BLOCKED
-            elif result.error_type == "invalid_args":
-                event_type = EventType.TOOL_VALIDATION_ERROR
-            else:
-                event_type = EventType.TOOL_RESULT if not result.is_error else EventType.TOOL_ERROR
-
+            event_type = EventType.TOOL_RESULT if not result.is_error else EventType.TOOL_ERROR
             await self._dispatch_event(
                 event_type,
                 {
@@ -352,6 +416,7 @@ class AgentRunner:
                 "description": result.description,
                 "error": result.error,
             })
+
         return results
 
     def _format_canvas_state(self, state: dict) -> str:

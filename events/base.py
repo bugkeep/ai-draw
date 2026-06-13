@@ -43,6 +43,10 @@ class EventType(Enum):
     # 会话事件
     SESSION_CREATED = "session_created"
 
+    # 权限事件
+    PERMISSION_REQUESTED = "permission_requested"
+    PERMISSION_RESPONDED = "permission_responded"
+
 
 @dataclass
 class BaseEvent:
