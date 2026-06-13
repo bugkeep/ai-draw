@@ -9,6 +9,7 @@ __all__ = [
     "ProtocolResponse",
     "Session",
     "QueuedMessage",
+    "EventPushEnvelope",
     "ProtocolHandler",
     "SessionManager",
     "MessageQueue",

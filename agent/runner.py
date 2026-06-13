@@ -8,6 +8,7 @@ from typing import Any
 from providers.base import LLMProvider, LLMResponse, ToolCall
 from tools.base import ToolResult
 from tools.registry import ToolRegistry
+from traces import DaemonTracer
 from events import EventBus, EventType, BaseEvent
 from .prompts import SYSTEM_PROMPT
 
@@ -70,6 +71,7 @@ class AgentConfig:
     provider: LLMProvider | None = None
     registry: ToolRegistry | None = None
     event_bus: EventBus | None = None
+    tracer: DaemonTracer | None = None
     system_prompt: str = SYSTEM_PROMPT
     max_rounds: int = 5
 
@@ -80,6 +82,7 @@ class AgentRunner:
         self.provider = config.provider
         self.registry = config.registry or ToolRegistry()
         self.event_bus = config.event_bus or EventBus()
+        self.tracer = config.tracer
         self.system_prompt = config.system_prompt
         self.max_rounds = config.max_rounds
 
@@ -207,6 +210,9 @@ class AgentRunner:
             "tool_count": tool_count,
         }, run_id=run_id, round_num=round_num)
 
+        if self.tracer:
+            self.tracer.on_llm_request(model, len(messages), tool_count, run_id=run_id)
+
         t0 = time.time()
         try:
             response = await self.provider.achat(
@@ -224,6 +230,12 @@ class AgentRunner:
                 "latency_ms": latency_ms,
             }, run_id=run_id, round_num=round_num)
 
+            if self.tracer:
+                self.tracer.on_llm_response(
+                    model, content_snippet, len(response.tool_calls),
+                    response.tokens_used, latency_ms, run_id=run_id,
+                )
+
             return response, None
         except Exception as e:
             latency_ms = round((time.time() - t0) * 1000, 1)
@@ -232,6 +244,10 @@ class AgentRunner:
                 "error": str(e),
                 "latency_ms": latency_ms,
             }, run_id=run_id, round_num=round_num)
+
+            if self.tracer:
+                self.tracer.on_llm_error(model, str(e), latency_ms, run_id=run_id)
+
             return None, f"LLM call failed: {e}"
 
     def _observe(self, response: LLMResponse) -> str:

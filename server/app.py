@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse
 from events import EventBus, EventBroadcaster
 from agent.daemon import TCPServer
 from core.app import JsonlRecorder
+from traces import DaemonTracer
 from .routes import router
 from .daemon_client import DaemonClient
 
@@ -18,9 +19,11 @@ def create_app() -> FastAPI:
     app = FastAPI(title="AI Voice Draw", version="0.1.0")
 
     event_bus = EventBus()
+    tracer = DaemonTracer()
+    event_bus.register_global(tracer.on_eventbus_event)
     broadcaster = EventBroadcaster(event_bus)
     _recorder = JsonlRecorder(event_bus)
-    daemon = TCPServer(port=DAEMON_PORT, broadcaster=broadcaster, event_bus=event_bus)
+    daemon = TCPServer(port=DAEMON_PORT, broadcaster=broadcaster, event_bus=event_bus, tracer=tracer)
     app.state.event_bus = event_bus
     app.state.broadcaster = broadcaster
     app.state.daemon = daemon

@@ -24,3 +24,4 @@ venv/
 .venv/
 .idea/
 runs/
+traces/*.jsonl

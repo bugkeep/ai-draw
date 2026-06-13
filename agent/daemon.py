@@ -18,6 +18,7 @@ from events import (
     Subscription,
 )
 from core.app import _replay_events, events_file
+from traces import DaemonTracer
 from providers.openai_provider import OpenAIProvider
 from providers.bailian_provider import BailianProvider
 from tools import ALL_TOOLS
@@ -26,11 +27,12 @@ from agent.runner import AgentRunner, AgentConfig
 
 
 class TCPServer:
-    def __init__(self, host: str = "127.0.0.1", port: int = 8765, broadcaster: EventBroadcaster | None = None, event_bus: EventBus | None = None):
+    def __init__(self, host: str = "127.0.0.1", port: int = 8765, broadcaster: EventBroadcaster | None = None, event_bus: EventBus | None = None, tracer: DaemonTracer | None = None):
         self.host = host
         self.port = port
         self.broadcaster = broadcaster
         self.event_bus = event_bus or EventBus()
+        self.tracer = tracer
         self._handlers: dict[str, Callable] = {}
         self._runner: AgentRunner | None = None
         self._current_provider = ""
@@ -57,7 +59,7 @@ class TCPServer:
         registry = ToolRegistry()
         for tool_cls in ALL_TOOLS:
             registry.register(tool_cls())
-        config = AgentConfig(provider=prov, registry=registry, event_bus=self.event_bus)
+        config = AgentConfig(provider=prov, registry=registry, event_bus=self.event_bus, tracer=self.tracer)
         self._runner = AgentRunner(config)
         self._current_provider = provider
         self._current_api_key = api_key
@@ -142,10 +144,16 @@ class TCPServer:
                     error_response = json.dumps({"error": f"Invalid JSON: {e}"}) + "\n"
                     writer.write(error_response.encode())
                     await writer.drain()
+                    if self.tracer:
+                        self.tracer.on_ipc_request("_parse_error", {"raw": data.decode().strip()[:200]})
+                        self.tracer.on_ipc_response("_parse_error", {"error": str(e)})
                     continue
 
                 action = message.get("action")
                 payload = message.get("payload", {})
+
+                if self.tracer:
+                    self.tracer.on_ipc_request(action, payload)
 
                 await self.event_bus.dispatch(
                     BaseEvent(EventType.VOICE_RECEIVED, payload)
@@ -169,6 +177,9 @@ class TCPServer:
                     writer.write(response.encode())
                     await writer.drain()
 
+                    if self.tracer:
+                        self.tracer.on_ipc_response("event_subscribe", result, run_id=run_id)
+
                     if run_id:
                         await _replay_events(run_id, writer)
 
@@ -189,6 +200,9 @@ class TCPServer:
                 response = json.dumps(result) + "\n"
                 writer.write(response.encode())
                 await writer.drain()
+
+                if self.tracer:
+                    self.tracer.on_ipc_response(action, result, run_id=result.get("run_id", ""))
 
         except asyncio.IncompleteReadError:
             await self.event_bus.dispatch(
