@@ -17,7 +17,7 @@ from events import (
     EventBroadcaster,
     Subscription,
 )
-from core.app import _replay_events
+from core.app import _replay_events, events_file
 from providers.openai_provider import OpenAIProvider
 from providers.bailian_provider import BailianProvider
 from tools import ALL_TOOLS
@@ -156,8 +156,21 @@ class TCPServer:
                     scope = payload.get("scope", "global")
 
                     count = 0
+                    run_id = ""
                     if scope.startswith("run:"):
-                        count = await _replay_events(scope[4:], writer)
+                        run_id = scope[4:]
+                        fp = events_file(run_id)
+                        if os.path.isfile(fp):
+                            with open(fp, encoding="utf-8") as f:
+                                count = sum(1 for line in f if line.strip())
+
+                    result = {"replayed_count": count}
+                    response = json.dumps(result) + "\n"
+                    writer.write(response.encode())
+                    await writer.drain()
+
+                    if run_id:
+                        await _replay_events(run_id, writer)
 
                     if self.broadcaster:
                         self.broadcaster.subscribe(Subscription(
@@ -167,7 +180,7 @@ class TCPServer:
                             scope=scope,
                         ))
 
-                    result = {"replayed_count": count}
+                    continue
                 elif action in self._handlers:
                     result = await self._handlers[action](payload)
                 else:
