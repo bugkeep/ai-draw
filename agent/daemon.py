@@ -145,15 +145,15 @@ class TCPServer:
                     writer.write(error_response.encode())
                     await writer.drain()
                     if self.tracer:
-                        self.tracer.on_ipc_request("_parse_error", {"raw": data.decode().strip()[:200]})
-                        self.tracer.on_ipc_response("_parse_error", {"error": str(e)})
+                        self.tracer.on_ipc_request("_parse_error", {"raw": data.decode().strip()[:200]}, client_id=client_id)
+                        self.tracer.on_ipc_response("_parse_error", {"error": str(e)}, client_id=client_id)
                     continue
 
                 action = message.get("action")
                 payload = message.get("payload", {})
 
                 if self.tracer:
-                    self.tracer.on_ipc_request(action, payload)
+                    self.tracer.on_ipc_request(action, payload, client_id=client_id)
 
                 await self.event_bus.dispatch(
                     BaseEvent(EventType.VOICE_RECEIVED, payload)
@@ -178,7 +178,7 @@ class TCPServer:
                     await writer.drain()
 
                     if self.tracer:
-                        self.tracer.on_ipc_response("event_subscribe", result, run_id=run_id)
+                        self.tracer.on_ipc_response("event_subscribe", result, run_id=run_id, client_id=client_id)
 
                     if run_id:
                         await _replay_events(run_id, writer)
@@ -202,7 +202,7 @@ class TCPServer:
                 await writer.drain()
 
                 if self.tracer:
-                    self.tracer.on_ipc_response(action, result, run_id=result.get("run_id", ""))
+                    self.tracer.on_ipc_response(action, result, run_id=result.get("run_id", ""), client_id=client_id)
 
         except asyncio.IncompleteReadError:
             await self.event_bus.dispatch(

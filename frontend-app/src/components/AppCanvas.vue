@@ -53,7 +53,12 @@ function clear() {
 
 function executeCode(code) {
   try {
-    const fn = new Function('canvas', 'fabric', code)
+    const wrapped = code
+      .split('\n')
+      .filter(line => line.trim())
+      .map(line => `{ ${line} }`)
+      .join('\n')
+    const fn = new Function('canvas', 'fabric', wrapped)
     fn(canvas, fabric)
     canvas.renderAll()
     saveState()

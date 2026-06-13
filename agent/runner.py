@@ -211,7 +211,7 @@ class AgentRunner:
         }, run_id=run_id, round_num=round_num)
 
         if self.tracer:
-            self.tracer.on_llm_request(model, len(messages), tool_count, run_id=run_id)
+            self.tracer.on_llm_request(model, len(messages), tool_count, run_id=run_id, step=round_num)
 
         t0 = time.time()
         try:
@@ -233,7 +233,7 @@ class AgentRunner:
             if self.tracer:
                 self.tracer.on_llm_response(
                     model, content_snippet, len(response.tool_calls),
-                    response.tokens_used, latency_ms, run_id=run_id,
+                    response.tokens_used, latency_ms, run_id=run_id, step=round_num,
                 )
 
             return response, None
@@ -246,7 +246,7 @@ class AgentRunner:
             }, run_id=run_id, round_num=round_num)
 
             if self.tracer:
-                self.tracer.on_llm_error(model, str(e), latency_ms, run_id=run_id)
+                self.tracer.on_llm_error(model, str(e), latency_ms, run_id=run_id, step=round_num)
 
             return None, f"LLM call failed: {e}"
 
