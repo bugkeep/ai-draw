@@ -266,6 +266,18 @@ async function handleTranscript(rawText) {
     else await speak('还没有可以重试的绘图指令')
     return
   }
+  if (command.type === 'export_canvas') {
+    pendingClearConfirmation = false
+    addMessage(command.text, 'user', '', false)
+    const result = canvasRef.value?.exportCanvas(command.format || 'png')
+    if (result?.success) {
+      addMessage(`已导出 ${result.filename}`, 'assistant', '', false)
+      await speak(`已导出${command.format === 'svg' ? '矢量图' : '图片'}`)
+    } else {
+      await speak(`导出失败：${result?.error || '画布还没有准备好'}`)
+    }
+    return
+  }
 
   pendingClearConfirmation = false
   enqueueRemoteCommand(command.text)
