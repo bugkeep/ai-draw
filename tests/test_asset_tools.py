@@ -447,4 +447,4 @@ class TestAssetToolRegistryIntegration:
 
     def test_tool_count_increased(self):
         from tools import ALL_TOOLS
-        assert len(ALL_TOOLS) == 53  # prior tools + object state controls
+        assert len(ALL_TOOLS) == 54  # prior tools + elliptical selection

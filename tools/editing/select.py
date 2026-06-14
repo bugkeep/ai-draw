@@ -166,6 +166,80 @@ canvas.getObjects().filter(obj => {{
         )
 
 
+class SelectByEllipseTool(BaseTool):
+    def definition(self) -> ToolDefinition:
+        return ToolDefinition(
+            name="select_by_ellipse",
+            description="Select objects whose bounding boxes intersect or are contained within an elliptical marquee",
+            parameters=[
+                ToolParameter(name="x", type="number", description="Ellipse bounding box left coordinate", required=True),
+                ToolParameter(name="y", type="number", description="Ellipse bounding box top coordinate", required=True),
+                ToolParameter(name="width", type="number", description="Ellipse bounding box width", required=True),
+                ToolParameter(name="height", type="number", description="Ellipse bounding box height", required=True),
+                ToolParameter(name="mode", type="string", description="Selection mode", required=False, enum=["center", "contain"]),
+                ToolParameter(name="type", type="string", description="Optional object type or semantic_type filter", required=False),
+                ToolParameter(name="color", type="string", description="Optional fill or stroke color filter", required=False),
+            ],
+        )
+
+    def execute(self, **kwargs) -> ToolResult:
+        x = float(kwargs.get("x", 0))
+        y = float(kwargs.get("y", 0))
+        width = float(kwargs.get("width", 0))
+        height = float(kwargs.get("height", 0))
+        mode = kwargs.get("mode") or "center"
+        obj_type = kwargs.get("type", "") or ""
+        color = kwargs.get("color", "") or ""
+        if width <= 0 or height <= 0:
+            return ToolResult(is_error=True, error="width and height must be positive")
+        if mode not in ("center", "contain"):
+            return ToolResult(is_error=True, error=f"Invalid ellipse selection mode: {mode}")
+
+        cx = x + width / 2
+        cy = y + height / 2
+        rx = width / 2
+        ry = height / 2
+        filter_js = _filter_js(obj_type, color)
+        if mode == "contain":
+            hit_test = """
+  const corners = [
+    { x: box.left, y: box.top },
+    { x: box.right, y: box.top },
+    { x: box.right, y: box.bottom },
+    { x: box.left, y: box.bottom }
+  ];
+  return corners.every(point => inEllipse(point.x, point.y));
+""".rstrip()
+        else:
+            hit_test = "  return inEllipse(box.left + box.width / 2, box.top + box.height / 2);"
+        expr = f"""
+canvas.getObjects().filter(obj => {{
+  if (!({filter_js})) return false;
+  const rect = obj.getBoundingRect(true, true);
+  const box = {{
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+    right: rect.left + rect.width,
+    bottom: rect.top + rect.height
+  }};
+  const ellipse = {{ cx: {cx}, cy: {cy}, rx: {rx}, ry: {ry} }};
+  const inEllipse = (px, py) => {{
+    const dx = (px - ellipse.cx) / ellipse.rx;
+    const dy = (py - ellipse.cy) / ellipse.ry;
+    return dx * dx + dy * dy <= 1;
+  }};
+{hit_test}
+}})
+""".strip()
+        return ToolResult(
+            code=_selection_code(expr),
+            description=f"Selected objects in {mode} ellipse",
+            data={"x": x, "y": y, "width": width, "height": height, "mode": mode, "type": obj_type, "color": color},
+        )
+
+
 class SelectByLassoTool(BaseTool):
     def definition(self) -> ToolDefinition:
         return ToolDefinition(
