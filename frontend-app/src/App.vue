@@ -2,8 +2,10 @@
 import AppCanvas from './components/AppCanvas.vue'
 import VoiceRecorder from './components/VoiceRecorder.vue'
 import ChatLog from './components/ChatLog.vue'
+import AssetCandidatePanel from './components/AssetCandidatePanel.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import { ref, provide, onMounted, onUnmounted } from 'vue'
+import { parseAssetCandidatesFromDescription } from './services/assetApi.js'
 
 const messages = ref([])
 const isProcessing = ref(false)
@@ -13,6 +15,8 @@ const provider = ref(localStorage.getItem('provider') || 'openai')
 const apiKey = ref(localStorage.getItem('api_key') || '')
 const events = ref([])
 const wsConnected = ref(false)
+const assetCandidates = ref([])
+const showAssetPanel = ref(false)
 let ws = null
 
 provide('messages', messages)
@@ -61,9 +65,15 @@ function handleEvent(eventType, data) {
     case 'llm_request':
       status.value = `LLM calling ${data.model || ''}...`
       break
-    case 'tool_call':
-      status.value = `Executing ${data.tool_name || data.name || 'tool'}...`
+    case 'tool_call': {
+      const toolName = data.tool_name || data.name || ''
+      status.value = `Executing ${toolName}...`
+      if (toolName === 'search_vector_asset') {
+        assetCandidates.value = []
+        showAssetPanel.value = true
+      }
       break
+    }
     case 'tool_result':
     case 'tool_error':
       status.value = 'Processing...'
@@ -100,11 +110,16 @@ async function sendMessage(text) {
     })
     const data = await res.json()
 
+    if (data.description) {
+      const parsed = parseAssetCandidatesFromDescription(data.description)
+      if (parsed.length > 0) {
+        assetCandidates.value = parsed
+        showAssetPanel.value = true
+      }
+      addMessage(data.description, 'assistant', data.code)
+    }
     if (data.code) {
       canvasRef.value?.executeCode(data.code)
-    }
-    if (data.description) {
-      addMessage(data.description, 'assistant', data.code)
     }
     if (data.error) {
       addMessage(`Error: ${data.error}`, 'system')
@@ -117,10 +132,19 @@ async function sendMessage(text) {
   }
 }
 
+function handleAssetSearch(query) {
+  sendMessage(`search for SVG icons: ${query}`)
+}
+
+function handleAssetImport(assetId) {
+  sendMessage(`import the asset ${assetId} to the canvas`)
+}
+
 onMounted(connectWs)
 onUnmounted(() => { if (ws) ws.close() })
 
 provide('sendMessage', sendMessage)
+provide('assetCandidates', assetCandidates)
 </script>
 
 <template>
@@ -140,6 +164,12 @@ provide('sendMessage', sendMessage)
       <aside class="sidebar">
         <VoiceRecorder @transcript="sendMessage" />
         <ChatLog />
+        <AssetCandidatePanel
+          :candidates="assetCandidates"
+          :show="showAssetPanel"
+          @search="handleAssetSearch"
+          @import="handleAssetImport"
+        />
         <div class="events-panel" v-if="events.length">
           <div class="events-title">Event Stream</div>
           <div class="events-list">
