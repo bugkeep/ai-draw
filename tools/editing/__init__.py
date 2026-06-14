@@ -13,6 +13,8 @@ from .stroke import ChangeStrokeTool
 from .select import SelectObjectTool
 from .crop import CropObjectTool
 from .mask import ApplyClipMaskTool
+from .blend import ChangeBlendModeTool
+from .filter import ApplyImageFilterTool
 
 __all__ = [
     "DeleteObjectTool",
@@ -31,4 +33,6 @@ __all__ = [
     "SelectObjectTool",
     "CropObjectTool",
     "ApplyClipMaskTool",
+    "ChangeBlendModeTool",
+    "ApplyImageFilterTool",
 ]
