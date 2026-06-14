@@ -55,6 +55,7 @@ class AssetCandidate(BaseModel):
     style_score: float = 0.0
     quality_score: float = 0.0
     editability_score: float = 0.0
+    source_score: float = 0.0
     final_score: float = 0.0
 
 
