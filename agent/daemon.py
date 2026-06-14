@@ -60,7 +60,8 @@ class TCPServer:
         provider_fn = providers.get(provider, providers["openai"])
         prov = provider_fn(api_key)
 
-        from tools.permissions import PermissionChecker
+        from tools.policy import ToolPolicy
+        from tools.manager import PermissionManager
 
         def _on_permission_request(req_id: str, tool_name: str, args: dict):
             asyncio.ensure_future(self.event_bus.dispatch(
@@ -71,11 +72,10 @@ class TCPServer:
                 })
             ))
 
-        perms = PermissionChecker(on_request=_on_permission_request)
+        policy = ToolPolicy(allow_only=allow_tools)
         if block_tools:
-            perms.block(*block_tools)
-        if allow_tools:
-            perms.allow_only(*allow_tools)
+            policy.block(*block_tools)
+        perms = PermissionManager(policy=policy, on_request=_on_permission_request)
 
         registry = ToolRegistry()
         registry.permissions = perms
@@ -121,19 +121,20 @@ class TCPServer:
         if self._runner is None:
             return {"error": "No active runner"}
 
-        perms = self._runner.registry.permissions
+        mgr = self._runner.registry.permissions
+        policy = mgr.policy
 
         blocked = payload.get("block")
         if blocked:
-            perms.block(*blocked)
+            policy.block(*blocked)
 
         unblocked = payload.get("unblock")
         if unblocked:
-            perms.unblock(*unblocked)
+            policy.unblock(*unblocked)
 
         allow_only = payload.get("allow_only")
         if allow_only is not None:
-            perms.allow_only(*allow_only)
+            policy.allow_only = allow_only
 
         return {"status": "ok"}
 
@@ -147,10 +148,10 @@ class TCPServer:
         """
         if self._runner is None:
             return {"error": "No active runner"}
-        perms = self._runner.registry.permissions
+        mgr = self._runner.registry.permissions
         req_id = payload.get("request_id", "")
         approved = payload.get("approved", False)
-        found = perms.respond(req_id, approved)
+        found = mgr.respond(req_id, approved)
         if found:
             await self.event_bus.dispatch(
                 BaseEvent(EventType.PERMISSION_RESPONDED, {

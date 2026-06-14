@@ -11,8 +11,8 @@ class ToolRegistry:
     @property
     def permissions(self):
         if self._permissions is None:
-            from .permissions import PermissionChecker
-            self._permissions = PermissionChecker()
+            from .manager import PermissionManager
+            self._permissions = PermissionManager()
         return self._permissions
 
     @permissions.setter
