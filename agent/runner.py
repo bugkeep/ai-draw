@@ -476,7 +476,9 @@ class AgentRunner:
             left = obj.get("left", 0)
             top = obj.get("top", 0)
             fill = obj.get("fill", "")
-            parts.append(f"  [{i}] {obj_type} at ({left},{top}) fill={fill}")
+            oid = obj.get("object_id", "")
+            id_part = f" id={oid}" if oid else ""
+            parts.append(f"  [{i}] {obj_type} at ({left},{top}) fill={fill}{id_part}")
         return f"{len(objects)} objects:\n" + "\n".join(parts)
 
     def _compact_messages(self, messages: list[dict],

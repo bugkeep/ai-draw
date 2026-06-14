@@ -105,6 +105,20 @@ class TestDeleteObjectTool:
         assert result.is_error
 
 
+class TestDeleteObjectObjectId:
+    def test_execute_by_object_id(self):
+        result = DeleteObjectTool().execute(object_id="circle_1")
+        assert not result.is_error
+        assert "find" in result.code
+        assert "objectId === 'circle_1'" in result.code
+        assert result.data["object_id"] == "circle_1"
+
+    def test_object_id_takes_priority(self):
+        result = DeleteObjectTool().execute(object_id="rect_1", selector="last")
+        assert not result.is_error
+        assert "objectId === 'rect_1'" in result.code
+
+
 class TestMoveObjectTool:
     def test_definition(self):
         defn = MoveObjectTool().definition()
@@ -118,6 +132,20 @@ class TestMoveObjectTool:
     def test_execute_invalid_selector(self):
         result = MoveObjectTool().execute(selector="abc")
         assert result.is_error
+
+
+class TestMoveObjectObjectId:
+    def test_execute_by_object_id(self):
+        result = MoveObjectTool().execute(object_id="circle_1", x=10, y=20)
+        assert not result.is_error
+        assert "find" in result.code
+        assert "objectId === 'circle_1'" in result.code
+        assert result.data["object_id"] == "circle_1"
+
+    def test_object_id_takes_priority(self):
+        result = MoveObjectTool().execute(object_id="rect_1", selector="last", x=5, y=5)
+        assert not result.is_error
+        assert "objectId === 'rect_1'" in result.code
 
 
 class TestChangeColorTool:
@@ -136,8 +164,23 @@ class TestChangeColorTool:
         assert "forEach" in result.code
 
     def test_execute_invalid_selector(self):
-        result = ChangeColorTool().execute(selector="abc", color="red")
+        result = ChangeColorTool().execute(selector="abc")
         assert result.is_error
+
+
+class TestChangeColorObjectId:
+    def test_execute_by_object_id(self):
+        result = ChangeColorTool().execute(object_id="circle_1", color="red")
+        assert not result.is_error
+        assert "find" in result.code
+        assert "objectId === 'circle_1'" in result.code
+        assert "'red'" in result.code
+        assert result.data["object_id"] == "circle_1"
+
+    def test_object_id_takes_priority(self):
+        result = ChangeColorTool().execute(object_id="rect_1", selector="last", color="blue")
+        assert not result.is_error
+        assert "objectId === 'rect_1'" in result.code
 
 
 class TestResizeObjectTool:
@@ -149,6 +192,20 @@ class TestResizeObjectTool:
         result = ResizeObjectTool().execute(selector="last", scale_x=2.0, scale_y=1.5)
         assert not result.is_error
         assert "scaleX" in result.code
+
+
+class TestResizeObjectObjectId:
+    def test_execute_by_object_id(self):
+        result = ResizeObjectTool().execute(object_id="circle_1", scale_x=2.0, scale_y=1.5)
+        assert not result.is_error
+        assert "find" in result.code
+        assert "objectId === 'circle_1'" in result.code
+        assert result.data["object_id"] == "circle_1"
+
+    def test_object_id_takes_priority(self):
+        result = ResizeObjectTool().execute(object_id="rect_1", selector="last", scale_x=0.5)
+        assert not result.is_error
+        assert "objectId === 'rect_1'" in result.code
 
 
 class TestUndoTool:
