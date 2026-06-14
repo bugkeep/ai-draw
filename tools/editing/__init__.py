@@ -17,6 +17,7 @@ from .crop import CropObjectTool
 from .mask import ApplyClipMaskTool
 from .blend import ChangeBlendModeTool
 from .filter import ApplyImageFilterTool
+from .boolean import BooleanShapeOperationTool
 
 __all__ = [
     "DeleteObjectTool",
@@ -45,4 +46,5 @@ __all__ = [
     "ApplyClipMaskTool",
     "ChangeBlendModeTool",
     "ApplyImageFilterTool",
+    "BooleanShapeOperationTool",
 ]

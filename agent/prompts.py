@@ -131,20 +131,21 @@ RULES:
 15. For solid fills / paint bucket: change_fill(object_id=..., color=...).
 16. For gradient fills: apply_gradient_fill(object_id=..., gradient_type="linear"/"radial", color_stops=[...]).
 17. For eyedropper/style copying: copy_object_style(source_object_id=..., target_object_id=...).
-18. For duplication: duplicate_object(object_id=... or selector="last", offset_x=..., offset_y=...).
-19. For grouping: group_objects(object_ids=[...]) or group_objects(selector="all").
-20. For ungrouping: ungroup_objects(object_id=... or selector="last").
-21. For opacity: change_opacity(object_id=..., opacity=0.5).
-22. For outline/stroke: change_stroke(object_id=..., stroke=..., stroke_width=...).
-23. For rectangular crop: crop_object(object_id=..., x=..., y=..., width=..., height=...).
-24. For clipping/masks: apply_clip_mask(target_object_id=..., mask_object_id=...).
-25. For blend/composite modes: change_blend_mode(object_id=..., mode="multiply"/"screen"/"overlay"/...).
-26. For image filters: apply_image_filter(object_id=..., filter_type="brightness"/"contrast"/"blur"/"grayscale"/"invert"/"saturation", value=...).
-27. For deletion: delete_object(object_id=...).
-28. For replacement: use replace_vector_asset(object_id=..., candidate_asset_id=...).
+18. For boolean shape operations: boolean_shape_operation(target_object_id=..., source_object_id=..., operation="union"/"intersect"/"subtract"/"exclude").
+19. For duplication: duplicate_object(object_id=... or selector="last", offset_x=..., offset_y=...).
+20. For grouping: group_objects(object_ids=[...]) or group_objects(selector="all").
+21. For ungrouping: ungroup_objects(object_id=... or selector="last").
+22. For opacity: change_opacity(object_id=..., opacity=0.5).
+23. For outline/stroke: change_stroke(object_id=..., stroke=..., stroke_width=...).
+24. For rectangular crop: crop_object(object_id=..., x=..., y=..., width=..., height=...).
+25. For clipping/masks: apply_clip_mask(target_object_id=..., mask_object_id=...).
+26. For blend/composite modes: change_blend_mode(object_id=..., mode="multiply"/"screen"/"overlay"/...).
+27. For image filters: apply_image_filter(object_id=..., filter_type="brightness"/"contrast"/"blur"/"grayscale"/"invert"/"saturation", value=...).
+28. For deletion: delete_object(object_id=...).
+29. For replacement: use replace_vector_asset(object_id=..., candidate_asset_id=...).
    Check available candidates first with list_asset_candidates().
-29. Undo/redo via undo() / redo().
-30. Always reference objects by object_id, NOT by array index.
+30. Undo/redo via undo() / redo().
+31. Always reference objects by object_id, NOT by array index.
 """
 
 
@@ -201,6 +202,7 @@ Available tools:
 - apply_clip_mask — use one object as another object's clipping mask
 - change_blend_mode — set object blend/composite mode
 - apply_image_filter — apply brightness, contrast, blur, grayscale, invert, or saturation filters to image objects
+- boolean_shape_operation — object-level union/intersect/subtract/exclude compound shapes
 - search_vector_asset — search SVG for common icons and objects
 - import_vector_asset — import a chosen SVG into the canvas
 - replace_vector_asset — replace an imported asset
@@ -225,7 +227,7 @@ Rules:
 
 Handling user feedback:
 - If the user says "不好看" / "不像" / "重新画" / "改一下" / "换个风格" etc., use delete_object(selector="all") or clear_canvas first, then redraw with better parameters
-- If the user asks to modify an existing element (改颜色, 换颜色, 填充, 渐变, 油漆桶, 吸管, 复制样式, 移动, 挪一下, 放大, 缩小, 旋转, 翻转, 镜像, 倾斜, 置顶, 置底, 对齐, 均匀分布, 复制, 成组, 取消成组, 透明, 描边, 选中, 框选, 套索, 魔棒, 相似对象, 裁剪, 遮罩, 剪贴, 混合模式, 滤镜, 模糊, 调亮, 灰度), use the canvas editing tools
+- If the user asks to modify an existing element (改颜色, 换颜色, 填充, 渐变, 油漆桶, 吸管, 复制样式, 移动, 挪一下, 放大, 缩小, 旋转, 翻转, 镜像, 倾斜, 布尔, 合并形状, 相交, 相减, 排除, 置顶, 置底, 对齐, 均匀分布, 复制, 成组, 取消成组, 透明, 描边, 选中, 框选, 套索, 魔棒, 相似对象, 裁剪, 遮罩, 剪贴, 混合模式, 滤镜, 模糊, 调亮, 灰度), use the canvas editing tools
 - Always check Current canvas state above before responding to feedback
 - When the canvas is not empty and the user gives new instructions, decide whether to add to or replace the existing content
 
@@ -282,6 +284,7 @@ Available drawing tools:
 - apply_clip_mask — use one object as another object's clipping mask.
 - change_blend_mode — set object blend/composite mode.
 - apply_image_filter — apply brightness, contrast, blur, grayscale, invert, or saturation filters to image objects.
+- boolean_shape_operation — object-level union/intersect/subtract/exclude compound shapes.
 - search_vector_asset — search SVG for common icons and objects
 - import_vector_asset — import a chosen SVG into the canvas
 - replace_vector_asset — replace an imported asset
@@ -337,6 +340,7 @@ For modification requests:
 - "填充成绿色/油漆桶填蓝色" → change_fill(color="green")
 - "加蓝到紫的渐变" → apply_gradient_fill(color_stops=[...])
 - "用吸管复制这个颜色/复制样式到另一个对象" → copy_object_style(source_object_id=..., target_object_id=...)
+- "合并这两个形状/取相交/从圆里减掉矩形/排除重叠部分" → boolean_shape_operation(operation="union"/"intersect"/"subtract"/"exclude")
 - "裁剪它/裁掉右边一点" → crop_object(selector="last", ...)
 - "用这个矩形做遮罩/剪贴到形状里" → apply_clip_mask(target_object_id=..., mask_object_id=...)
 - "改成正片叠底/滤色/叠加" → change_blend_mode(mode="multiply"/"screen"/"overlay")

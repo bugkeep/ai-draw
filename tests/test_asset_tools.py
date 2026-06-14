@@ -447,4 +447,4 @@ class TestAssetToolRegistryIntegration:
 
     def test_tool_count_increased(self):
         from tools import ALL_TOOLS
-        assert len(ALL_TOOLS) == 50  # prior tools + flip/skew transform tools
+        assert len(ALL_TOOLS) == 51  # prior tools + boolean shape operation
