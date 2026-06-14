@@ -46,15 +46,22 @@ RULES:
 
 SOFTWARE_OPERATION_PROMPT = """--- Common Drawing Software Operations ---
 Recognize operation families common in drawing apps:
-- Brush / pencil / eraser / smudge / clone / blur / sharpen / dodge / burn /
-  paint bucket / fill / gradient / eyedropper / color replacement.
-- Shape / line / ellipse / polygon / polyline / pen / free pen / curvature pen /
-  bezier path / anchor point / stroke / fill / text.
-- Select / marquee / lasso / magic wand / similar-object selection /
-  contiguous selection / move / resize / rotate / flip / mirror / skew / crop /
-  align / distribute / reorder / group / layer order.
-- Layers / masks / clipping / blend modes / boolean combine / import / replace /
-  asset search.
+- Brush / pencil / airbrush / eraser / smudge / clone stamp / healing /
+  blur / sharpen / dodge / burn / sponge / paint bucket / fill / pattern fill /
+  gradient / eyedropper / color replacement.
+- Shape / line / ellipse / polygon / star / polyline / pen / free pen /
+  curvature pen / bezier path / arc / anchor point / stroke / fill / text.
+- Select / marquee / elliptical marquee / lasso / polygon lasso / magnetic lasso /
+  magic wand / quick selection / color range / similar-object selection /
+  contiguous selection.
+- Transform / move / resize / scale / rotate / flip / mirror / skew /
+  perspective transform / distort / crop / align / distribute / reorder /
+  group / layer order / boolean combine.
+- Layers / layer opacity / lock / hide / masks / clipping / blend modes /
+  import / replace / asset search / export.
+- Image adjustments and filters: brightness / contrast / hue-saturation /
+  grayscale / invert / levels / curves / threshold / blur / sharpen / noise /
+  pixelate / liquify / shadow / glow.
 
 Map these requests to the nearest available tool. If a software-style action is
 not directly available, approximate it with the current vector tools and say so
