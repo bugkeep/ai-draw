@@ -21,6 +21,7 @@ class ChatRequest(BaseModel):
     history: Optional[list[dict]] = None
     provider: Optional[str] = None
     api_key: Optional[str] = ""
+    model: Optional[str] = ""
 
 
 class ChatResponse(BaseModel):
@@ -68,6 +69,7 @@ async def chat(request: Request, body: ChatRequest):
             "history": body.history or [],
             "provider": body.provider or configured_provider(),
             "api_key": body.api_key or "",
+            "model": body.model or "",
         })
         return ChatResponse(**result)
     except Exception as e:

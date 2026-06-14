@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -50,6 +50,26 @@ async def test_chat_route_forwards_recent_voice_history(monkeypatch):
     assert client.calls[0][1]["history"] == history
     assert client.calls[0][1]["provider"] == "bailian"
     assert client.calls[0][1]["api_key"] == ""
+    assert client.calls[0][1]["model"] == ""
+
+
+@pytest.mark.asyncio
+async def test_chat_route_forwards_explicit_model_configuration():
+    client = FakeDaemonClient({"content": "ok"})
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(daemon_client=client))
+    )
+
+    await chat(request, ChatRequest(
+        message="draw a tree",
+        provider="openai",
+        api_key="test-key",
+        model="gpt-4o-mini",
+    ))
+
+    assert client.calls[0][1]["provider"] == "openai"
+    assert client.calls[0][1]["api_key"] == "test-key"
+    assert client.calls[0][1]["model"] == "gpt-4o-mini"
 
 
 def test_configured_provider_infers_bailian_from_available_key(monkeypatch):
@@ -91,3 +111,32 @@ async def test_tcp_chat_passes_history_and_reports_latency():
     )
     assert result["content"] == "done"
     assert result["latency_ms"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_tcp_chat_reinitializes_runner_when_model_changes():
+    server = TCPServer()
+    runner = SimpleNamespace(
+        run=AsyncMock(return_value=AgentResponse(content="done"))
+    )
+    server._runner = runner
+    server._current_provider = "openai"
+    server._current_api_key = ""
+    server._current_model = "gpt-4o"
+
+    def fake_init(provider, api_key, model):
+        server._current_provider = provider
+        server._current_api_key = api_key
+        server._current_model = model
+        server._runner = runner
+
+    server.init_runner = MagicMock(side_effect=fake_init)
+
+    await server.handle_chat({
+        "message": "draw a tree",
+        "provider": "openai",
+        "api_key": "",
+        "model": "gpt-4o-mini",
+    })
+
+    server.init_runner.assert_called_once_with("openai", "", "gpt-4o-mini")
