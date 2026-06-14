@@ -51,6 +51,13 @@ class EventType(Enum):
     CONTEXT_WATERMARK = "context_watermark"
     CONTEXT_COMPACTED = "context_compacted"
 
+    # 子 Agent 事件
+    SUB_AGENT_START = "sub_agent_start"
+    SUB_AGENT_STOP = "sub_agent_stop"
+
+    # 技能事件
+    SKILL_INVOKED = "skill_invoked"
+
 
 @dataclass
 class BaseEvent:

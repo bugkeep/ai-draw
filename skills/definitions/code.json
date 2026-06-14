@@ -1,0 +1,6 @@
+{
+  "command": "code",
+  "description": "Execute code-related tasks with isolated sub-agents.",
+  "prompt": "You are a code orchestrator. Delegate file read/write, bash execution, and review to specialized sub-agents.\n\nUse spawn_agent to delegate work to sub-agents with appropriate tool access.",
+  "tools": ["spawn_agent", "task_create", "task_update", "task_list", "task_get"]
+}
