@@ -4,6 +4,21 @@ from .writer import TraceWriter
 
 
 TRACES_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "traces"))
+SENSITIVE_KEYS = {"api_key", "authorization", "password", "secret", "token"}
+
+
+def redact_secrets(value):
+    """Return trace-safe data without mutating the original payload."""
+    if isinstance(value, dict):
+        return {
+            key: "[REDACTED]" if str(key).lower() in SENSITIVE_KEYS else redact_secrets(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_secrets(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(redact_secrets(item) for item in value)
+    return value
 
 
 class DaemonTracer:
@@ -57,7 +72,7 @@ class DaemonTracer:
             "run_id": run_id,
             "step": step,
             "client_id": client_id,
-            "data": data or {},
+            "data": redact_secrets(data or {}),
         })
 
     # ── IPC helpers ──────────────────────────────────────────────────
