@@ -186,6 +186,8 @@ class TestDrawingModeRouter:
         "从圆里减掉矩形",
         "选中红色圆",
         "框选左上角的图形",
+        "椭圆框选中间这一片",
+        "用椭圆选区选中蓝色对象",
         "套索选择这些对象",
         "用魔棒选择相似颜色",
         "裁剪最后一个对象",
@@ -346,6 +348,7 @@ class TestModePrompts:
         assert "change_stroke" in p
         assert "select_object" in p
         assert "select_by_region" in p
+        assert "select_by_ellipse" in p
         assert "select_by_lasso" in p
         assert "select_similar" in p
         assert "change_fill" in p
@@ -441,6 +444,7 @@ class TestPromptTemplates:
         assert "change_stroke" in prompt
         assert "select_object" in prompt
         assert "select_by_region" in prompt
+        assert "select_by_ellipse" in prompt
         assert "select_by_lasso" in prompt
         assert "select_similar" in prompt
         assert "change_fill" in prompt

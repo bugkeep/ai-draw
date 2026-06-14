@@ -11,7 +11,7 @@ from .duplicate import DuplicateObjectTool
 from .group import GroupObjectsTool, UngroupObjectsTool
 from .opacity import ChangeOpacityTool
 from .stroke import ChangeStrokeTool
-from .select import SelectByLassoTool, SelectByRegionTool, SelectObjectTool, SelectSimilarTool
+from .select import SelectByEllipseTool, SelectByLassoTool, SelectByRegionTool, SelectObjectTool, SelectSimilarTool
 from .fill import ApplyGradientFillTool, ChangeFillTool, CopyObjectStyleTool
 from .crop import CropObjectTool
 from .mask import ApplyClipMaskTool
@@ -38,6 +38,7 @@ __all__ = [
     "ChangeStrokeTool",
     "SelectObjectTool",
     "SelectByRegionTool",
+    "SelectByEllipseTool",
     "SelectByLassoTool",
     "SelectSimilarTool",
     "ChangeFillTool",

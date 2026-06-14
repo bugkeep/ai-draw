@@ -19,7 +19,7 @@ from tools.editing.duplicate import DuplicateObjectTool
 from tools.editing.group import GroupObjectsTool, UngroupObjectsTool
 from tools.editing.opacity import ChangeOpacityTool
 from tools.editing.stroke import ChangeStrokeTool
-from tools.editing.select import SelectByLassoTool, SelectByRegionTool, SelectObjectTool, SelectSimilarTool
+from tools.editing.select import SelectByEllipseTool, SelectByLassoTool, SelectByRegionTool, SelectObjectTool, SelectSimilarTool
 from tools.editing.fill import ApplyGradientFillTool, ChangeFillTool, CopyObjectStyleTool
 from tools.editing.crop import CropObjectTool
 from tools.editing.mask import ApplyClipMaskTool
@@ -461,6 +461,44 @@ class TestSelectByRegionTool:
         assert result.is_error
 
 
+class TestSelectByEllipseTool:
+    def test_definition(self):
+        defn = SelectByEllipseTool().definition()
+        assert defn.name == "select_by_ellipse"
+
+    def test_execute_center_mode_with_filters(self):
+        result = SelectByEllipseTool().execute(
+            x=100,
+            y=120,
+            width=240,
+            height=160,
+            mode="center",
+            type="circle",
+            color="blue",
+        )
+        assert not result.is_error
+        assert "const ellipse = { cx: 220.0, cy: 200.0, rx: 120.0, ry: 80.0 }" in result.code
+        assert "return inEllipse(box.left + box.width / 2" in result.code
+        assert 'obj.semanticType === "circle"' in result.code
+        assert 'obj.fill === "blue"' in result.code
+        assert "ActiveSelection" in result.code
+        assert result.data["mode"] == "center"
+
+    def test_execute_contain_mode_checks_corners(self):
+        result = SelectByEllipseTool().execute(x=0, y=0, width=200, height=100, mode="contain")
+        assert not result.is_error
+        assert "corners.every" in result.code
+        assert "inEllipse(point.x, point.y)" in result.code
+
+    def test_execute_rejects_invalid_ellipse(self):
+        result = SelectByEllipseTool().execute(x=0, y=0, width=100, height=0)
+        assert result.is_error
+
+    def test_execute_rejects_invalid_mode(self):
+        result = SelectByEllipseTool().execute(x=0, y=0, width=100, height=100, mode="intersect")
+        assert result.is_error
+
+
 class TestSelectByLassoTool:
     def test_definition(self):
         defn = SelectByLassoTool().definition()
@@ -787,7 +825,7 @@ class TestToolRegistryIntegration:
         reg = ToolRegistry()
         for tool_cls in ALL_TOOLS:
             reg.register(tool_cls())
-        assert len(reg) == 53
+        assert len(reg) == 54
 
     def test_get_definitions(self):
         from tools import ALL_TOOLS
@@ -813,6 +851,7 @@ class TestToolRegistryIntegration:
         assert "change_stroke" in names
         assert "select_object" in names
         assert "select_by_region" in names
+        assert "select_by_ellipse" in names
         assert "select_by_lasso" in names
         assert "select_similar" in names
         assert "change_fill" in names
