@@ -210,6 +210,13 @@ class TestDrawingModeRouter:
         r = self.route(router, "画一幅细节丰富的森林插画")
         assert r.mode == DrawingMode.IMAGE_GENERATION
 
+    def test_image_gen_spoken_multi_subject_scene(self, router):
+        r = self.route(
+            router,
+            "画一棵树 树旁边应该有一座房子 树旁边有一个人 人旁边有一条河",
+        )
+        assert r.mode == DrawingMode.IMAGE_GENERATION
+
     # ── Subject extraction ─────────────────────────────────────────────
 
     def test_subject_extraction(self, router):

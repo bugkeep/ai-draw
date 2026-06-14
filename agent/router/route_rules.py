@@ -115,6 +115,9 @@ def apply_rules(message: str, canvas_state: dict[str, Any] | None = None,
         if pattern.search(message):
             scores[mode] = scores.get(mode, 0.0) + delta
 
+    if _looks_like_multi_subject_scene(message):
+        scores[DrawingMode.IMAGE_GENERATION] += 0.65
+
     # ── Canvas-state-derived rules ──────────────────────────────────────
     # If canvas is non-empty and message looks like a short feedback token,
     # boost CANVAS_EDIT.
@@ -131,3 +134,13 @@ def apply_rules(message: str, canvas_state: dict[str, Any] | None = None,
 def _is_positional_reference(msg: str) -> bool:
     """Check if message references a position on canvas (suggests edit, not new draw)."""
     return bool(re.search(r"(?:左上|右上|左下|右下|左边|右边|上面|下面|中间|旁边)", msg))
+
+
+def _looks_like_multi_subject_scene(msg: str) -> bool:
+    """Detect spoken scene descriptions with several related subjects."""
+    subjects = set(re.findall(
+        r"(树|房子|房屋|人|人物|河|河流|山|太阳|云|道路|桥|花|草地)",
+        msg,
+    ))
+    relations = re.findall(r"(?:旁边|附近|左边|右边|前面|后面|远处|近处)", msg)
+    return len(subjects) >= 3 or (len(subjects) >= 2 and len(relations) >= 2)

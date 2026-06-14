@@ -5,7 +5,7 @@ import pytest
 
 from agent.daemon import TCPServer, sanitize_chat_history
 from agent.runner import AgentResponse
-from server.routes import ChatRequest, chat
+from server.routes import ChatRequest, chat, configured_provider
 
 
 class FakeDaemonClient:
@@ -50,6 +50,20 @@ async def test_chat_route_forwards_recent_voice_history(monkeypatch):
     assert client.calls[0][1]["history"] == history
     assert client.calls[0][1]["provider"] == "bailian"
     assert client.calls[0][1]["api_key"] == ""
+
+
+def test_configured_provider_infers_bailian_from_available_key(monkeypatch):
+    monkeypatch.delenv("LLM_PROVIDER", raising=False)
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
+
+    assert configured_provider() == "bailian"
+
+
+def test_configured_provider_prefers_explicit_value(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("DASHSCOPE_API_KEY", "test-key")
+
+    assert configured_provider() == "openai"
 
 
 @pytest.mark.asyncio
