@@ -6,6 +6,8 @@ from .ellipse import DrawEllipseTool
 from .polygon import DrawPolygonTool
 from .polyline import DrawPolylineTool
 from .path import DrawPathTool
+from .vector_composition import DrawVectorCompositionTool
+from .perspective_vehicle import DrawPerspectiveVehicleTool
 
 __all__ = [
     "DrawCircleTool",
@@ -16,4 +18,6 @@ __all__ = [
     "DrawPolygonTool",
     "DrawPolylineTool",
     "DrawPathTool",
+    "DrawVectorCompositionTool",
+    "DrawPerspectiveVehicleTool",
 ]

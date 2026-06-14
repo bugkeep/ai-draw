@@ -33,6 +33,7 @@ class ToolPolicy:
         "search_vector_asset", "list_asset_candidates",
         "draw_circle", "draw_rect", "draw_line", "draw_text", "draw_ellipse",
         "draw_polygon", "draw_polyline", "draw_path",
+        "draw_vector_composition", "draw_perspective_vehicle",
     })
 
     # Canvas editing tools — auto-allow (user explicitly asked for drawing)

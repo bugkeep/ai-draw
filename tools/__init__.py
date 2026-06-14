@@ -3,6 +3,8 @@ from .registry import ToolRegistry
 from .drawing import (
     DrawCircleTool, DrawRectTool, DrawLineTool, DrawTextTool, DrawEllipseTool,
     DrawPolygonTool, DrawPolylineTool, DrawPathTool,
+    DrawVectorCompositionTool,
+    DrawPerspectiveVehicleTool,
 )
 from .editing import DeleteObjectTool, MoveObjectTool, ChangeColorTool, ResizeObjectTool
 from .history import UndoTool, RedoTool, ClearCanvasTool
@@ -26,6 +28,8 @@ ALL_TOOLS = [
     DrawPolygonTool,
     DrawPolylineTool,
     DrawPathTool,
+    DrawVectorCompositionTool,
+    DrawPerspectiveVehicleTool,
     DeleteObjectTool,
     MoveObjectTool,
     ChangeColorTool,
@@ -50,6 +54,8 @@ __all__ = [
     "ToolRegistry",
     "DrawCircleTool", "DrawRectTool", "DrawLineTool", "DrawTextTool", "DrawEllipseTool",
     "DrawPolygonTool", "DrawPolylineTool", "DrawPathTool",
+    "DrawVectorCompositionTool",
+    "DrawPerspectiveVehicleTool",
     "DeleteObjectTool", "MoveObjectTool", "ChangeColorTool", "ResizeObjectTool",
     "UndoTool", "RedoTool", "ClearCanvasTool",
     "ReadFileTool", "WriteFileTool", "ListDirTool",

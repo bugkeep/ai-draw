@@ -447,4 +447,4 @@ class TestAssetToolRegistryIntegration:
 
     def test_tool_count_increased(self):
         from tools import ALL_TOOLS
-        assert len(ALL_TOOLS) == 25  # 21 original + 4 new
+        assert len(ALL_TOOLS) == 27  # 21 original + 4 asset tools + 2 complex drawing tools

@@ -245,7 +245,7 @@ class TestToolRegistryIntegration:
         reg = ToolRegistry()
         for tool_cls in ALL_TOOLS:
             reg.register(tool_cls())
-        assert len(reg) == 25
+        assert len(reg) == 27
 
     def test_get_definitions(self):
         from tools import ALL_TOOLS
@@ -255,5 +255,7 @@ class TestToolRegistryIntegration:
         defs = reg.get_tool_definitions()
         names = {d["function"]["name"] for d in defs}
         assert "draw_circle" in names
+        assert "draw_vector_composition" in names
+        assert "draw_perspective_vehicle" in names
         assert "undo" in names
         assert "clear_canvas" in names
