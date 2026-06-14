@@ -25,6 +25,7 @@ from tools.editing.crop import CropObjectTool
 from tools.editing.mask import ApplyClipMaskTool
 from tools.editing.blend import ChangeBlendModeTool
 from tools.editing.filter import ApplyImageFilterTool
+from tools.editing.boolean import BooleanShapeOperationTool
 from tools.history.undo import UndoTool
 from tools.history.redo import RedoTool
 from tools.history.clear import ClearCanvasTool
@@ -606,6 +607,53 @@ class TestApplyClipMaskTool:
         assert result.is_error
 
 
+class TestBooleanShapeOperationTool:
+    def test_definition(self):
+        defn = BooleanShapeOperationTool().definition()
+        assert defn.name == "boolean_shape_operation"
+
+    def test_execute_subtract(self):
+        result = BooleanShapeOperationTool().execute(
+            target_object_id="circle_1",
+            source_object_id="rect_1",
+            operation="subtract",
+            result_object_id="cutout_1",
+        )
+        assert not result.is_error
+        assert "objectId === \"circle_1\"" in result.code
+        assert "objectId === \"rect_1\"" in result.code
+        assert "clip.inverted = true" in result.code
+        assert "objectId: \"cutout_1\"" in result.code
+        assert "canvas.remove(target); canvas.remove(source);" in result.code
+
+    def test_execute_union_group(self):
+        result = BooleanShapeOperationTool().execute(
+            target_object_id="circle_1",
+            source_object_id="rect_1",
+            operation="union",
+            remove_originals=False,
+        )
+        assert not result.is_error
+        assert "new fabric.Group" in result.code
+        assert "canvas.remove(target)" not in result.code
+
+    def test_rejects_same_target_and_source(self):
+        result = BooleanShapeOperationTool().execute(
+            target_object_id="same",
+            source_object_id="same",
+            operation="union",
+        )
+        assert result.is_error
+
+    def test_rejects_invalid_operation(self):
+        result = BooleanShapeOperationTool().execute(
+            target_object_id="circle_1",
+            source_object_id="rect_1",
+            operation="divide",
+        )
+        assert result.is_error
+
+
 class TestChangeBlendModeTool:
     def test_definition(self):
         defn = ChangeBlendModeTool().definition()
@@ -681,7 +729,7 @@ class TestToolRegistryIntegration:
         reg = ToolRegistry()
         for tool_cls in ALL_TOOLS:
             reg.register(tool_cls())
-        assert len(reg) == 50
+        assert len(reg) == 51
 
     def test_get_definitions(self):
         from tools import ALL_TOOLS
@@ -714,6 +762,7 @@ class TestToolRegistryIntegration:
         assert "copy_object_style" in names
         assert "crop_object" in names
         assert "apply_clip_mask" in names
+        assert "boolean_shape_operation" in names
         assert "change_blend_mode" in names
         assert "apply_image_filter" in names
         assert "undo" in names
