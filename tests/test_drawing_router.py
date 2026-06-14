@@ -172,6 +172,8 @@ class TestDrawingModeRouter:
         "把圆填充成绿色",
         "给矩形加蓝到紫的渐变",
         "用吸管复制这个颜色",
+        "把这两个形状合并",
+        "从圆里减掉矩形",
         "选中红色圆",
         "框选左上角的图形",
         "套索选择这些对象",
@@ -326,6 +328,7 @@ class TestModePrompts:
         assert "change_fill" in p
         assert "apply_gradient_fill" in p
         assert "copy_object_style" in p
+        assert "boolean_shape_operation" in p
         assert "crop_object" in p
         assert "apply_clip_mask" in p
         assert "change_blend_mode" in p
@@ -407,6 +410,7 @@ class TestPromptTemplates:
         assert "change_fill" in prompt
         assert "apply_gradient_fill" in prompt
         assert "copy_object_style" in prompt
+        assert "boolean_shape_operation" in prompt
         assert "apply_clip_mask" in prompt
         assert "change_blend_mode" in prompt
         assert "apply_image_filter" in prompt
