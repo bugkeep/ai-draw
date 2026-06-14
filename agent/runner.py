@@ -333,10 +333,10 @@ class AgentRunner:
     def _complex_scene_incomplete(mode: str, tool_calls: list[dict], message: str = "") -> bool:
         if mode != "image_generation":
             return False
-        if any(AgentRunner._is_detailed_subject_tool(call) for call in tool_calls):
-            return False
         if AgentRunner._missing_subject_requirements(message, tool_calls):
             return True
+        if any(AgentRunner._is_detailed_subject_tool(call, message) for call in tool_calls):
+            return False
         successful_draw_calls = sum(
             1 for call in tool_calls
             if not call.get("is_error")
@@ -348,19 +348,26 @@ class AgentRunner:
     def _missing_subject_requirements(message: str, tool_calls: list[dict]) -> list[str]:
         if not re.search(r"(?:汽车|轿车|跑车|车辆|\bcar\b|\bvehicle\b)", message, re.IGNORECASE):
             return []
+        if any(
+            call.get("name") == "draw_perspective_vehicle" and not call.get("is_error")
+            for call in tool_calls
+        ):
+            return []
 
         labels = " ".join(
             f"{call.get('name', '')} "
             f"{call.get('arguments', {}).get('object_id', '')} "
-            f"{call.get('arguments', {}).get('semantic_type', '')}"
+            f"{call.get('arguments', {}).get('semantic_type', '')} "
+            f"{call.get('arguments', {}).get('svg', '')}"
             for call in tool_calls
             if not call.get("is_error")
         ).lower()
         requirements = {
-            "vehicle body": ("car_body", "vehicle_body", "body", "chassis"),
+            "vehicle body": ("car_body", "vehicle_body", "body", "body_side", "chassis", "side_plane"),
             "wheels": ("wheel", "tire", "tyre"),
             "windows": ("window", "windshield", "windscreen", "glass"),
             "depth lighting": ("shadow", "highlight", "reflection"),
+            "3d structure": ("front_plane", "side_plane", "top_plane", "hood", "cabin", "perspective"),
         }
         return [
             name for name, alternatives in requirements.items()
@@ -380,11 +387,16 @@ class AgentRunner:
         return len(visible_elements) >= DETAILED_COMPOSITION_MIN_ELEMENTS
 
     @staticmethod
-    def _is_detailed_subject_tool(call: dict) -> bool:
+    def _is_detailed_subject_tool(call: dict, message: str = "") -> bool:
         if call.get("is_error"):
             return False
         if call.get("name") == "draw_perspective_vehicle":
             return True
+        if re.search(r"(?:汽车|轿车|跑车|车辆|\bcar\b|\bvehicle\b)", message, re.IGNORECASE):
+            return (
+                AgentRunner._is_detailed_vector_composition(call)
+                and not AgentRunner._missing_subject_requirements(message, [call])
+            )
         return AgentRunner._is_detailed_vector_composition(call)
 
     async def _plan(self, messages: list[dict], tools: list[dict], run_id: str = "", round_num: int = 0) -> tuple[LLMResponse, str | None] | None:

@@ -67,10 +67,11 @@ COMPLETION RULES:
    subject, use draw_vector_composition first. Do not fall back to a flat icon
    or unrelated scene.
 7. For a three-quarter-view vehicle, draw_perspective_vehicle already includes
-   the required body silhouette, hood, cabin/roof, windshield, side windows,
-   visible front and side planes, perspective-scaled wheels and rims, bumpers,
-   lights, grille, panel seams, ground shadow, and highlights. Do not replace
-   it with a hand-written flat car SVG.
+   the required body silhouette, hood/top plane, cabin/roof, windshield, side
+   windows, visible front and side planes, perspective-scaled oval wheels and
+   rims, bumpers, lights, grille, panel seams, ground shadow, highlights, and
+   subtle ground perspective guides. Do not replace it with a hand-written flat
+   car SVG.
 8. Batch independent drawing tool calls in the same response when possible.
 9. Continue adding missing layers and details after tool results.  Do NOT
    claim the scene is complete after drawing only one or two objects.
@@ -78,6 +79,15 @@ COMPLETION RULES:
    Fabric.js stacking order remains correct.
 11. Be honest that the result is an editable vector illustration, not a
    photorealistic generated image.
+
+STRUCTURE FEEDBACK:
+- If the user says the drawing is flat, two-dimensional, like a sticker/card,
+  messy, or lacks normal 3D structure, treat it as a request to redraw the
+  prior subject with stronger structure. Clear/delete the old flat result first.
+- For car/vehicle feedback like this, call draw_perspective_vehicle first.
+- For other subjects, use one draw_vector_composition SVG with named structural
+  groups/ids such as side_plane, front_plane, top_plane, cast_shadow,
+  highlight, and perspective_guide.
 """
 
 
@@ -149,7 +159,8 @@ Rules:
 10. Be concise in your text response - confirm what you drew
 
 Handling user feedback:
-- If the user says "不好看" / "不像" / "重新画" / "改一下" / "换个风格" etc., use delete_object(selector="all") or clear_canvas first, then redraw with better parameters
+- If the user says "不好看" / "不像" / "重新画" / "改一下" / "换个风格" / "二维" / "平面" / "贴片" / "没有正常3D结构" / "乱七八糟" etc., use delete_object(selector="all") or clear_canvas first, then redraw with better parameters
+- If the feedback says the image is flat/two-dimensional/sticker-like/messy or lacks normal 3D structure, do not search/import a cartoon asset. Redraw the prior subject as an image_generation-style structured vector; for vehicles use draw_perspective_vehicle first.
 - If the user asks to modify an existing element (改颜色, 换颜色, 移动, 挪一下, 放大, 缩小), use move_object / change_color / resize_object
 - Always check Current canvas state above before responding to feedback
 - When the canvas is not empty and the user gives new instructions, decide whether to add to or replace the existing content
@@ -212,6 +223,9 @@ When the user is dissatisfied with what was drawn:
 2. Use delete_object(selector="all") or clear_canvas to remove old content
 3. Study the conversation history to understand what the user originally wanted
 4. Redraw with BETTER parameters (larger, more detailed, more accurate colors/proportions)
+5. If the complaint is flat/two-dimensional/sticker-like/messy or lacks normal
+   3D structure, rebuild the subject with perspective planes, depth cues,
+   shadows, and highlights; for vehicles use draw_perspective_vehicle first.
 
 For modification requests:
 - "改颜色" / "换颜色" → change_color tool
@@ -253,6 +267,9 @@ For detailed or perspective objects (for example a 3D three-quarter-view car):
 - For other subjects, use draw_vector_composition as the first drawing tool
 - Build one coherent silhouette with overlapping depth planes and 10+ visible elements
 - Include structural parts, perspective-scaled details, shadow, highlights, and material contrast
+- For custom vehicle SVGs, include explicit structural labels/ids for body or
+  chassis, wheel/tire, window/windshield/glass, shadow/highlight, and
+  front_plane/side_plane/top_plane/hood/cabin/perspective.
 
 {mode_prompt}
 

@@ -189,6 +189,15 @@ class TestDrawingModeRouter:
         r = self.route(router, "draw a detailed car in three-quarter perspective")
         assert r.mode == DrawingMode.IMAGE_GENERATION
 
+    def test_structure_feedback_stays_in_image_generation(self, router):
+        r = self.route(
+            router,
+            "现在画图功能还是不行，像二维平面图像，没有正常的3d结构，乱七八糟",
+            canvas_state={"objects": [{"type": "group", "objectId": "flat_car"}]},
+        )
+        assert r.mode == DrawingMode.IMAGE_GENERATION
+        assert not r.requires_search
+
     def test_vector_cat(self, router):
         r = self.route(router, "画一只猫")
         assert r.mode == DrawingMode.VECTOR_ASSET
@@ -284,6 +293,8 @@ class TestModePrompts:
         assert "draw_vector_composition" in p
         assert "draw_perspective_vehicle" in p
         assert "three-quarter-view vehicle" in p
+        assert "sticker/card" in p
+        assert "Clear/delete the old flat result first" in p
         assert "Do NOT" in p and "center every unspecified element" in p
 
     def test_raster_prompt(self):
