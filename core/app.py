@@ -124,12 +124,17 @@ class SessionHandler:
     ``session.create`` returns a new ``session_id``.
     ``session.send_message`` injects past history into the agent run so the
     LLM sees the full conversation — not just the current turn.
+
+    When the message starts with ``/``, the SkillLoader is consulted and the
+    corresponding skill's prompt and tool whitelist are applied.
     """
 
     def __init__(self, daemon):
         self._daemon = daemon
         from agent.session_manager import SessionManager
         self._session_manager = SessionManager()
+        from skills.loader import SkillLoader
+        self._skill_loader = SkillLoader()
         self._running_runs: dict[str, asyncio.Task] = {}
 
     async def handle_create(self, payload: dict) -> dict:
@@ -160,12 +165,17 @@ class SessionHandler:
         # 1. write user message to thread first, then get context
         from agent.runner import new_run_id
         run_id = new_run_id()
-        ctx = self._session_manager.send_message(session_id, message, run_id)
+        ctx = self._session_manager.send_message(
+            session_id, message, run_id,
+            skill_loader=self._skill_loader,
+        )
         if "error" in ctx:
             return ctx
 
         session = ctx["session"]
         store = ctx["store"]
+        skill = ctx.get("skill")
+        skill_args = ctx.get("skill_args", "")
 
         # 2. init runner from session config
         provider = session.get("provider", "openai")
@@ -174,7 +184,8 @@ class SessionHandler:
 
         # 3. start run with session context restored
         task = asyncio.create_task(
-            self._run_with_session(message, session, store, run_id)
+            self._run_with_session(message, session, store, run_id,
+                                   skill=skill, skill_args=skill_args)
         )
         self._running_runs[run_id] = task
         task.add_done_callback(lambda _: self._running_runs.pop(run_id, None))
@@ -182,14 +193,26 @@ class SessionHandler:
         return {"run_id": run_id}
 
     async def _run_with_session(self, message: str, session: dict,
-                                 store, run_id: str):
+                                 store, run_id: str,
+                                 skill=None, skill_args: str = ""):
         try:
-            result = await self._daemon._runner.run_and_capture(
-                message=message,
-                run_id=run_id,
-                session=session,
-                store=store,
-            )
+            if skill is not None:
+                # skill mode — use skill prompt + restricted registry
+                self._daemon._runner._build_skill_registry(skill)
+                self._daemon._runner.system_prompt = skill.prompt
+                result = await self._daemon._runner.run(
+                    message=skill_args or message,
+                    run_id=run_id,
+                    session=session,
+                    store=store,
+                )
+            else:
+                result = await self._daemon._runner.run_and_capture(
+                    message=message,
+                    run_id=run_id,
+                    session=session,
+                    store=store,
+                )
             # persist only the new messages produced in this run
             store.append_messages(result.new_messages)
         except Exception as e:

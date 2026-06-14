@@ -211,11 +211,16 @@ class SessionManager:
         self.store(session_id).append_message(role, content, tool_calls)
 
     def send_message(self, session_id: str, message: str,
-                     run_id: str) -> dict:
+                     run_id: str, skill_loader=None) -> dict:
         """Write user message to thread first, then start the run.
+
+        When ``skill_loader`` is provided, slash commands (``/<command>``)
+        are detected and the corresponding skill is loaded.  The returned
+        dict includes a ``"skill"`` key when a skill is activated.
 
         Returns a dict for the caller to dispatch:
           ``{"session": ..., "store": ..., "run_id": ...}``
+          or with ``"skill"`` added.
         """
         session = self.get_session(session_id)
         if session is None:
@@ -223,10 +228,26 @@ class SessionManager:
 
         store = self.store(session_id)
 
-        # 1. persist user message immediately
-        store.append_message("user", message)
+        # 1. detect slash command
+        skill = None
+        if skill_loader is not None and message.startswith("/"):
+            detected = skill_loader.detect_skill(message)
+            if detected is not None:
+                cmd, args, skill_prompt = detected
+                skill = skill_loader.get_skill(cmd)
+                # persist the raw user message
+                store.append_message("user", message)
+                self.start_run(session_id, run_id)
+                return {
+                    "session": session,
+                    "store": store,
+                    "run_id": run_id,
+                    "skill": skill,
+                    "skill_args": args,
+                }
 
-        # 2. record the run in meta
+        # 2. normal message
+        store.append_message("user", message)
         self.start_run(session_id, run_id)
 
         return {

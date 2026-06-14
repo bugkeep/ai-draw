@@ -25,6 +25,7 @@ from providers.bailian_provider import BailianProvider
 from tools import ALL_TOOLS
 from tools.registry import ToolRegistry
 from agent.runner import AgentRunner, AgentConfig
+from mcp.manager import McpManager
 
 
 class TCPServer:
@@ -38,6 +39,7 @@ class TCPServer:
         self._runner: AgentRunner | None = None
         self._current_provider = ""
         self._current_api_key = ""
+        self._mcp_manager = McpManager()
 
     def register_handler(self, action: str, handler: Callable):
         if not inspect.iscoroutinefunction(handler):
@@ -81,6 +83,9 @@ class TCPServer:
         registry.permissions = perms
         for tool_cls in ALL_TOOLS:
             registry.register(tool_cls())
+        # register MCP tools if available
+        for mcp_tool in self._mcp_manager.tools:
+            registry.register(mcp_tool)
         config = AgentConfig(provider=prov, registry=registry, event_bus=self.event_bus, tracer=self.tracer)
         self._runner = AgentRunner(config)
         self._current_provider = provider
@@ -171,6 +176,13 @@ class TCPServer:
         self._handlers.setdefault("chat", self.handle_chat)
         self._handlers.setdefault("update_permissions", self.handle_update_permissions)
         self._handlers.setdefault("permission_respond", self.handle_permission_respond)
+
+        # start MCP servers
+        try:
+            await self._mcp_manager.start()
+        except Exception as e:
+            print(f"[daemon] MCP start warning: {e}")
+
         await self.event_bus.dispatch(
             SocketStartEvent(host=self.host, port=self.port)
         )
@@ -196,6 +208,11 @@ class TCPServer:
     def stop(self):
         if hasattr(self, "_server") and self._server:
             self._server.close()
+        # stop MCP
+        try:
+            asyncio.ensure_future(self._mcp_manager.stop())
+        except Exception:
+            pass
 
     async def _handle_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter

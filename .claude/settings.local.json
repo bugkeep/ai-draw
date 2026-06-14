@@ -58,7 +58,15 @@
       "Bash(python -m pytest tests/test_protocol.py tests/test_subscription_replay.py -x --tb=short -v)",
       "Bash(python -m pytest tests/test_protocol.py -x --tb=short -v)",
       "Bash(python -m pytest tests/test_tools.py tests/test_openai_provider.py tests/test_agent.py -x --tb=short -v -k \"not test_register_all_drawing_tools\")",
-      "Bash(python -m pytest tests/ --tb=short -v -k \"not test_register_all_drawing_tools\" --ignore=tests/test_e2e.py)"
+      "Bash(python -m pytest tests/ --tb=short -v -k \"not test_register_all_drawing_tools\" --ignore=tests/test_e2e.py)",
+      "Bash(python -m pytest tests/test_runner.py tests/test_event_bus.py tests/test_protocol.py -x --tb=short -v)",
+      "Bash(python -m pytest tests/test_runner.py tests/test_event_bus.py tests/test_protocol.py tests/test_subscription_replay.py tests/test_tools.py -k \"not test_register_all_drawing_tools\" -x --tb=short -v)",
+      "Bash(timeout 30 python -m pytest tests/test_runner.py -x --tb=short -v)",
+      "Bash(timeout 60 python -m pytest tests/ --tb=short -k \"not test_register_all_drawing_tools and not test_tcp\" --ignore=tests/test_e2e.py -v)",
+      "Bash(timeout 15 python -m pytest tests/test_runner.py tests/test_event_bus.py tests/test_protocol.py tests/test_subscription_replay.py -k \"not test_register_all_drawing_tools\" -x --tb=short)",
+      "Bash(timeout 8 python -m pytest tests/test_subscription_replay.py -x --tb=short)",
+      "Bash(python -m pytest tests/test_event_bus.py tests/test_protocol.py -x --tb=short -v)",
+      "Bash(python -m pytest tests/test_subscription_replay.py -x --tb=short -v)"
     ]
   }
 }

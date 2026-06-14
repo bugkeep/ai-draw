@@ -533,6 +533,42 @@ class AgentRunner:
         for tool_cls in SESSION_TOOLS:
             self.registry.register(tool_cls(store))
 
+    def _build_skill_registry(self, skill, parent_runner=None):
+        """Replace the tool registry with one restricted to the skill's whitelist.
+
+        Also registers ``spawn_agent`` so the agent can delegate work to
+        sub-agents.
+        """
+        allowed = set(skill.tools or [])
+        new_registry = ToolRegistry()
+        new_registry.permissions = self.registry.permissions
+
+        for name in allowed:
+            if name == "spawn_agent":
+                from agent.sub_agent import SpawnAgentTool
+                parent = parent_runner or self
+                new_registry.register(SpawnAgentTool(parent))
+            else:
+                tool = self.registry.get(name)
+                if tool is not None:
+                    new_registry.register(tool.__class__())
+
+        self.registry = new_registry
+
+    async def run_with_skill(self, message: str, skill,
+                              canvas_state: dict | None = None,
+                              run_id: str | None = None,
+                              store=None) -> AgentResponse:
+        """Run with a skill's prompt and restricted tool registry."""
+        self.system_prompt = skill.prompt
+        self._build_skill_registry(skill)
+        return await self.run(
+            message=message,
+            canvas_state=canvas_state,
+            run_id=run_id,
+            store=store,
+        )
+
     async def run_and_capture(self, message: str, canvas_state: dict | None = None,
                                run_id: str | None = None,
                                history: list[dict] | None = None,
