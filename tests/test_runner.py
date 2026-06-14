@@ -229,9 +229,20 @@ class TestAgentRunnerLoop:
 
     @pytest.mark.asyncio
     async def test_detailed_vector_composition_can_complete_complex_subject(self):
-        detailed_svg = "<svg>" + "".join(
-            f'<path d="M {i} 0 L {i + 1} 1"/>' for i in range(10)
-        ) + "</svg>"
+        detailed_svg = """
+        <svg viewBox="0 0 800 500">
+          <path id="body_side_plane" d="M100 300 L520 250 L700 320 L180 380 Z"/>
+          <path id="front_plane" d="M520 250 L700 320 L650 370 L500 330 Z"/>
+          <path id="hood_top_plane" d="M320 170 L520 250 L420 260 L250 230 Z"/>
+          <path id="cabin" d="M250 230 L320 170 L460 180 L520 250 Z"/>
+          <path id="windshield_glass" d="M330 185 L430 190 L460 240 L290 225 Z"/>
+          <path id="side_window" d="M435 190 L500 235 L462 248 L430 200 Z"/>
+          <ellipse id="rear_tire" cx="230" cy="355" rx="55" ry="65"/>
+          <ellipse id="front_wheel" cx="585" cy="345" rx="70" ry="80"/>
+          <path id="cast_shadow" d="M120 400 C260 435 560 430 700 390"/>
+          <path id="body_highlight" d="M150 285 C280 240 430 230 580 255"/>
+        </svg>
+        """
         provider = make_provider([
             LLMResponse(content="Drawing", tool_calls=[
                 ToolCall(
@@ -252,6 +263,24 @@ class TestAgentRunnerLoop:
         assert result.rounds == 2
         assert result.tool_calls[0]["name"] == "draw_vector_composition"
 
+    def test_flat_vector_composition_does_not_complete_complex_car(self):
+        flat_svg = "<svg>" + "".join(
+            f'<path d="M {i} 0 L {i + 1} 1"/>' for i in range(10)
+        ) + "</svg>"
+        calls = [
+            {
+                "name": "draw_vector_composition",
+                "arguments": {"svg": flat_svg},
+                "is_error": False,
+            },
+        ]
+
+        assert AgentRunner._complex_scene_incomplete(
+            "image_generation",
+            calls,
+            "draw a 3D perspective car",
+        )
+
     def test_complex_car_requires_structural_parts_when_using_primitives(self):
         calls = [
             {"name": "draw_rect", "arguments": {"object_id": "car_body"}, "is_error": False},
@@ -260,6 +289,10 @@ class TestAgentRunnerLoop:
             {"name": "draw_polygon", "arguments": {"object_id": "windshield"}, "is_error": False},
             {"name": "draw_ellipse", "arguments": {"object_id": "ground_shadow"}, "is_error": False},
             {"name": "draw_path", "arguments": {"object_id": "body_highlight"}, "is_error": False},
+            {"name": "draw_polygon", "arguments": {"object_id": "side_plane"}, "is_error": False},
+            {"name": "draw_polygon", "arguments": {"object_id": "front_plane"}, "is_error": False},
+            {"name": "draw_polygon", "arguments": {"object_id": "hood_top_plane"}, "is_error": False},
+            {"name": "draw_polygon", "arguments": {"object_id": "cabin"}, "is_error": False},
         ]
 
         assert not AgentRunner._complex_scene_incomplete(
