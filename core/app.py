@@ -1,7 +1,7 @@
 import os
 import json
 import asyncio
-from events import EventBus, BaseEvent, format_event_push
+from events import EventBus, EventType, BaseEvent, format_event_push
 from traces import DaemonTracer
 
 

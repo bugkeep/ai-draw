@@ -31,13 +31,18 @@ class ToolPolicy:
         "task_list", "task_get",
         "note_save",
         "draw_circle", "draw_rect", "draw_line", "draw_text", "draw_ellipse",
+        "draw_polygon", "draw_polyline", "draw_path",
     })
 
-    # Tools that modify state — ask user unless already approved.
-    SIDE_EFFECT = frozenset({
-        "bash", "write_file", "patch_file",
+    # Canvas editing tools — auto-allow (user explicitly asked for drawing)
+    CANVAS_EDIT = frozenset({
         "delete_object", "move_object", "change_color", "resize_object",
         "undo", "redo", "clear_canvas",
+    })
+
+    # Tools that modify external state — ask user unless already approved.
+    SIDE_EFFECT = frozenset({
+        "bash", "write_file", "patch_file",
         "task_create", "task_update",
     })
 
@@ -104,18 +109,22 @@ class ToolPolicy:
         if tool_name in self.READ_ONLY:
             return PolicyDecision.ALLOW
 
-        # 3. Bash CWD escape — force ASK (not deny)
+        # 3. Canvas editing — auto allow (user explicitly asked for drawing)
+        if tool_name in self.CANVAS_EDIT:
+            return PolicyDecision.ALLOW
+
+        # 4. Bash CWD escape — force ASK (not deny)
         if tool_name == "bash":
             command = args.get("command", "")
             if self.matches_outside_cwd(command):
                 return PolicyDecision.ASK
             return PolicyDecision.ASK  # normal bash also needs approval
 
-        # 4. Other side-effect tools — ASK
+        # 5. Other side-effect tools — ASK
         if tool_name in self.SIDE_EFFECT:
             return PolicyDecision.ASK
 
-        # 5. Custom callback
+        # 6. Custom callback
         if self._callback is not None:
             cb = self._callback(tool_name, args)
             if cb is True:
@@ -123,5 +132,5 @@ class ToolPolicy:
             if cb is False:
                 return PolicyDecision.DENY
 
-        # 6. Default for unknown tools
+        # 7. Default for unknown tools
         return PolicyDecision.DENY
