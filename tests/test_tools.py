@@ -5,10 +5,15 @@ from tools.drawing.rect import DrawRectTool
 from tools.drawing.line import DrawLineTool
 from tools.drawing.text import DrawTextTool
 from tools.drawing.ellipse import DrawEllipseTool
+from tools.drawing.concentric_circles import DrawConcentricCirclesTool
 from tools.editing.delete import DeleteObjectTool
 from tools.editing.move import MoveObjectTool
 from tools.editing.color import ChangeColorTool
 from tools.editing.resize import ResizeObjectTool
+from tools.editing.rotate import RotateObjectTool
+from tools.editing.arrange import ArrangeObjectTool
+from tools.editing.align import AlignObjectTool
+from tools.editing.distribute import DistributeObjectsTool
 from tools.history.undo import UndoTool
 from tools.history.redo import RedoTool
 from tools.history.clear import ClearCanvasTool
@@ -88,6 +93,46 @@ class TestDrawEllipseTool:
         assert not result.is_error
         assert "fabric.Ellipse" in result.code
         assert "rx: 60" in result.code
+
+
+class TestDrawConcentricCirclesTool:
+    def test_definition(self):
+        defn = DrawConcentricCirclesTool().definition()
+        assert defn.name == "draw_concentric_circles"
+        assert "share exactly one center" in defn.description
+
+    def test_execute_inner_green_outer_blue(self):
+        result = DrawConcentricCirclesTool().execute(
+            outer_color="blue",
+            inner_color="green",
+            outer_radius=120,
+            inner_radius=55,
+            center_x=400,
+            center_y=300,
+        )
+
+        assert not result.is_error
+        assert "fabric.Circle" in result.code
+        assert '"left": 400.0' in result.code
+        assert '"top": 300.0' in result.code
+        assert '"fill": "blue"' in result.code
+        assert '"fill": "green"' in result.code
+        assert result.data["type"] == "concentric_circles"
+        assert result.data["layers"][0]["color"] == "blue"
+        assert result.data["layers"][1]["color"] == "green"
+        assert result.data["layers"][0]["radius"] > result.data["layers"][1]["radius"]
+
+    def test_execute_sorts_explicit_layers_outer_first(self):
+        result = DrawConcentricCirclesTool().execute(
+            layers=[
+                {"name": "inner", "radius": 30, "color": "green"},
+                {"name": "outer", "radius": 90, "color": "blue"},
+            ]
+        )
+
+        assert not result.is_error
+        assert result.data["layers"][0]["name"] == "outer"
+        assert result.data["layers"][1]["name"] == "inner"
 
 
 class TestDeleteObjectTool:
@@ -208,6 +253,59 @@ class TestResizeObjectObjectId:
         assert "objectId === 'rect_1'" in result.code
 
 
+class TestRotateObjectTool:
+    def test_definition(self):
+        defn = RotateObjectTool().definition()
+        assert defn.name == "rotate_object"
+
+    def test_execute_by_object_id(self):
+        result = RotateObjectTool().execute(object_id="circle_1", degrees=45)
+        assert not result.is_error
+        assert "objectId === 'circle_1'" in result.code
+        assert "+ 45.0" in result.code
+        assert result.data["degrees"] == 45.0
+
+
+class TestArrangeObjectTool:
+    def test_definition(self):
+        defn = ArrangeObjectTool().definition()
+        assert defn.name == "arrange_object"
+
+    def test_execute_bring_front(self):
+        result = ArrangeObjectTool().execute(object_id="rect_1", action="bring_front")
+        assert not result.is_error
+        assert "bringToFront" in result.code
+        assert result.data["action"] == "bring_front"
+
+
+class TestAlignObjectTool:
+    def test_definition(self):
+        defn = AlignObjectTool().definition()
+        assert defn.name == "align_object"
+
+    def test_execute_center_all(self):
+        result = AlignObjectTool().execute(selector="all", mode="center")
+        assert not result.is_error
+        assert "canvasWidth" in result.code
+        assert "canvasHeight" in result.code
+        assert "(canvasWidth - boxWidth) / 2" in result.code
+        assert "(canvasHeight - boxHeight) / 2" in result.code
+        assert result.data["mode"] == "center"
+
+
+class TestDistributeObjectsTool:
+    def test_definition(self):
+        defn = DistributeObjectsTool().definition()
+        assert defn.name == "distribute_objects"
+
+    def test_execute_horizontal(self):
+        result = DistributeObjectsTool().execute(axis="horizontal")
+        assert not result.is_error
+        assert "objects.length >= 3" in result.code
+        assert "axis = 'left'" in result.code
+        assert result.data["axis"] == "horizontal"
+
+
 class TestUndoTool:
     def test_definition(self):
         defn = UndoTool().definition()
@@ -245,7 +343,7 @@ class TestToolRegistryIntegration:
         reg = ToolRegistry()
         for tool_cls in ALL_TOOLS:
             reg.register(tool_cls())
-        assert len(reg) == 27
+        assert len(reg) == 32
 
     def test_get_definitions(self):
         from tools import ALL_TOOLS
@@ -255,7 +353,12 @@ class TestToolRegistryIntegration:
         defs = reg.get_tool_definitions()
         names = {d["function"]["name"] for d in defs}
         assert "draw_circle" in names
+        assert "draw_concentric_circles" in names
         assert "draw_vector_composition" in names
         assert "draw_perspective_vehicle" in names
+        assert "rotate_object" in names
+        assert "arrange_object" in names
+        assert "align_object" in names
+        assert "distribute_objects" in names
         assert "undo" in names
         assert "clear_canvas" in names
