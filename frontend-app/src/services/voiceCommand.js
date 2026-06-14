@@ -1,5 +1,17 @@
 const LEADING_FILLERS = /^(?:(?:嗯+|呃+|额+|那个|然后|请|麻烦你|帮我|给我)\s*)+/u
 const NOISE_ONLY = /^(?:你|我|他|她|它|的|了|啊|呀|哦|嗯|呃|额|然后|那个|好|好的)$/u
+const EXACT_RECOGNITION_CORRECTIONS = new Map([
+  ['话术', '画树'],
+])
+
+const RECOGNITION_CORRECTIONS = [
+  [/^(?:带你来|但你来|带你|来)(?=画)/u, ''],
+  [/有应该有/gu, '应该有'],
+  [/有有/gu, '有'],
+  [/一棵房子/gu, '一座房子'],
+  [/一个人人旁边/gu, '一个人 人旁边'],
+  [/人人旁边/gu, '人旁边'],
+]
 
 const COMMAND_RULES = [
   { type: 'undo', pattern: /^(?:撤销|撤消|回退|返回上一步|上一步)(?:操作)?$/u },
@@ -13,13 +25,19 @@ const COMMAND_RULES = [
 ]
 
 export function normalizeVoiceTranscript(rawText) {
-  return String(rawText || '')
+  let text = String(rawText || '')
     .normalize('NFKC')
     .replace(/[，。！？、,.!?;；:：]/gu, ' ')
     .replace(/\s+/gu, ' ')
     .trim()
     .replace(LEADING_FILLERS, '')
     .trim()
+
+  text = EXACT_RECOGNITION_CORRECTIONS.get(text) || text
+  for (const [pattern, replacement] of RECOGNITION_CORRECTIONS) {
+    text = text.replace(pattern, replacement)
+  }
+  return text.replace(/\s+/gu, ' ').trim()
 }
 
 export function parseVoiceCommand(rawText) {

@@ -10,6 +10,8 @@ let recognition = null
 let shouldListen = true
 let suspended = false
 let restartTimer = null
+let finalEmitTimer = null
+let pendingFinalParts = []
 let lastFinalText = ''
 let lastFinalAt = 0
 
@@ -23,6 +25,27 @@ function scheduleRestart() {
     restartTimer = null
     start()
   }, 350)
+}
+
+function flushFinalTranscript() {
+  if (finalEmitTimer) window.clearTimeout(finalEmitTimer)
+  finalEmitTimer = null
+  const finalText = normalizeVoiceTranscript(pendingFinalParts.join(' '))
+  pendingFinalParts = []
+  const now = Date.now()
+  if (finalText && (finalText !== lastFinalText || now - lastFinalAt > 1500)) {
+    lastFinalText = finalText
+    lastFinalAt = now
+    emit('transcript', finalText)
+  }
+}
+
+function queueFinalTranscript(text) {
+  const normalized = normalizeVoiceTranscript(text)
+  if (!normalized) return
+  if (pendingFinalParts.at(-1) !== normalized) pendingFinalParts.push(normalized)
+  if (finalEmitTimer) window.clearTimeout(finalEmitTimer)
+  finalEmitTimer = window.setTimeout(flushFinalTranscript, 1200)
 }
 
 function initRecognition() {
@@ -48,13 +71,7 @@ function initRecognition() {
     }
 
     transcript.value = displayParts.join('')
-    const finalText = normalizeVoiceTranscript(finalParts.join(''))
-    const now = Date.now()
-    if (finalText && (finalText !== lastFinalText || now - lastFinalAt > 1500)) {
-      lastFinalText = finalText
-      lastFinalAt = now
-      emit('transcript', finalText)
-    }
+    queueFinalTranscript(finalParts.join(''))
   }
 
   r.onstart = () => {
@@ -105,6 +122,7 @@ function stop() {
   suspended = false
   if (restartTimer) window.clearTimeout(restartTimer)
   restartTimer = null
+  flushFinalTranscript()
   recognition?.stop()
   emitStatus('语音识别已停止')
 }
@@ -125,7 +143,10 @@ function toggle() {
 }
 
 onMounted(() => window.setTimeout(start, 300))
-onUnmounted(stop)
+onUnmounted(() => {
+  stop()
+  if (finalEmitTimer) window.clearTimeout(finalEmitTimer)
+})
 
 defineExpose({ start, stop, suspendForSpeech, resumeAfterSpeech })
 </script>
