@@ -10,8 +10,10 @@ from tools.base import ToolResult
 from tools.registry import ToolRegistry
 from traces import DaemonTracer
 from events import EventBus, EventType, BaseEvent
-from .prompts import SYSTEM_PROMPT
+from .prompts import BASE_SYSTEM_PROMPT
 from .context import format_three_layer_context
+from agent.router import DrawingModeRouter
+from .prompts import get_mode_prompt
 
 
 def new_run_id() -> str:
@@ -97,10 +99,11 @@ class AgentConfig:
     registry: ToolRegistry | None = None
     event_bus: EventBus | None = None
     tracer: DaemonTracer | None = None
-    system_prompt: str = SYSTEM_PROMPT
+    system_prompt: str = ""  # defaults to BASE_SYSTEM_PROMPT in __init__
     max_rounds: int = 5
     compact_threshold: float = 0.80     # context_pct triggers auto-compact
     compact_keep_rounds: int = 3         # rounds to preserve after compact
+    router: DrawingModeRouter | None = None
 
 
 class AgentRunner:
@@ -110,11 +113,12 @@ class AgentRunner:
         self.registry = config.registry or ToolRegistry()
         self.event_bus = config.event_bus or EventBus()
         self.tracer = config.tracer
-        self.system_prompt = config.system_prompt
+        self.system_prompt = config.system_prompt or BASE_SYSTEM_PROMPT
         self.max_rounds = config.max_rounds
 
         self.compact_threshold = config.compact_threshold
         self.compact_keep_rounds = config.compact_keep_rounds
+        self.router = config.router or DrawingModeRouter()
 
         if not self.provider:
             raise ValueError("LLMProvider is required")
@@ -154,9 +158,22 @@ class AgentRunner:
         if store is not None:
             history = store.read_messages(truncate_tool_result=True)
 
+        # ── intent routing ────────────────────────────────────────────
+        route = await self.router.route(message, canvas_state, history)
+        await self._dispatch_event(EventType.ROUTING_RESULT, {
+            "mode": route.mode.value,
+            "confidence": route.confidence,
+            "subject": route.subject,
+            "reason": route.reason,
+            "requires_search": route.requires_search,
+        }, run_id=run_id)
+        mode_prompt = get_mode_prompt(route.mode.value)
+
         # ── three-layer context injection ──────────────────────────────
         three_layer = format_three_layer_context(store)
-        system_prompt = self.system_prompt.format(canvas_state=canvas_desc)
+        system_prompt = self.system_prompt.format(
+            canvas_state=canvas_desc, mode_prompt=mode_prompt
+        )
         if three_layer:
             system_prompt += "\n\n" + three_layer
 
