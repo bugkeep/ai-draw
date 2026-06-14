@@ -1,3 +1,4 @@
+import os
 import asyncio
 import uuid
 from contextlib import asynccontextmanager
@@ -17,6 +18,15 @@ DAEMON_PORT = 8765
 
 
 def create_app() -> FastAPI:
+    # Load .env at startup so env vars are available to providers
+    env_path = Path(__file__).parent.parent / ".env"
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ[k.strip()] = v.strip()
+
     event_bus = EventBus()
     tracer = DaemonTracer()
     _trace_handler = TraceHandler(event_bus, tracer)

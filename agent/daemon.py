@@ -225,13 +225,10 @@ class TCPServer:
             ClientConnectEvent(client_addr=client_addr, client_id=client_id)
         )
 
-        if self.broadcaster:
-            self.broadcaster.subscribe(Subscription(
-                sub_id=f"tcp-{client_id}",
-                writer=writer,
-                topics=["*"],
-                scope="global",
-            ))
+        # NOTE: event subscription is registered per-request inside the
+        # ``event_subscribe`` handler below — NOT here — so that
+        # request-response actions (chat, run, session.*) get clean reply
+        # messages without event-push interleaving.
 
         try:
             while True:

@@ -177,10 +177,12 @@ class SessionHandler:
         skill = ctx.get("skill")
         skill_args = ctx.get("skill_args", "")
 
-        # 2. init runner from session config
+        # 2. init runner from session config (skip if unchanged)
         provider = session.get("provider", "openai")
         api_key = session.get("api_key", "")
-        self._daemon.init_runner(provider, api_key)
+        if (provider != self._daemon._current_provider
+                or api_key != self._daemon._current_api_key):
+            self._daemon.init_runner(provider, api_key)
 
         # 3. start run with session context restored
         task = asyncio.create_task(
@@ -225,6 +227,11 @@ class SessionHandler:
             # persist only the new messages produced in this run
             store.append_messages(result.new_messages)
         except Exception as e:
+            await self._daemon.event_bus.dispatch(
+                BaseEvent(EventType.AGENT_ERROR, {
+                    "error": str(e), "run_id": run_id,
+                }, run_id=run_id)
+            )
             store.append_message("assistant", f"Error: {e}")
 
     async def cancel_all_runs(self):

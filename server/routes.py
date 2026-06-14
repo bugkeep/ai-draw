@@ -9,7 +9,7 @@ router = APIRouter()
 class ChatRequest(BaseModel):
     message: str
     canvas_state: Optional[dict] = None
-    provider: Optional[str] = "openai"
+    provider: Optional[str] = "bailian"
     api_key: Optional[str] = ""
 
 

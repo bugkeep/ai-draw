@@ -165,7 +165,10 @@ class AgentRunner:
         ]
         if history:
             messages.extend(history)
-        messages.append({"role": "user", "content": message})
+        # Don't duplicate the user message when store already wrote it
+        if not (history and history[-1].get("role") == "user"
+                and history[-1].get("content") == message):
+            messages.append({"role": "user", "content": message})
         tool_defs = self.registry.get_tool_definitions()
 
         all_code: list[str] = []
