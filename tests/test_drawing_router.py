@@ -168,6 +168,9 @@ class TestDrawingModeRouter:
         "把圆改成半透明",
         "加黑色描边",
         "选中红色圆",
+        "框选左上角的图形",
+        "套索选择这些对象",
+        "用魔棒选择相似颜色",
         "裁剪最后一个对象",
         "用矩形做遮罩",
         "把图层改成正片叠底",
@@ -310,6 +313,9 @@ class TestModePrompts:
         assert "change_opacity" in p
         assert "change_stroke" in p
         assert "select_object" in p
+        assert "select_by_region" in p
+        assert "select_by_lasso" in p
+        assert "select_similar" in p
         assert "crop_object" in p
         assert "apply_clip_mask" in p
         assert "change_blend_mode" in p
@@ -366,6 +372,7 @@ class TestPromptTemplates:
         assert "Brush" in p
         assert "bezier path" in p
         assert "align" in p
+        assert "magic wand" in p
         assert "Layers" in p
 
     def test_base_prompt_formatting(self):
@@ -381,6 +388,9 @@ class TestPromptTemplates:
         assert "duplicate_object" in prompt
         assert "change_stroke" in prompt
         assert "select_object" in prompt
+        assert "select_by_region" in prompt
+        assert "select_by_lasso" in prompt
+        assert "select_similar" in prompt
         assert "apply_clip_mask" in prompt
         assert "change_blend_mode" in prompt
         assert "apply_image_filter" in prompt
