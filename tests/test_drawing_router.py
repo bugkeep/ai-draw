@@ -404,10 +404,19 @@ class TestPromptTemplates:
     def test_operation_prompt_covers_common_drawing_software_actions(self):
         p = SOFTWARE_OPERATION_PROMPT
         assert "Brush" in p
+        assert "clone stamp" in p
         assert "eyedropper" in p
         assert "bezier path" in p
         assert "align" in p
         assert "magic wand" in p
+        assert "quick selection" in p
+        assert "color range" in p
+        assert "perspective transform" in p
+        assert "levels" in p
+        assert "curves" in p
+        assert "liquify" in p
+        assert "lock" in p
+        assert "export" in p
         assert "Layers" in p
 
     def test_base_prompt_formatting(self):
