@@ -1,7 +1,7 @@
 from ..base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 
 
-FILTER_TYPES = ["brightness", "contrast", "blur", "grayscale", "invert", "saturation"]
+FILTER_TYPES = ["brightness", "contrast", "blur", "grayscale", "invert", "saturation", "pixelate", "noise"]
 
 
 class ApplyImageFilterTool(BaseTool):
@@ -13,7 +13,12 @@ class ApplyImageFilterTool(BaseTool):
                 ToolParameter(name="selector", type="string", description="Object selector: 'last' or index number (ignored when object_id is set)", required=False),
                 ToolParameter(name="object_id", type="string", description="Stable objectId assigned during creation", required=False),
                 ToolParameter(name="filter_type", type="string", description="Filter type", required=True, enum=FILTER_TYPES),
-                ToolParameter(name="value", type="number", description="Filter amount. Brightness/contrast/saturation usually -1..1; blur 0..1.", required=False),
+                ToolParameter(
+                    name="value",
+                    type="number",
+                    description="Filter amount. Brightness/contrast/saturation usually -1..1; blur 0..1; pixelate block size 1..80; noise 0..1000.",
+                    required=False,
+                ),
                 ToolParameter(name="replace_existing", type="boolean", description="Replace existing filter of the same type (default: true)", required=False),
             ],
         )
@@ -30,6 +35,10 @@ class ApplyImageFilterTool(BaseTool):
             return ToolResult(is_error=True, error="value must be between -1 and 1 for this filter")
         if filter_type == "blur" and not 0 <= value <= 1:
             return ToolResult(is_error=True, error="blur value must be between 0 and 1")
+        if filter_type == "pixelate" and not 1 <= value <= 80:
+            return ToolResult(is_error=True, error="pixelate value must be between 1 and 80")
+        if filter_type == "noise" and not 0 <= value <= 1000:
+            return ToolResult(is_error=True, error="noise value must be between 0 and 1000")
 
         if object_id:
             expr = f"canvas.getObjects().find(o => o.objectId === '{object_id}')"
@@ -92,4 +101,9 @@ if (obj && obj.type === 'image' && obj.applyFilters) {{
             return "new fabric.Image.filters.Invert()"
         if filter_type == "saturation":
             return f"new fabric.Image.filters.Saturation({{ saturation: {value} }})"
+        if filter_type == "pixelate":
+            blocksize = int(round(value))
+            return f"new fabric.Image.filters.Pixelate({{ blocksize: {blocksize} }})"
+        if filter_type == "noise":
+            return f"new fabric.Image.filters.Noise({{ noise: {value} }})"
         return "null"

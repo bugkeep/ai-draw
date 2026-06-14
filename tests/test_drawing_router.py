@@ -194,6 +194,8 @@ class TestDrawingModeRouter:
         "用矩形做遮罩",
         "把图层改成正片叠底",
         "给图片加模糊滤镜",
+        "把图片像素化",
+        "给照片加噪点",
         "锁定最后一个对象",
         "隐藏蓝色圆",
         "显示所有图层",
@@ -424,6 +426,8 @@ class TestPromptTemplates:
         assert "levels" in p
         assert "curves" in p
         assert "liquify" in p
+        assert "pixelate" in p
+        assert "noise" in p
         assert "lock" in p
         assert "export" in p
         assert "Layers" in p

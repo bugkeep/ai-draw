@@ -158,7 +158,7 @@ RULES:
 25. For rectangular crop: crop_object(object_id=..., x=..., y=..., width=..., height=...).
 26. For clipping/masks: apply_clip_mask(target_object_id=..., mask_object_id=...).
 27. For blend/composite modes: change_blend_mode(object_id=..., mode="multiply"/"screen"/"overlay"/...).
-28. For image filters: apply_image_filter(object_id=..., filter_type="brightness"/"contrast"/"blur"/"grayscale"/"invert"/"saturation", value=...).
+28. For image filters: apply_image_filter(object_id=..., filter_type="brightness"/"contrast"/"blur"/"grayscale"/"invert"/"saturation"/"pixelate"/"noise", value=...).
 29. For object locking/unlocking: set_object_lock(object_id=... or selector="all", locked=True/False).
 30. For object visibility: set_object_visibility(object_id=... or selector="all", visible=True/False).
 31. For deletion: delete_object(object_id=...).
@@ -222,7 +222,7 @@ Available tools:
 - crop_object — apply a rectangular crop
 - apply_clip_mask — use one object as another object's clipping mask
 - change_blend_mode — set object blend/composite mode
-- apply_image_filter — apply brightness, contrast, blur, grayscale, invert, or saturation filters to image objects
+- apply_image_filter — apply brightness, contrast, blur, grayscale, invert, saturation, pixelate, or noise filters to image objects
 - boolean_shape_operation — object-level union/intersect/subtract/exclude compound shapes
 - set_object_lock — lock or unlock objects so they cannot be selected, moved, scaled, or rotated accidentally
 - set_object_visibility — hide or show objects without deleting them
@@ -251,7 +251,7 @@ Rules:
 Handling user feedback:
 - If the user says "不好看" / "不像" / "重新画" / "改一下" / "换个风格" / "二维" / "平面" / "贴片" / "没有正常3D结构" / "乱七八糟" etc., use delete_object(selector="all") or clear_canvas first, then redraw with better parameters
 - If the feedback says the image is flat/two-dimensional/sticker-like/messy or lacks normal 3D structure, do not search/import a cartoon asset. Redraw the prior subject as an image_generation-style structured vector; for vehicles use draw_perspective_vehicle first.
-- If the user asks to modify an existing element (改颜色, 换颜色, 填充, 渐变, 油漆桶, 吸管, 复制样式, 移动, 挪一下, 放大, 缩小, 旋转, 翻转, 镜像, 倾斜, 布尔, 合并形状, 相交, 相减, 排除, 置顶, 置底, 对齐, 均匀分布, 复制, 成组, 取消成组, 透明, 描边, 选中, 框选, 椭圆框选, 套索, 魔棒, 相似对象, 裁剪, 遮罩, 剪贴, 混合模式, 滤镜, 模糊, 调亮, 灰度, 锁定, 解锁, 隐藏, 显示), use the canvas editing tools
+- If the user asks to modify an existing element (改颜色, 换颜色, 填充, 渐变, 油漆桶, 吸管, 复制样式, 移动, 挪一下, 放大, 缩小, 旋转, 翻转, 镜像, 倾斜, 布尔, 合并形状, 相交, 相减, 排除, 置顶, 置底, 对齐, 均匀分布, 复制, 成组, 取消成组, 透明, 描边, 选中, 框选, 椭圆框选, 套索, 魔棒, 相似对象, 裁剪, 遮罩, 剪贴, 混合模式, 滤镜, 模糊, 调亮, 灰度, 像素化, 噪点, 锁定, 解锁, 隐藏, 显示), use the canvas editing tools
 - Always check Current canvas state above before responding to feedback
 - When the canvas is not empty and the user gives new instructions, decide whether to add to or replace the existing content
 
@@ -308,7 +308,7 @@ Available drawing tools:
 - crop_object — apply a rectangular crop.
 - apply_clip_mask — use one object as another object's clipping mask.
 - change_blend_mode — set object blend/composite mode.
-- apply_image_filter — apply brightness, contrast, blur, grayscale, invert, or saturation filters to image objects.
+- apply_image_filter — apply brightness, contrast, blur, grayscale, invert, saturation, pixelate, or noise filters to image objects.
 - boolean_shape_operation — object-level union/intersect/subtract/exclude compound shapes.
 - set_object_lock — lock or unlock objects so they cannot be selected, moved, scaled, or rotated accidentally.
 - set_object_visibility — hide or show objects without deleting them.
@@ -375,7 +375,7 @@ For modification requests:
 - "裁剪它/裁掉右边一点" → crop_object(selector="last", ...)
 - "用这个矩形做遮罩/剪贴到形状里" → apply_clip_mask(target_object_id=..., mask_object_id=...)
 - "改成正片叠底/滤色/叠加" → change_blend_mode(mode="multiply"/"screen"/"overlay")
-- "把图片调亮/加模糊/变灰度/反色/提高饱和度" → apply_image_filter(filter_type=..., value=...)
+- "把图片调亮/加模糊/变灰度/反色/提高饱和度/像素化/加噪点" → apply_image_filter(filter_type=..., value=...)
 - "锁定这个对象/解锁所有图形" → set_object_lock(selector="last"/"all", locked=True/False)
 - "隐藏蓝色圆/显示所有对象/取消隐藏图层" → set_object_visibility(type="circle", color="blue", visible=False) / set_object_visibility(selector="all", visible=True)
 

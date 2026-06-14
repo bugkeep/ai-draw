@@ -726,8 +726,30 @@ class TestApplyImageFilterTool:
         assert not result.is_error
         assert "fabric.Image.filters.Grayscale" in result.code
 
+    def test_execute_pixelate(self):
+        result = ApplyImageFilterTool().execute(object_id="image_1", filter_type="pixelate", value=12.4)
+        assert not result.is_error
+        assert "fabric.Image.filters.Pixelate" in result.code
+        assert "blocksize: 12" in result.code
+        assert result.data["filter_type"] == "pixelate"
+
+    def test_execute_noise(self):
+        result = ApplyImageFilterTool().execute(object_id="image_1", filter_type="noise", value=180)
+        assert not result.is_error
+        assert "fabric.Image.filters.Noise" in result.code
+        assert "noise: 180.0" in result.code
+        assert result.data["filter_type"] == "noise"
+
     def test_rejects_invalid_filter_value(self):
         result = ApplyImageFilterTool().execute(filter_type="blur", value=2)
+        assert result.is_error
+
+    def test_rejects_invalid_pixelate_value(self):
+        result = ApplyImageFilterTool().execute(filter_type="pixelate", value=0)
+        assert result.is_error
+
+    def test_rejects_invalid_noise_value(self):
+        result = ApplyImageFilterTool().execute(filter_type="noise", value=1001)
         assert result.is_error
 
 

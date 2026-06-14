@@ -44,7 +44,7 @@ _cr(r"(?:选中|选择|框选|椭圆框选|椭圆选区|区域选择|选取|套�
 _cr(r"(?:裁剪|裁掉|剪裁|crop)", DrawingMode.CANVAS_EDIT, 0.50, "explicit crop request")
 _cr(r"(?:遮罩|剪贴|剪贴蒙版|蒙版|mask|clip)", DrawingMode.CANVAS_EDIT, 0.50, "explicit mask request")
 _cr(r"(?:混合模式|正片叠底|滤色|叠加|变暗|变亮|差值|排除|blend|multiply|screen|overlay)", DrawingMode.CANVAS_EDIT, 0.50, "explicit blend mode request")
-_cr(r"(?:滤镜|模糊|调亮|调暗|亮度|对比度|灰度|反色|饱和度|filter|blur|brightness|contrast|grayscale|invert|saturation)", DrawingMode.CANVAS_EDIT, 0.50, "explicit image filter request")
+_cr(r"(?:滤镜|模糊|调亮|调暗|亮度|对比度|灰度|反色|饱和度|像素化|噪点|filter|blur|brightness|contrast|grayscale|invert|saturation|pixelate|noise)", DrawingMode.CANVAS_EDIT, 0.50, "explicit image filter request")
 _cr(r"(?:锁定|解锁|取消锁定|隐藏|显示|取消隐藏|lock|unlock|hide|show)", DrawingMode.CANVAS_EDIT, 0.50, "explicit object lock or visibility request")
 # 改颜色
 _cr(r"(?:改|换|变成).*[颜颜]色", DrawingMode.CANVAS_EDIT, 0.50, "explicit color change")
