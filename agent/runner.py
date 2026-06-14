@@ -2,6 +2,7 @@ import json
 import time
 import random
 import string
+import re
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -17,6 +18,7 @@ from .prompts import get_mode_prompt
 
 
 COMPLEX_SCENE_MIN_DRAW_CALLS = 6
+DETAILED_COMPOSITION_MIN_ELEMENTS = 10
 COMPLEX_SCENE_MIN_ROUNDS = 12
 DRAWING_TOOL_PREFIX = "draw_"
 
@@ -245,7 +247,7 @@ class AgentRunner:
             last_content = response.content or last_content
 
             if not response.tool_calls:
-                if self._complex_scene_incomplete(route.mode.value, all_tool_calls):
+                if self._complex_scene_incomplete(route.mode.value, all_tool_calls, message):
                     assistant_msg = {
                         "role": "assistant",
                         "content": response.content or "",
@@ -254,10 +256,12 @@ class AgentRunner:
                         "role": "user",
                         "content": (
                             "The complex editable scene is not complete yet. "
+                            f"Original user request: {message}\n"
                             "Continue drawing the missing layers, named subjects, "
                             "spatial relationships, and visual details. Use several "
                             "drawing tool calls in this response, and only finish "
-                            "after at least 6 successful drawing operations."
+                            "after the original subject and its required structure "
+                            "are visibly complete."
                         ),
                     }
                     messages.extend([assistant_msg, continuation_msg])
@@ -326,15 +330,62 @@ class AgentRunner:
         )
 
     @staticmethod
-    def _complex_scene_incomplete(mode: str, tool_calls: list[dict]) -> bool:
+    def _complex_scene_incomplete(mode: str, tool_calls: list[dict], message: str = "") -> bool:
         if mode != "image_generation":
             return False
+        if any(AgentRunner._is_detailed_subject_tool(call) for call in tool_calls):
+            return False
+        if AgentRunner._missing_subject_requirements(message, tool_calls):
+            return True
         successful_draw_calls = sum(
             1 for call in tool_calls
             if not call.get("is_error")
             and str(call.get("name", "")).startswith(DRAWING_TOOL_PREFIX)
         )
         return successful_draw_calls < COMPLEX_SCENE_MIN_DRAW_CALLS
+
+    @staticmethod
+    def _missing_subject_requirements(message: str, tool_calls: list[dict]) -> list[str]:
+        if not re.search(r"(?:汽车|轿车|跑车|车辆|\bcar\b|\bvehicle\b)", message, re.IGNORECASE):
+            return []
+
+        labels = " ".join(
+            f"{call.get('name', '')} "
+            f"{call.get('arguments', {}).get('object_id', '')} "
+            f"{call.get('arguments', {}).get('semantic_type', '')}"
+            for call in tool_calls
+            if not call.get("is_error")
+        ).lower()
+        requirements = {
+            "vehicle body": ("car_body", "vehicle_body", "body", "chassis"),
+            "wheels": ("wheel", "tire", "tyre"),
+            "windows": ("window", "windshield", "windscreen", "glass"),
+            "depth lighting": ("shadow", "highlight", "reflection"),
+        }
+        return [
+            name for name, alternatives in requirements.items()
+            if not any(alternative in labels for alternative in alternatives)
+        ]
+
+    @staticmethod
+    def _is_detailed_vector_composition(call: dict) -> bool:
+        if call.get("is_error") or call.get("name") != "draw_vector_composition":
+            return False
+        svg = str(call.get("arguments", {}).get("svg", ""))
+        visible_elements = re.findall(
+            r"<(?:path|circle|ellipse|rect|line|polyline|polygon)\b",
+            svg,
+            re.IGNORECASE,
+        )
+        return len(visible_elements) >= DETAILED_COMPOSITION_MIN_ELEMENTS
+
+    @staticmethod
+    def _is_detailed_subject_tool(call: dict) -> bool:
+        if call.get("is_error"):
+            return False
+        if call.get("name") == "draw_perspective_vehicle":
+            return True
+        return AgentRunner._is_detailed_vector_composition(call)
 
     async def _plan(self, messages: list[dict], tools: list[dict], run_id: str = "", round_num: int = 0) -> tuple[LLMResponse, str | None] | None:
         model = getattr(self.provider, "model", "")

@@ -94,6 +94,18 @@ _cr(r"(?:找一张|搜索).*(?:照片|图片|图)", DrawingMode.RASTER_ASSET, 0.
 _cr(r"(?:场景|街景|风景|风景画|山水|日落|日出|夜景)", DrawingMode.IMAGE_GENERATION, 0.50, "scene description")
 _cr(r"(?:骑.*的.*|戴.*的.*|穿着.*的.*)", DrawingMode.IMAGE_GENERATION, 0.40, "character with modifiers")
 _cr(r"(?:复杂|细节丰富|丰富细节|完整画面|完整场景|一幅.*(?:画|插画)|插画)", DrawingMode.IMAGE_GENERATION, 0.55, "explicit detailed composition")
+_cr(
+    r"(?:3d|三维|立体|透视|三分之四视角|斜侧面|纵深|空间感|结构完整|正常结构|真实结构|复杂结构)",
+    DrawingMode.IMAGE_GENERATION,
+    0.75,
+    "perspective or structurally detailed subject",
+)
+_cr(
+    r"(?:detailed|complex|perspective|three[- ]quarter|3/4 view|isometric|realistic structure)",
+    DrawingMode.IMAGE_GENERATION,
+    0.75,
+    "detailed or perspective subject",
+)
 _cr(r"(?:背景|前景|远处|近处|周围|天空|地面).*(?:还有|以及|同时|旁边|远处|近处|前景|背景)", DrawingMode.IMAGE_GENERATION, 0.45, "multi-layer composition")
 
 # ── Negative rules (de-boosts for misclassification) ────────────────────────

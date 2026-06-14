@@ -227,6 +227,88 @@ class TestAgentRunnerLoop:
         assert len(result.tool_calls) == 6
         assert result.rounds == 8
 
+    @pytest.mark.asyncio
+    async def test_detailed_vector_composition_can_complete_complex_subject(self):
+        detailed_svg = "<svg>" + "".join(
+            f'<path d="M {i} 0 L {i + 1} 1"/>' for i in range(10)
+        ) + "</svg>"
+        provider = make_provider([
+            LLMResponse(content="Drawing", tool_calls=[
+                ToolCall(
+                    id="car",
+                    name="draw_vector_composition",
+                    arguments={"svg": detailed_svg},
+                ),
+            ]),
+            LLMResponse(content="Done"),
+        ])
+        registry = make_registry()
+        from tools.drawing.vector_composition import DrawVectorCompositionTool
+        registry.register(DrawVectorCompositionTool())
+        runner = AgentRunner(AgentConfig(provider=provider, registry=registry))
+
+        result = await runner.run("draw a detailed car in three-quarter perspective")
+
+        assert result.rounds == 2
+        assert result.tool_calls[0]["name"] == "draw_vector_composition"
+
+    def test_complex_car_requires_structural_parts_when_using_primitives(self):
+        calls = [
+            {"name": "draw_rect", "arguments": {"object_id": "car_body"}, "is_error": False},
+            {"name": "draw_circle", "arguments": {"object_id": "wheel_front"}, "is_error": False},
+            {"name": "draw_circle", "arguments": {"object_id": "wheel_rear"}, "is_error": False},
+            {"name": "draw_polygon", "arguments": {"object_id": "windshield"}, "is_error": False},
+            {"name": "draw_ellipse", "arguments": {"object_id": "ground_shadow"}, "is_error": False},
+            {"name": "draw_path", "arguments": {"object_id": "body_highlight"}, "is_error": False},
+        ]
+
+        assert not AgentRunner._complex_scene_incomplete(
+            "image_generation",
+            calls,
+            "draw a 3D perspective car",
+        )
+
+        calls = [call for call in calls if "wheel" not in call["arguments"]["object_id"]]
+        assert AgentRunner._complex_scene_incomplete(
+            "image_generation",
+            calls,
+            "draw a 3D perspective car",
+        )
+
+    def test_perspective_vehicle_tool_completes_complex_car(self):
+        calls = [
+            {
+                "name": "draw_perspective_vehicle",
+                "arguments": {"body_color": "#1677ff"},
+                "is_error": False,
+            },
+        ]
+
+        assert not AgentRunner._complex_scene_incomplete(
+            "image_generation",
+            calls,
+            "draw a 3D perspective car",
+        )
+
+    @pytest.mark.asyncio
+    async def test_complex_continuation_repeats_original_request(self):
+        captured_messages = []
+
+        async def achat(messages, tools=None, model=None, **kwargs):
+            captured_messages.append(messages)
+            return LLMResponse(content="Done")
+
+        provider = MagicMock()
+        provider.achat = achat
+        runner = AgentRunner(AgentConfig(provider=provider, registry=make_registry(), max_rounds=2))
+
+        await runner.run("draw a 3D perspective car")
+
+        assert any(
+            "Original user request: draw a 3D perspective car" in message.get("content", "")
+            for message in captured_messages[-1]
+        )
+
 
 class TestAgentRunnerEvents:
     @pytest.mark.asyncio

@@ -57,12 +57,26 @@ COMPLETION RULES:
 4. Use multiple shapes and paths for important subjects instead of one
    placeholder shape.  A complex scene should normally contain at least 6
    drawing operations.
-5. Batch independent drawing tool calls in the same response when possible.
-6. Continue adding missing layers and details after tool results.  Do NOT
+5. For a coherent complex subject, prefer draw_vector_composition with a
+   complete layered SVG containing at least 10 visible elements. Use curved
+   paths, overlapping planes, gradients, highlights, cast shadows, and
+   asymmetry to communicate volume and depth.
+6. When perspective or 3D structure is requested, choose a clear viewpoint
+   and keep all planes consistent with it. For a car or vehicle, you MUST use
+   draw_perspective_vehicle as the first drawing tool. For another perspective
+   subject, use draw_vector_composition first. Do not fall back to a flat icon
+   or unrelated scene.
+7. For a three-quarter-view vehicle, draw_perspective_vehicle already includes
+   the required body silhouette, hood, cabin/roof, windshield, side windows,
+   visible front and side planes, perspective-scaled wheels and rims, bumpers,
+   lights, grille, panel seams, ground shadow, and highlights. Do not replace
+   it with a hand-written flat car SVG.
+8. Batch independent drawing tool calls in the same response when possible.
+9. Continue adding missing layers and details after tool results.  Do NOT
    claim the scene is complete after drawing only one or two objects.
-7. Draw large background elements first and small foreground details last so
+10. Draw large background elements first and small foreground details last so
    Fabric.js stacking order remains correct.
-8. Be honest that the result is an editable vector illustration, not a
+11. Be honest that the result is an editable vector illustration, not a
    photorealistic generated image.
 """
 
@@ -113,6 +127,8 @@ Available tools:
 - draw_polygon — closed polygons (triangles, stars, roofs). Minimum 3 points.
 - draw_polyline — open polylines (branching lines, mountain outlines). Minimum 2 points.
 - draw_path — SVG paths (bezier curves, arcs, complex contours)
+- draw_vector_composition — sanitized layered SVG for detailed subjects, perspective, gradients, highlights, and shadows
+- draw_perspective_vehicle — detailed editable three-quarter-view car with coherent 3D-like structure
 - search_vector_asset — search SVG for common icons and objects
 - import_vector_asset — import a chosen SVG into the canvas
 - replace_vector_asset — replace an imported asset
@@ -124,6 +140,8 @@ Rules:
 3. Before finishing, verify that every object explicitly requested by the user has a corresponding successful drawing tool call
 4. Batch independent tool calls in one response whenever possible; do not spend one round per tiny detail
 5. Choose the right tool: triangles → draw_polygon, curves → draw_path, straight multi-point lines → draw_polyline
+   For detailed coherent subjects, perspective, depth, gradients, or 10+ related parts → draw_vector_composition
+   For a detailed or perspective car/vehicle → draw_perspective_vehicle
 6. Choose reasonable parameters (coordinates, colors, sizes) based on the description
 7. If no position is specified, center the object on the canvas
 8. If no color or a named color is specified, map Chinese color names: 红色→red, 蓝色→blue, 绿色→green, 黄色→yellow, 黑色→black, 白色→white, 紫色→purple, 橙色→orange, 粉色→pink, 灰色→gray
@@ -165,6 +183,8 @@ Available drawing tools:
 - draw_polygon — closed polygons (triangles, stars, roofs, irregular shapes). Minimum 3 points.
 - draw_polyline — open polylines (branching lines, lightning, mountain outlines). Minimum 2 points.
 - draw_path — SVG paths (bezier curves, arcs, complex contours, smooth curves). Uses SVG path syntax: M/L/C/Q/A/Z.
+- draw_vector_composition — sanitized layered SVG for coherent complex subjects, perspective, gradients, highlights, and shadows.
+- draw_perspective_vehicle — detailed editable front-right three-quarter-view car with coherent 3D-like structure.
 - search_vector_asset — search SVG for common icons and objects
 - import_vector_asset — import a chosen SVG into the canvas
 - replace_vector_asset — replace an imported asset
@@ -175,6 +195,8 @@ Available drawing tools:
    - Triangle, star, roof → draw_polygon with 3+ points
    - Open line through multiple points → draw_polyline
    - Smooth curve, bezier, arc → draw_path with SVG path syntax
+   - Detailed single subject, perspective view, many related parts → draw_vector_composition with 10+ visible SVG elements
+   - Detailed or perspective car/vehicle → draw_perspective_vehicle
 2. Before finishing, verify that every object explicitly requested by the user has a corresponding successful drawing tool call
 3. Batch independent tool calls in one response whenever possible; do not spend one round per tiny detail
 4. Choose reasonable parameters (coordinates, colors, sizes) based on the description
@@ -224,6 +246,13 @@ For common icons (smiley, heart, car, animal, flower, etc.):
 - Use search_vector_asset to find SVG candidates
 - Then import_vector_asset to place onto canvas
 - Do NOT try to assemble these from basic shapes
+
+For detailed or perspective objects (for example a 3D three-quarter-view car):
+- Do NOT use a flat icon search result
+- For a car or vehicle, use draw_perspective_vehicle as the first drawing tool
+- For other subjects, use draw_vector_composition as the first drawing tool
+- Build one coherent silhouette with overlapping depth planes and 10+ visible elements
+- Include structural parts, perspective-scaled details, shadow, highlights, and material contrast
 
 {mode_prompt}
 
