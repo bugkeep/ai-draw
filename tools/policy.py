@@ -30,6 +30,7 @@ class ToolPolicy:
         "read_file", "search_text", "list_dir",
         "task_list", "task_get",
         "note_save",
+        "search_vector_asset", "list_asset_candidates",
         "draw_circle", "draw_rect", "draw_line", "draw_text", "draw_ellipse",
         "draw_polygon", "draw_polyline", "draw_path",
     })
@@ -38,6 +39,7 @@ class ToolPolicy:
     CANVAS_EDIT = frozenset({
         "delete_object", "move_object", "change_color", "resize_object",
         "undo", "redo", "clear_canvas",
+        "import_vector_asset", "replace_vector_asset",
     })
 
     # Tools that modify external state — ask user unless already approved.
