@@ -11,6 +11,7 @@ from agent.daemon import TCPServer
 from core.app import JsonlRecorder, TraceHandler, AgentRunHandler, SessionHandler
 from traces import DaemonTracer
 from .routes import router
+from .asset_routes import router as asset_router
 from .daemon_client import DaemonClient
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend-dist"
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     app.state.daemon_client = DaemonClient(port=DAEMON_PORT)
 
     app.include_router(router, prefix="/api")
+    app.include_router(asset_router)
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket):
