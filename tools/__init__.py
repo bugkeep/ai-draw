@@ -21,6 +21,9 @@ from .editing import (
     UngroupObjectsTool,
     ChangeOpacityTool,
     ChangeStrokeTool,
+    SelectObjectTool,
+    CropObjectTool,
+    ApplyClipMaskTool,
 )
 from .history import UndoTool, RedoTool, ClearCanvasTool
 from .assets import (
@@ -59,6 +62,9 @@ ALL_TOOLS = [
     UngroupObjectsTool,
     ChangeOpacityTool,
     ChangeStrokeTool,
+    SelectObjectTool,
+    CropObjectTool,
+    ApplyClipMaskTool,
     UndoTool,
     RedoTool,
     ClearCanvasTool,
@@ -86,6 +92,7 @@ __all__ = [
     "RotateObjectTool", "ArrangeObjectTool", "AlignObjectTool", "DistributeObjectsTool",
     "DuplicateObjectTool", "GroupObjectsTool", "UngroupObjectsTool",
     "ChangeOpacityTool", "ChangeStrokeTool",
+    "SelectObjectTool", "CropObjectTool", "ApplyClipMaskTool",
     "UndoTool", "RedoTool", "ClearCanvasTool",
     "ReadFileTool", "WriteFileTool", "ListDirTool",
     "BashTool", "SearchTextTool", "PatchFileTool",
