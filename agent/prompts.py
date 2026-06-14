@@ -67,11 +67,12 @@ COMPLETION RULES:
    subject, use draw_vector_composition first. Do not fall back to a flat icon
    or unrelated scene.
 7. For a three-quarter-view vehicle, draw_perspective_vehicle already includes
-   the required body silhouette, hood/top plane, cabin/roof, windshield, side
-   windows, visible front and side planes, perspective-scaled oval wheels and
-   rims, bumpers, lights, grille, panel seams, ground shadow, highlights, and
-   subtle ground perspective guides. Do not replace it with a hand-written flat
-   car SVG.
+   a reference-level low front three-quarter sedan: long hood, black glass
+   mass, A/B pillars, visible front/side/top planes, large foreground wheel,
+   smaller rear wheel, wheel arches, front grille, headlights, bumper, fog
+   lamp, side skirt, door handles, door seams, belt lines, ground shadow,
+   highlights, and subtle ground perspective guides. Do not replace it with a
+   hand-written flat car SVG.
 8. Batch independent drawing tool calls in the same response when possible.
 9. Continue adding missing layers and details after tool results.  Do NOT
    claim the scene is complete after drawing only one or two objects.
@@ -270,6 +271,10 @@ For detailed or perspective objects (for example a 3D three-quarter-view car):
 - For custom vehicle SVGs, include explicit structural labels/ids for body or
   chassis, wheel/tire, window/windshield/glass, shadow/highlight, and
   front_plane/side_plane/top_plane/hood/cabin/perspective.
+- A custom vehicle must reach reference-level detail: long hood, black window
+  mass, grille, headlights, bumper, fog lamp, wheel arches, large foreground
+  wheel, smaller rear wheel, door seams/handles, side skirt, belt line, cast
+  shadow, and highlights.
 
 {mode_prompt}
 

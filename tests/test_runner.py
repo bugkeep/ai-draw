@@ -241,6 +241,14 @@ class TestAgentRunnerLoop:
           <ellipse id="front_wheel" cx="585" cy="345" rx="70" ry="80"/>
           <path id="cast_shadow" d="M120 400 C260 435 560 430 700 390"/>
           <path id="body_highlight" d="M150 285 C280 240 430 230 580 255"/>
+          <path id="center_grille" d="M130 320 L230 330 L220 370 L120 365 Z"/>
+          <path id="right_headlight" d="M300 325 L430 335 L420 360 L290 365 Z"/>
+          <path id="front_bumper" d="M90 360 L430 385 L410 430 L110 420 Z"/>
+          <path id="front_fog_lamp" d="M360 390 L430 395 L420 410 L350 408 Z"/>
+          <path id="front_wheel_arch" d="M500 350 C520 300 620 300 650 350"/>
+          <path id="side_skirt" d="M540 410 L720 380 L735 395 L550 435 Z"/>
+          <path id="front_door_seam" d="M560 240 L550 410"/>
+          <path id="body_belt_line" d="M430 310 L730 270"/>
         </svg>
         """
         provider = make_provider([
@@ -293,6 +301,12 @@ class TestAgentRunnerLoop:
             {"name": "draw_polygon", "arguments": {"object_id": "front_plane"}, "is_error": False},
             {"name": "draw_polygon", "arguments": {"object_id": "hood_top_plane"}, "is_error": False},
             {"name": "draw_polygon", "arguments": {"object_id": "cabin"}, "is_error": False},
+            {"name": "draw_path", "arguments": {"object_id": "center_grille"}, "is_error": False},
+            {"name": "draw_path", "arguments": {"object_id": "right_headlight"}, "is_error": False},
+            {"name": "draw_path", "arguments": {"object_id": "front_bumper"}, "is_error": False},
+            {"name": "draw_path", "arguments": {"object_id": "front_wheel_arch"}, "is_error": False},
+            {"name": "draw_path", "arguments": {"object_id": "side_skirt"}, "is_error": False},
+            {"name": "draw_path", "arguments": {"object_id": "front_door_seam"}, "is_error": False},
         ]
 
         assert not AgentRunner._complex_scene_incomplete(
