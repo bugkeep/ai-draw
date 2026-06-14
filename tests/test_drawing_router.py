@@ -170,6 +170,8 @@ class TestDrawingModeRouter:
         "选中红色圆",
         "裁剪最后一个对象",
         "用矩形做遮罩",
+        "把图层改成正片叠底",
+        "给图片加模糊滤镜",
     ])
     def test_canvas_edit_voice_layout_operations(self, router, message):
         r = self.route(router, message, canvas_state={"objects": [{"type": "circle"}]})
@@ -310,6 +312,8 @@ class TestModePrompts:
         assert "select_object" in p
         assert "crop_object" in p
         assert "apply_clip_mask" in p
+        assert "change_blend_mode" in p
+        assert "apply_image_filter" in p
         assert "NOT by array index" in p
 
     def test_diagram_prompt(self):
@@ -378,6 +382,8 @@ class TestPromptTemplates:
         assert "change_stroke" in prompt
         assert "select_object" in prompt
         assert "apply_clip_mask" in prompt
+        assert "change_blend_mode" in prompt
+        assert "apply_image_filter" in prompt
 
 
 # ── Complete routing accuracy ───────────────────────────────────────────────
