@@ -7,6 +7,7 @@ import SettingsPanel from './components/SettingsPanel.vue'
 import { ref, provide, onMounted, onUnmounted } from 'vue'
 import { parseAssetCandidatesFromDescription } from './services/assetApi.js'
 import { buildModelConfig, loadSettings, saveSettings } from './services/appSettings.js'
+import { buildSuccessSpeech } from './services/responseFeedback.js'
 import { parseVoiceCommand } from './services/voiceCommand.js'
 
 const messages = ref([])
@@ -167,8 +168,8 @@ async function executeRemoteCommand(text) {
       addMessage(`Error: ${data.error}`, 'system')
       await speak(`指令执行失败，${data.error}`)
     } else {
-      const elapsed = data.latency_ms ? `，耗时${Math.round(data.latency_ms / 100) / 10}秒` : ''
-      void speak(`${data.content || '绘图操作已完成'}${elapsed}`)
+      const successSpeech = buildSuccessSpeech(data)
+      if (successSpeech) void speak(successSpeech)
     }
   } catch (e) {
     if (e.name === 'AbortError') return
