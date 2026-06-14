@@ -19,6 +19,7 @@ from tools.editing.group import GroupObjectsTool, UngroupObjectsTool
 from tools.editing.opacity import ChangeOpacityTool
 from tools.editing.stroke import ChangeStrokeTool
 from tools.editing.select import SelectByLassoTool, SelectByRegionTool, SelectObjectTool, SelectSimilarTool
+from tools.editing.fill import ApplyGradientFillTool, ChangeFillTool, CopyObjectStyleTool
 from tools.editing.crop import CropObjectTool
 from tools.editing.mask import ApplyClipMaskTool
 from tools.editing.blend import ChangeBlendModeTool
@@ -468,6 +469,77 @@ class TestSelectSimilarTool:
         assert result.is_error
 
 
+class TestChangeFillTool:
+    def test_definition(self):
+        defn = ChangeFillTool().definition()
+        assert defn.name == "change_fill"
+
+    def test_execute_fill_all(self):
+        result = ChangeFillTool().execute(selector="all", color="green")
+        assert not result.is_error
+        assert "fillColor = \"green\"" in result.code
+        assert "obj.set({ fill: fillColor })" in result.code
+        assert "ActiveSelection" in result.code
+
+    def test_execute_rejects_empty_color(self):
+        result = ChangeFillTool().execute(color="")
+        assert result.is_error
+
+
+class TestApplyGradientFillTool:
+    def test_definition(self):
+        defn = ApplyGradientFillTool().definition()
+        assert defn.name == "apply_gradient_fill"
+
+    def test_execute_linear_gradient(self):
+        result = ApplyGradientFillTool().execute(
+            object_id="rect_1",
+            gradient_type="linear",
+            direction="diagonal",
+            color_stops=[
+                {"offset": 0, "color": "blue"},
+                {"offset": 1, "color": "purple"},
+            ],
+        )
+        assert not result.is_error
+        assert "new fabric.Gradient" in result.code
+        assert "gradientUnits: \"pixels\"" in result.code
+        assert "objectId === \"rect_1\"" in result.code
+        assert "\"color\": \"blue\"" in result.code
+
+    def test_execute_rejects_short_gradient(self):
+        result = ApplyGradientFillTool().execute(color_stops=[{"offset": 0, "color": "blue"}])
+        assert result.is_error
+
+
+class TestCopyObjectStyleTool:
+    def test_definition(self):
+        defn = CopyObjectStyleTool().definition()
+        assert defn.name == "copy_object_style"
+
+    def test_execute_copy_fill_stroke_opacity(self):
+        result = CopyObjectStyleTool().execute(
+            source_object_id="circle_1",
+            target_object_id="rect_1",
+            include_blend_mode=True,
+        )
+        assert not result.is_error
+        assert "objectId === \"circle_1\"" in result.code
+        assert "objectId === \"rect_1\"" in result.code
+        assert "style.fill = source.fill" in result.code
+        assert "style.globalCompositeOperation" in result.code
+        assert "ActiveSelection" in result.code or "setActiveObject" in result.code
+
+    def test_execute_rejects_no_style_part(self):
+        result = CopyObjectStyleTool().execute(
+            include_fill=False,
+            include_stroke=False,
+            include_opacity=False,
+            include_blend_mode=False,
+        )
+        assert result.is_error
+
+
 class TestCropObjectTool:
     def test_definition(self):
         defn = CropObjectTool().definition()
@@ -575,7 +647,7 @@ class TestToolRegistryIntegration:
         reg = ToolRegistry()
         for tool_cls in ALL_TOOLS:
             reg.register(tool_cls())
-        assert len(reg) == 45
+        assert len(reg) == 48
 
     def test_get_definitions(self):
         from tools import ALL_TOOLS
@@ -601,6 +673,9 @@ class TestToolRegistryIntegration:
         assert "select_by_region" in names
         assert "select_by_lasso" in names
         assert "select_similar" in names
+        assert "change_fill" in names
+        assert "apply_gradient_fill" in names
+        assert "copy_object_style" in names
         assert "crop_object" in names
         assert "apply_clip_mask" in names
         assert "change_blend_mode" in names

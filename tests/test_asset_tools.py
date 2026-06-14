@@ -447,4 +447,4 @@ class TestAssetToolRegistryIntegration:
 
     def test_tool_count_increased(self):
         from tools import ALL_TOOLS
-        assert len(ALL_TOOLS) == 45  # prior tools + region/lasso/similar selection
+        assert len(ALL_TOOLS) == 48  # prior tools + fill/gradient/style tools
