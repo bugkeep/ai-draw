@@ -11,6 +11,7 @@ from tools.registry import ToolRegistry
 from traces import DaemonTracer
 from events import EventBus, EventType, BaseEvent
 from .prompts import SYSTEM_PROMPT
+from .context import format_three_layer_context
 
 
 def new_run_id() -> str:
@@ -98,6 +99,8 @@ class AgentConfig:
     tracer: DaemonTracer | None = None
     system_prompt: str = SYSTEM_PROMPT
     max_rounds: int = 5
+    compact_threshold: float = 0.80     # context_pct triggers auto-compact
+    compact_keep_rounds: int = 3         # rounds to preserve after compact
 
 
 class AgentRunner:
@@ -109,6 +112,9 @@ class AgentRunner:
         self.tracer = config.tracer
         self.system_prompt = config.system_prompt
         self.max_rounds = config.max_rounds
+
+        self.compact_threshold = config.compact_threshold
+        self.compact_keep_rounds = config.compact_keep_rounds
 
         if not self.provider:
             raise ValueError("LLMProvider is required")
@@ -144,15 +150,15 @@ class AgentRunner:
         canvas_state = canvas_state or {}
         canvas_desc = self._format_canvas_state(canvas_state)
 
-        # ── restore context from session store ─────────────────────────
+        # ── restore context from session store (tool results truncated) ─
         if store is not None:
-            history = store.read_messages()  # full thread replay, no truncation
+            history = store.read_messages(truncate_tool_result=True)
 
-        # ── inject notes into system prompt ────────────────────────────
-        notes = store.read_notes() if store is not None else ""
+        # ── three-layer context injection ──────────────────────────────
+        three_layer = format_three_layer_context(store)
         system_prompt = self.system_prompt.format(canvas_state=canvas_desc)
-        if notes:
-            system_prompt += "\n\nRemembered facts:\n" + notes
+        if three_layer:
+            system_prompt += "\n\n" + three_layer
 
         messages: list[dict] = [
             {"role": "system", "content": system_prompt},
@@ -188,6 +194,25 @@ class AgentRunner:
                     description="\n".join(all_desc),
                     rounds=round_num - 1,
                 )
+
+            # ── context watermark ──────────────────────────────────────
+            if response.context_pct > 0:
+                await self._dispatch_event(EventType.CONTEXT_WATERMARK, {
+                    "pct": response.context_pct,
+                    "tokens_used": response.tokens_used,
+                    "context_window": response.context_window,
+                }, run_id=run_id, round_num=round_num)
+
+                if response.context_pct >= self.compact_threshold:
+                    before = len(messages)
+                    messages = self._compact_messages(messages)
+                    after = len(messages)
+                    await self._dispatch_event(EventType.CONTEXT_COMPACTED, {
+                        "pct": response.context_pct,
+                        "before": before,
+                        "after": after,
+                        "removed": before - after,
+                    }, run_id=run_id, round_num=round_num)
 
             last_content = response.content or last_content
 
@@ -434,6 +459,61 @@ class AgentRunner:
             parts.append(f"  [{i}] {obj_type} at ({left},{top}) fill={fill}")
         return f"{len(objects)} objects:\n" + "\n".join(parts)
 
+    def _compact_messages(self, messages: list[dict],
+                           keep_rounds: int | None = None) -> list[dict]:
+        """Compact in-memory messages when context watermark is high.
+
+        Preserves: system prompt, the last ``keep_rounds`` complete turns,
+        and the most recent user message.  Middle content is replaced with
+        a compact placeholder so the LLM retains awareness of prior work
+        without paying full token cost.
+
+        ``keep_rounds`` defaults to ``self.compact_keep_rounds``.
+        """
+        if keep_rounds is None:
+            keep_rounds = self.compact_keep_rounds
+
+        if len(messages) <= 3:
+            return messages
+
+        system = messages[0]
+        current = messages[-1]
+
+        # Walk backward from messages[-2] to find last N complete rounds.
+        # A round ends with a tool-role message and is followed by a user-role
+        # observe (or the current message).  We count backwards:
+        #   - each assistant msg + its tool results + following observe = 1 round
+        # The last element in messages[-1] is already the current observe/user.
+        keep_count = 2  # at least the last assistant + 1 tool
+        for i in range(len(messages) - 2, 0, -1):
+            if messages[i].get("role") == "assistant":
+                # Count messages from this assistant back to previous
+                # assistant or system, then break if we've collected enough
+                # rounds.
+                # Simple approach: keep the last keep_rounds * 3 messages
+                # (each round ≈ assistant + at least 1 tool + 1 observe/user)
+                # plus the final current message.
+                round_size = 3  # assistant + tool + observe
+                keep_count = max(keep_count, keep_rounds * round_size)
+                break
+
+        if keep_count >= len(messages) - 1:
+            return messages
+
+        before = messages[1:len(messages) - keep_count - 1]
+        after = messages[len(messages) - keep_count - 1:-1]
+
+        compact_msg = {
+            "role": "user",
+            "content": (
+                f"[Previous conversation compacted: {len(before)} messages "
+                f"from earlier rounds omitted to fit context window. "
+                f"All prior work is complete. Continuing from below.]"
+            ),
+        }
+
+        return [system] + [compact_msg] + after + [current]
+
     async def _dispatch_event(self, event_type: EventType, data: dict, run_id: str = "", round_num: int = 0):
         payload = dict(data)
         payload.setdefault("run_id", run_id)
@@ -452,6 +532,48 @@ class AgentRunner:
         from agent.session_tools import SESSION_TOOLS
         for tool_cls in SESSION_TOOLS:
             self.registry.register(tool_cls(store))
+
+    def _build_skill_registry(self, skill, parent_runner=None):
+        """Replace the tool registry with one restricted to the skill's whitelist.
+
+        Also registers ``spawn_agent`` so the agent can delegate work to
+        sub-agents.  The permission policy's ``allow_only`` is set to
+        the skill's tool list so that even if a tool somehow leaks in, it
+        is blocked at the policy level.
+        """
+        allowed = set(skill.tools or [])
+        new_registry = ToolRegistry()
+        new_registry.permissions = self.registry.permissions
+
+        # lock policy to the skill's whitelist
+        if new_registry.permissions and new_registry.permissions.policy:
+            new_registry.permissions.policy.allow_only = list(allowed)
+
+        for name in allowed:
+            if name == "spawn_agent":
+                from agent.sub_agent import SpawnAgentTool
+                parent = parent_runner or self
+                new_registry.register(SpawnAgentTool(parent))
+            else:
+                tool = self.registry.get(name)
+                if tool is not None:
+                    new_registry.register(tool.__class__())
+
+        self.registry = new_registry
+
+    async def run_with_skill(self, message: str, skill,
+                              canvas_state: dict | None = None,
+                              run_id: str | None = None,
+                              store=None) -> AgentResponse:
+        """Run with a skill's prompt and restricted tool registry."""
+        self.system_prompt = skill.prompt
+        self._build_skill_registry(skill)
+        return await self.run(
+            message=message,
+            canvas_state=canvas_state,
+            run_id=run_id,
+            store=store,
+        )
 
     async def run_and_capture(self, message: str, canvas_state: dict | None = None,
                                run_id: str | None = None,

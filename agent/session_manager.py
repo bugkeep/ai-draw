@@ -6,6 +6,10 @@ from typing import Any
 
 RUNS_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "runs"))
 
+# Truncate tool result content to this many chars when read back into memory.
+# The original thread.jsonl on disk is NOT modified.
+_TRUNCATE_TOOL_RESULT_CHARS = 2000
+
 
 class SessionStore:
     """Read/write session data (thread + notes) from the filesystem.
@@ -29,16 +33,32 @@ class SessionStore:
 
     # ── thread ─────────────────────────────────────────────────────────
 
-    def read_messages(self) -> list[dict]:
-        """Return stored messages as-is (API-ready format)."""
+    def read_messages(self, truncate_tool_result: bool = True,
+                       max_tool_chars: int = 0) -> list[dict]:
+        """Return stored messages, optionally truncating large tool results.
+
+        ``truncate_tool_result`` — when True, tool-role content longer than
+        ``max_tool_chars`` is truncated in the returned list (the original
+        ``thread.jsonl`` on disk is NOT modified).
+
+        If ``max_tool_chars`` is 0 (default), uses
+        ``_TRUNCATE_TOOL_RESULT_CHARS``.
+        """
         if not os.path.isfile(self._thread_path):
             return []
+        max_chars = max_tool_chars or _TRUNCATE_TOOL_RESULT_CHARS
         msgs: list[dict] = []
         with open(self._thread_path, encoding="utf-8") as f:
             for line in f:
                 s = line.strip()
                 if s:
-                    msgs.append(json.loads(s))
+                    msg = json.loads(s)
+                    if truncate_tool_result and msg.get("role") == "tool":
+                        content = msg.get("content", "")
+                        if isinstance(content, str) and len(content) > max_chars:
+                            msg = dict(msg)
+                            msg["content"] = content[:max_chars] + f"\n... (truncated {len(content) - max_chars} chars)"
+                    msgs.append(msg)
         return msgs
 
     def append_message(self, role: str, content: str = "",
@@ -191,11 +211,16 @@ class SessionManager:
         self.store(session_id).append_message(role, content, tool_calls)
 
     def send_message(self, session_id: str, message: str,
-                     run_id: str) -> dict:
+                     run_id: str, skill_loader=None) -> dict:
         """Write user message to thread first, then start the run.
+
+        When ``skill_loader`` is provided, slash commands (``/<command>``)
+        are detected and the corresponding skill is loaded.  The returned
+        dict includes a ``"skill"`` key when a skill is activated.
 
         Returns a dict for the caller to dispatch:
           ``{"session": ..., "store": ..., "run_id": ...}``
+          or with ``"skill"`` added.
         """
         session = self.get_session(session_id)
         if session is None:
@@ -203,10 +228,26 @@ class SessionManager:
 
         store = self.store(session_id)
 
-        # 1. persist user message immediately
-        store.append_message("user", message)
+        # 1. detect slash command
+        skill = None
+        if skill_loader is not None and message.startswith("/"):
+            detected = skill_loader.detect_skill(message)
+            if detected is not None:
+                cmd, args, skill_prompt = detected
+                skill = skill_loader.get_skill(cmd)
+                # persist the raw user message
+                store.append_message("user", message)
+                self.start_run(session_id, run_id)
+                return {
+                    "session": session,
+                    "store": store,
+                    "run_id": run_id,
+                    "skill": skill,
+                    "skill_args": args,
+                }
 
-        # 2. record the run in meta
+        # 2. normal message
+        store.append_message("user", message)
         self.start_run(session_id, run_id)
 
         return {
