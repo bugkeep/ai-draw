@@ -13,12 +13,26 @@ class ToolParameter:
     default: Any = None
     enum: list[str] | None = None
 
+    # array/object JSON Schema support
+    items: dict[str, Any] | None = None
+    properties: dict[str, Any] | None = None
+    min_items: int | None = None
+    max_items: int | None = None
+
     def to_json_schema(self) -> dict:
         schema: dict[str, Any] = {"type": self.type, "description": self.description}
         if self.enum:
             schema["enum"] = self.enum
         if self.default is not None:
             schema["default"] = self.default
+        if self.items is not None:
+            schema["items"] = self.items
+        if self.properties is not None:
+            schema["properties"] = self.properties
+        if self.min_items is not None:
+            schema["minItems"] = self.min_items
+        if self.max_items is not None:
+            schema["maxItems"] = self.max_items
         return schema
 
 
@@ -73,6 +87,8 @@ _TYPE_MAP = {
     "integer": (int, 0),
     "number": (float, 0.0),
     "boolean": (bool, False),
+    "array": (list, []),
+    "object": (dict, {}),
 }
 
 

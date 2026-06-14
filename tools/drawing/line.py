@@ -1,4 +1,5 @@
 import random
+import uuid
 from ..base import BaseTool, ToolDefinition, ToolParameter, ToolResult
 
 COLORS = ["#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFEAA7", "#DDA0DD", "#98D8C8", "#F7DC6F"]
@@ -20,6 +21,8 @@ class DrawLineTool(BaseTool):
                 ToolParameter(name="end_y", type="number", description="End Y coordinate (default: 300)", required=False),
                 ToolParameter(name="color", type="string", description="Line color (default: random)", required=False),
                 ToolParameter(name="width", type="number", description="Line width in pixels (default: 2)", required=False),
+                ToolParameter(name="object_id", type="string", description="Stable semantic object ID", required=False),
+                ToolParameter(name="semantic_type", type="string", description="Semantic role e.g. branch, arm", required=False),
             ],
         )
 
@@ -30,12 +33,15 @@ class DrawLineTool(BaseTool):
         y2 = kwargs.get("end_y", 300)
         color = kwargs.get("color") or random_color()
         width = kwargs.get("width", 2)
+        object_id = kwargs.get("object_id") or f"line_{uuid.uuid4().hex[:8]}"
+        semantic_type = kwargs.get("semantic_type", "line")
 
         code = (
-            f"const line = new fabric.Line([{x1}, {y1}, {x2}, {y2}], {{"
+            f"const obj = new fabric.Line([{x1}, {y1}, {x2}, {y2}], {{"
             f"stroke: '{color}', strokeWidth: {width}"
             f"}});"
-            f"canvas.add(line); canvas.renderAll();"
+            f"obj.set({{objectId: '{object_id}', semanticType: '{semantic_type}'}});"
+            f"canvas.add(obj); canvas.renderAll();"
         )
         description = f"Drew a {color} line from ({x1}, {y1}) to ({x2}, {y2})"
-        return ToolResult(code=code, description=description, data={"type": "line", "start_x": x1, "start_y": y1, "end_x": x2, "end_y": y2, "color": color})
+        return ToolResult(code=code, description=description, data={"type": "line", "start_x": x1, "start_y": y1, "end_x": x2, "end_y": y2, "color": color, "object_id": object_id, "semantic_type": semantic_type})

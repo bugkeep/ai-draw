@@ -3,6 +3,9 @@ from .rect import DrawRectTool
 from .line import DrawLineTool
 from .text import DrawTextTool
 from .ellipse import DrawEllipseTool
+from .polygon import DrawPolygonTool
+from .polyline import DrawPolylineTool
+from .path import DrawPathTool
 
 __all__ = [
     "DrawCircleTool",
@@ -10,4 +13,7 @@ __all__ = [
     "DrawLineTool",
     "DrawTextTool",
     "DrawEllipseTool",
+    "DrawPolygonTool",
+    "DrawPolylineTool",
+    "DrawPathTool",
 ]

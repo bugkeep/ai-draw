@@ -16,9 +16,11 @@ onMounted(() => {
   saveState()
 })
 
+const CUSTOM_PROPS = ['objectId', 'semanticType', 'name', 'groupId', 'tags']
+
 function saveState() {
   if (!canvas) return
-  const json = JSON.stringify(canvas.toJSON())
+  const json = JSON.stringify(canvas.toJSON(CUSTOM_PROPS))
   if (historyIndex.value < history.value.length - 1) {
     history.value = history.value.slice(0, historyIndex.value + 1)
   }
@@ -51,16 +53,12 @@ function clear() {
   saveState()
 }
 
-function executeCode(code) {
+async function executeCode(code) {
   try {
-    const wrapped = code
-      .split('\n')
-      .filter(line => line.trim())
-      .map(line => `{ ${line} }`)
-      .join('\n')
-    const fn = new Function('canvas', 'fabric', wrapped)
-    fn(canvas, fabric)
-    canvas.renderAll()
+    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
+    const fn = new AsyncFunction('canvas', 'fabric', code)
+    await fn(canvas, fabric)
+    canvas.requestRenderAll()
     saveState()
     return true
   } catch (e) {
@@ -69,21 +67,67 @@ function executeCode(code) {
   }
 }
 
-function getState() {
-  if (!canvas) return { objects: [], canvas_size: { width: 800, height: 600 } }
-  const objects = canvas.getObjects().map(obj => ({
+function serializeFill(fill) {
+  if (!fill) return null
+  if (typeof fill === 'string') return { type: 'solid', color: fill }
+  if (fill.type && fill.colorStops) {
+    return { type: fill.type, coords: fill.coords, colorStops: fill.colorStops }
+  }
+  return { type: 'unknown' }
+}
+
+function serializeObject(obj) {
+  const base = {
+    object_id: obj.objectId,
+    semantic_type: obj.semanticType,
+    name: obj.name,
+    group_id: obj.groupId,
     type: obj.type,
-    left: Math.round(obj.left),
-    top: Math.round(obj.top),
+    left: Math.round(obj.left || 0),
+    top: Math.round(obj.top || 0),
     width: obj.width ? Math.round(obj.width * obj.scaleX) : undefined,
     height: obj.height ? Math.round(obj.height * obj.scaleY) : undefined,
-    radius: obj.radius ? Math.round(obj.radius * obj.scaleX) : undefined,
-    fill: obj.fill,
+    scale_x: obj.scaleX,
+    scale_y: obj.scaleY,
+    angle: obj.angle,
+    opacity: obj.opacity,
+    fill: serializeFill(obj.fill),
     stroke: obj.stroke,
-    text: obj.text,
-  }))
+    stroke_width: obj.strokeWidth,
+  }
+  if (obj.type === 'circle') {
+    base.radius = obj.radius ? Math.round(obj.radius * obj.scaleX) : undefined
+  }
+  if (obj.type === 'ellipse') {
+    base.rx = obj.rx ? Math.round(obj.rx * obj.scaleX) : undefined
+    base.ry = obj.ry ? Math.round(obj.ry * obj.scaleY) : undefined
+  }
+  if (obj.type === 'text') {
+    base.text = obj.text
+    base.font_size = obj.fontSize
+  }
+  if (obj.type === 'polygon' || obj.type === 'polyline') {
+    base.points = obj.points
+  }
+  if (obj.type === 'path') {
+    base.path = obj.path
+  }
+  if (obj.type === 'image' && obj.getSrc) {
+    base.src = obj.getSrc()
+  }
+  if (obj.type === 'group') {
+    base.children = obj.getObjects().map(serializeObject)
+  }
+  if (obj.clipPath) {
+    base.clip_path = serializeObject(obj.clipPath)
+  }
+  return base
+}
+
+function getState() {
+  if (!canvas) return { objects: [], canvas_size: { width: 800, height: 600 } }
   return {
-    objects,
+    objects: canvas.getObjects().map(serializeObject),
     canvas_size: { width: canvas.getWidth(), height: canvas.getHeight() },
   }
 }
