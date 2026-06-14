@@ -11,7 +11,7 @@ from tools.base import ToolResult
 from tools.registry import ToolRegistry
 from traces import DaemonTracer
 from events import EventBus, EventType, BaseEvent
-from .prompts import BASE_SYSTEM_PROMPT
+from .prompts import BASE_SYSTEM_PROMPT, SOFTWARE_OPERATION_PROMPT
 from .context import format_three_layer_context
 from agent.router import DrawingModeRouter
 from .prompts import get_mode_prompt
@@ -21,6 +21,39 @@ COMPLEX_SCENE_MIN_DRAW_CALLS = 6
 DETAILED_COMPOSITION_MIN_ELEMENTS = 10
 COMPLEX_SCENE_MIN_ROUNDS = 12
 DRAWING_TOOL_PREFIX = "draw_"
+CONCENTRIC_CIRCLE_RE = re.compile(
+    r"(?:同心圆|同星圆|同圆心|套圆|套着的圆|靶心|concentric|bullseye)",
+    re.IGNORECASE,
+)
+
+CN_COLOR_MAP = {
+    "红色": "red",
+    "红": "red",
+    "蓝色": "blue",
+    "蓝": "blue",
+    "绿色": "green",
+    "绿": "green",
+    "黄色": "yellow",
+    "黄": "yellow",
+    "紫色": "purple",
+    "紫": "purple",
+    "橙色": "orange",
+    "橙": "orange",
+    "粉色": "pink",
+    "粉": "pink",
+    "黑色": "black",
+    "黑": "black",
+    "白色": "white",
+    "白": "white",
+    "灰色": "gray",
+    "灰": "gray",
+    "青色": "cyan",
+    "青": "cyan",
+    "棕色": "brown",
+    "棕": "brown",
+}
+
+COLOR_RE = "|".join(sorted(map(re.escape, CN_COLOR_MAP), key=len, reverse=True))
 
 
 def new_run_id() -> str:
@@ -179,10 +212,19 @@ class AgentRunner:
         # ── three-layer context injection ──────────────────────────────
         three_layer = format_three_layer_context(store)
         system_prompt = self.system_prompt.format(
-            canvas_state=canvas_desc, mode_prompt=mode_prompt
+            canvas_state=canvas_desc,
+            mode_prompt=mode_prompt,
+            operation_prompt=SOFTWARE_OPERATION_PROMPT,
         )
         if three_layer:
             system_prompt += "\n\n" + three_layer
+
+        direct_response = await self._try_direct_geometry(
+            message=message,
+            run_id=run_id,
+        )
+        if direct_response is not None:
+            return direct_response
 
         messages: list[dict] = [
             {"role": "system", "content": system_prompt},
@@ -327,6 +369,101 @@ class AgentRunner:
             tool_calls=all_tool_calls,
             rounds=round_num,
             new_messages=new_messages,
+        )
+
+    @staticmethod
+    def _build_concentric_circle_args(message: str) -> dict | None:
+        if not CONCENTRIC_CIRCLE_RE.search(message):
+            return None
+
+        nums = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", message)]
+        args: dict[str, Any] = {
+            "center_x": 400,
+            "center_y": 300,
+            "outer_radius": 120,
+            "inner_radius": 60,
+            "outer_color": "blue",
+            "inner_color": "green",
+            "object_id": "concentric_circles",
+        }
+
+        center_match = re.search(
+            r"(?:圆心|中心)\s*[在处]?\s*[\(（]?\s*(\d+(?:\.\d+)?)\s*[,，\s]\s*(\d+(?:\.\d+)?)",
+            message,
+        )
+        if center_match:
+            args["center_x"] = float(center_match.group(1))
+            args["center_y"] = float(center_match.group(2))
+
+        outer_match = re.search(r"(?:外层|外圈|外面|外边)[^，。,；;]*?(%s)" % COLOR_RE, message)
+        inner_match = re.search(r"(?:最里面|里面|内层|内圈|中心|中间)[^，。,；;]*?(%s)" % COLOR_RE, message)
+        if outer_match:
+            args["outer_color"] = CN_COLOR_MAP[outer_match.group(1)]
+        if inner_match:
+            args["inner_color"] = CN_COLOR_MAP[inner_match.group(1)]
+
+        # Common spoken order: "最里面是绿色，外层是蓝色". If role-specific
+        # parsing failed, infer from the first two colors in the sentence.
+        color_hits = re.findall(COLOR_RE, message)
+        if len(color_hits) >= 2 and not inner_match and not outer_match:
+            args["inner_color"] = CN_COLOR_MAP[color_hits[0]]
+            args["outer_color"] = CN_COLOR_MAP[color_hits[1]]
+
+        radius_match = re.search(r"(?:外层|外圈|外面|外边).*?(?:半径|r)\s*[:：=]?\s*(\d+(?:\.\d+)?)", message, re.IGNORECASE)
+        if radius_match:
+            args["outer_radius"] = float(radius_match.group(1))
+        radius_match = re.search(r"(?:最里面|里面|内层|内圈|中心|中间).*?(?:半径|r)\s*[:：=]?\s*(\d+(?:\.\d+)?)", message, re.IGNORECASE)
+        if radius_match:
+            args["inner_radius"] = float(radius_match.group(1))
+        elif len(nums) >= 1 and "半径" in message and args["outer_radius"] == 120:
+            args["outer_radius"] = nums[-1]
+            args["inner_radius"] = max(nums[-1] / 2, 1)
+
+        return args
+
+    async def _try_direct_geometry(self, message: str, run_id: str) -> AgentResponse | None:
+        args = self._build_concentric_circle_args(message)
+        if args is None:
+            return None
+
+        await self._dispatch_event(EventType.AGENT_START, {"message": message}, run_id=run_id)
+        tool_call = ToolCall(
+            id=f"direct_{run_id}",
+            name="draw_concentric_circles",
+            arguments=args,
+        )
+        act_results = await self._act([tool_call], run_id=run_id, round_num=1)
+
+        all_code = []
+        all_desc = []
+        tool_calls = []
+        for tr in act_results:
+            if not tr["is_error"]:
+                if tr["code"]:
+                    all_code.append(f"{{\n{tr['code']}\n}}")
+                if tr["description"]:
+                    all_desc.append(tr["description"])
+            tool_calls.append({
+                "name": tr["name"],
+                "arguments": tr["arguments"],
+                "is_error": tr["is_error"],
+                "status": tr["status"].value,
+            })
+
+        await self._dispatch_event(EventType.AGENT_STOP, {"rounds": 1}, run_id=run_id)
+        failed = next((tr for tr in act_results if tr["is_error"]), None)
+        return AgentResponse(
+            run_id=run_id,
+            content="已画好同心圆，所有圆都共用同一个圆心。",
+            code="\n".join(all_code),
+            description="\n".join(all_desc),
+            tool_calls=tool_calls,
+            success=failed is None,
+            error=failed["error"] if failed else "",
+            rounds=1,
+            new_messages=[
+                {"role": "assistant", "content": "已画好同心圆，所有圆都共用同一个圆心。"}
+            ],
         )
 
     @staticmethod

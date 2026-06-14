@@ -8,6 +8,7 @@ from .polyline import DrawPolylineTool
 from .path import DrawPathTool
 from .vector_composition import DrawVectorCompositionTool
 from .perspective_vehicle import DrawPerspectiveVehicleTool
+from .concentric_circles import DrawConcentricCirclesTool
 
 __all__ = [
     "DrawCircleTool",
@@ -20,4 +21,5 @@ __all__ = [
     "DrawPathTool",
     "DrawVectorCompositionTool",
     "DrawPerspectiveVehicleTool",
+    "DrawConcentricCirclesTool",
 ]

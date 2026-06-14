@@ -32,13 +32,14 @@ class ToolPolicy:
         "note_save",
         "search_vector_asset", "list_asset_candidates",
         "draw_circle", "draw_rect", "draw_line", "draw_text", "draw_ellipse",
-        "draw_polygon", "draw_polyline", "draw_path",
+        "draw_polygon", "draw_polyline", "draw_path", "draw_concentric_circles",
         "draw_vector_composition", "draw_perspective_vehicle",
     })
 
     # Canvas editing tools — auto-allow (user explicitly asked for drawing)
     CANVAS_EDIT = frozenset({
         "delete_object", "move_object", "change_color", "resize_object",
+        "rotate_object", "arrange_object", "align_object", "distribute_objects",
         "undo", "redo", "clear_canvas",
         "import_vector_asset", "replace_vector_asset",
     })
