@@ -162,6 +162,11 @@ class TestDrawingModeRouter:
         "把房子置顶",
         "所有图形居中对齐",
         "三个圆横向均匀分布",
+        "复制一个一样的",
+        "把它们成组",
+        "取消成组",
+        "把圆改成半透明",
+        "加黑色描边",
     ])
     def test_canvas_edit_voice_layout_operations(self, router, message):
         r = self.route(router, message, canvas_state={"objects": [{"type": "circle"}]})
@@ -295,6 +300,10 @@ class TestModePrompts:
         assert "arrange_object" in p
         assert "align_object" in p
         assert "distribute_objects" in p
+        assert "duplicate_object" in p
+        assert "group_objects" in p
+        assert "change_opacity" in p
+        assert "change_stroke" in p
         assert "NOT by array index" in p
 
     def test_diagram_prompt(self):
@@ -359,6 +368,8 @@ class TestPromptTemplates:
         assert "Common Drawing Software Operations" in prompt
         assert "rotate_object" in prompt
         assert "align_object" in prompt
+        assert "duplicate_object" in prompt
+        assert "change_stroke" in prompt
 
 
 # ── Complete routing accuracy ───────────────────────────────────────────────

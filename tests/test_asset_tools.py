@@ -447,4 +447,4 @@ class TestAssetToolRegistryIntegration:
 
     def test_tool_count_increased(self):
         from tools import ALL_TOOLS
-        assert len(ALL_TOOLS) == 32  # prior tools + concentric circles + 4 voice layout edit tools
+        assert len(ALL_TOOLS) == 37  # prior tools + voice layout/object edit tools
