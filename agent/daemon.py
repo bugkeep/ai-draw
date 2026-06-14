@@ -3,6 +3,7 @@ import json
 import inspect
 import uuid
 import os
+import time
 from typing import Callable
 from events import (
     EventBus,
@@ -26,6 +27,25 @@ from tools import ALL_TOOLS
 from tools.registry import ToolRegistry
 from agent.runner import AgentRunner, AgentConfig
 from mcp.manager import McpManager
+
+
+def sanitize_chat_history(raw_history, limit: int = 12) -> list[dict]:
+    """Keep only bounded user/assistant text turns from an HTTP client."""
+    if not isinstance(raw_history, list):
+        return []
+
+    sanitized = []
+    for message in raw_history[-limit:]:
+        if not isinstance(message, dict):
+            continue
+        role = message.get("role")
+        content = message.get("content")
+        if role not in {"user", "assistant"} or not isinstance(content, str):
+            continue
+        content = content.strip()
+        if content:
+            sanitized.append({"role": role, "content": content[:2000]})
+    return sanitized
 
 
 class TCPServer:
@@ -95,13 +115,19 @@ class TCPServer:
     async def handle_chat(self, payload: dict) -> dict:
         message = payload.get("message", "")
         canvas_state = payload.get("canvas_state", {})
+        history = sanitize_chat_history(payload.get("history", []))
         provider = payload.get("provider", "openai")
         api_key = payload.get("api_key", "")
 
         if not self._runner or provider != self._current_provider or api_key != self._current_api_key:
             self.init_runner(provider, api_key)
 
-        result = await self._runner.run(message=message, canvas_state=canvas_state)
+        started_at = time.perf_counter()
+        result = await self._runner.run(
+            message=message,
+            canvas_state=canvas_state,
+            history=history,
+        )
         return {
             "run_id": result.run_id,
             "content": result.content,
@@ -111,6 +137,7 @@ class TCPServer:
             "success": result.success,
             "error": result.error,
             "rounds": result.rounds,
+            "latency_ms": round((time.perf_counter() - started_at) * 1000, 1),
         }
 
     async def handle_update_permissions(self, payload: dict) -> dict:

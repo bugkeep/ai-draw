@@ -287,13 +287,11 @@ class TestAgentRunnerCanvasState:
         canvas = {"objects": [{"type": "circle", "left": 100, "top": 100, "fill": "red"}]}
         await runner.run("what's on canvas", canvas_state=canvas)
 
-    @pytest.mark.asyncio
     def test_format_canvas_state_empty(self):
         runner = AgentRunner(AgentConfig(provider=make_provider([]), registry=make_registry()))
         assert runner._format_canvas_state({}) == "Empty canvas"
         assert runner._format_canvas_state({"objects": []}) == "Empty canvas"
 
-    @pytest.mark.asyncio
     def test_format_canvas_state_with_objects(self):
         runner = AgentRunner(AgentConfig(provider=make_provider([]), registry=make_registry()))
         state = {"objects": [

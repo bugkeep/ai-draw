@@ -3,38 +3,60 @@ import AppCanvas from './components/AppCanvas.vue'
 import VoiceRecorder from './components/VoiceRecorder.vue'
 import ChatLog from './components/ChatLog.vue'
 import AssetCandidatePanel from './components/AssetCandidatePanel.vue'
-import SettingsPanel from './components/SettingsPanel.vue'
 import { ref, provide, onMounted, onUnmounted } from 'vue'
 import { parseAssetCandidatesFromDescription } from './services/assetApi.js'
+import { parseVoiceCommand } from './services/voiceCommand.js'
 
 const messages = ref([])
 const isProcessing = ref(false)
 const status = ref('Ready')
 const canvasRef = ref(null)
-const provider = ref(localStorage.getItem('provider') || 'openai')
-const apiKey = ref(localStorage.getItem('api_key') || '')
+const voiceRef = ref(null)
 const events = ref([])
 const wsConnected = ref(false)
 const assetCandidates = ref([])
-const showAssetPanel = ref(false)
+const pendingCommands = ref([])
 let ws = null
+let queueRunning = false
+let pendingClearConfirmation = false
+let lastRemoteCommand = ''
+let activeRequestController = null
 
 provide('messages', messages)
 provide('isProcessing', isProcessing)
 provide('status', status)
 provide('canvasRef', canvasRef)
-provide('provider', provider)
-provide('apiKey', apiKey)
 provide('events', events)
 provide('wsConnected', wsConnected)
 
-function addMessage(text, type = 'user', code = '') {
-  messages.value.push({ text, type, code, id: Date.now() })
+function addMessage(text, type = 'user', code = '', includeInHistory = true) {
+  messages.value.push({ text, type, code, includeInHistory, id: Date.now() })
 }
 
 function addEvent(eventType, data) {
   events.value.push({ type: eventType, data, id: Date.now(), ts: new Date().toLocaleTimeString() })
   if (events.value.length > 100) events.value.shift()
+}
+
+function speak(text) {
+  const message = String(text || '').trim().slice(0, 220)
+  if (!message || !window.speechSynthesis) return Promise.resolve()
+
+  voiceRef.value?.suspendForSpeech()
+  window.speechSynthesis.cancel()
+
+  return new Promise((resolve) => {
+    const utterance = new SpeechSynthesisUtterance(message)
+    utterance.lang = 'zh-CN'
+    utterance.rate = 1.08
+    const finish = () => {
+      voiceRef.value?.resumeAfterSpeech()
+      resolve()
+    }
+    utterance.onend = finish
+    utterance.onerror = finish
+    window.speechSynthesis.speak(utterance)
+  })
 }
 
 function connectWs() {
@@ -70,7 +92,6 @@ function handleEvent(eventType, data) {
       status.value = `Executing ${toolName}...`
       if (toolName === 'search_vector_asset') {
         assetCandidates.value = []
-        showAssetPanel.value = true
       }
       break
     }
@@ -90,54 +111,171 @@ function handleEvent(eventType, data) {
   }
 }
 
-async function sendMessage(text) {
-  if (isProcessing.value) return
-  isProcessing.value = true
-  status.value = 'Processing...'
+function buildConversationHistory() {
+  return messages.value
+    .filter(message => message.type === 'user' || message.type === 'assistant')
+    .filter(message => message.includeInHistory !== false)
+    .slice(-8)
+    .map(message => ({
+      role: message.type,
+      content: message.text,
+    }))
+}
+
+async function executeRemoteCommand(text) {
+  const history = buildConversationHistory()
   addMessage(text, 'user')
+  status.value = pendingCommands.value.length
+    ? `Processing... ${pendingCommands.value.length} queued`
+    : 'Processing...'
+  const requestController = new AbortController()
+  activeRequestController = requestController
 
   try {
     const canvasState = canvasRef.value?.getState() || {}
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: requestController.signal,
       body: JSON.stringify({
         message: text,
         canvas_state: canvasState,
-        provider: provider.value,
-        api_key: apiKey.value,
+        history,
       }),
     })
     const data = await res.json()
+    if (requestController.signal.aborted) return
 
-    if (data.description) {
+    const assistantText = data.description || data.content
+    if (assistantText) {
       const parsed = parseAssetCandidatesFromDescription(data.description)
       if (parsed.length > 0) {
         assetCandidates.value = parsed
-        showAssetPanel.value = true
       }
-      addMessage(data.description, 'assistant', data.code)
+      addMessage(assistantText, 'assistant', data.code)
     }
     if (data.code) {
-      canvasRef.value?.executeCode(data.code)
+      const executed = await canvasRef.value?.executeCode(data.code)
+      if (!executed) throw new Error('画布执行失败')
     }
     if (data.error) {
       addMessage(`Error: ${data.error}`, 'system')
+      await speak(`指令执行失败，${data.error}`)
+    } else {
+      const elapsed = data.latency_ms ? `，耗时${Math.round(data.latency_ms / 100) / 10}秒` : ''
+      void speak(`${data.content || '绘图操作已完成'}${elapsed}`)
     }
   } catch (e) {
+    if (e.name === 'AbortError') return
     addMessage(`Error: ${e.message}`, 'system')
+    await speak(`指令执行失败，${e.message}`)
   } finally {
-    isProcessing.value = false
-    status.value = 'Ready'
+    if (activeRequestController === requestController) activeRequestController = null
   }
 }
 
-function handleAssetSearch(query) {
-  sendMessage(`search for SVG icons: ${query}`)
+async function drainCommandQueue() {
+  if (queueRunning) return
+  queueRunning = true
+  isProcessing.value = true
+
+  try {
+    while (pendingCommands.value.length > 0) {
+      const command = pendingCommands.value.shift()
+      lastRemoteCommand = command
+      await executeRemoteCommand(command)
+    }
+  } finally {
+    queueRunning = false
+    isProcessing.value = false
+    status.value = 'Ready · listening'
+  }
 }
 
-function handleAssetImport(assetId) {
-  sendMessage(`import the asset ${assetId} to the canvas`)
+function enqueueRemoteCommand(text) {
+  pendingCommands.value.push(text)
+  if (queueRunning) status.value = `Processing... ${pendingCommands.value.length} queued`
+  drainCommandQueue()
+}
+
+async function handleTranscript(rawText) {
+  const command = parseVoiceCommand(rawText)
+  if (command.type === 'empty') return
+
+  if (command.type === 'undo') {
+    pendingClearConfirmation = false
+    const changed = canvasRef.value?.undo()
+    addMessage(command.text, 'user', '', false)
+    await speak(changed ? '已撤销上一步' : '没有可以撤销的操作')
+    return
+  }
+  if (command.type === 'redo') {
+    pendingClearConfirmation = false
+    const changed = canvasRef.value?.redo()
+    addMessage(command.text, 'user', '', false)
+    await speak(changed ? '已恢复上一步' : '没有可以恢复的操作')
+    return
+  }
+  if (command.type === 'request_clear') {
+    pendingClearConfirmation = true
+    addMessage(command.text, 'user', '', false)
+    await speak('清空画布会删除全部内容，请说确认清空或取消')
+    return
+  }
+  if (command.type === 'confirm_clear') {
+    addMessage(command.text, 'user', '', false)
+    if (pendingClearConfirmation) {
+      pendingClearConfirmation = false
+      canvasRef.value?.clear()
+      await speak('画布已清空')
+    } else {
+      await speak('当前没有等待确认的清空操作')
+    }
+    return
+  }
+  if (command.type === 'cancel') {
+    pendingClearConfirmation = false
+    addMessage(command.text, 'user', '', false)
+    await speak('已取消')
+    return
+  }
+  if (command.type === 'stop_current') {
+    pendingClearConfirmation = false
+    const queuedCount = pendingCommands.value.length
+    pendingCommands.value.splice(0)
+    const hadActiveRequest = Boolean(activeRequestController)
+    activeRequestController?.abort()
+    addMessage(command.text, 'user', '', false)
+    await speak(
+      hadActiveRequest || queuedCount
+        ? '已停止当前绘图并清除等待中的指令'
+        : '当前没有正在执行的绘图指令',
+    )
+    return
+  }
+  if (command.type === 'retry') {
+    pendingClearConfirmation = false
+    addMessage(command.text, 'user', '', false)
+    if (lastRemoteCommand) enqueueRemoteCommand(lastRemoteCommand)
+    else await speak('还没有可以重试的绘图指令')
+    return
+  }
+
+  pendingClearConfirmation = false
+  enqueueRemoteCommand(command.text)
+}
+
+function sendMessage(text) {
+  enqueueRemoteCommand(text)
+}
+
+function handleVoiceStatus(text) {
+  if (!isProcessing.value) status.value = text
+}
+
+function handleVoiceError(text) {
+  addMessage(text, 'system')
+  status.value = 'Voice unavailable'
 }
 
 onMounted(connectWs)
@@ -162,14 +300,14 @@ provide('assetCandidates', assetCandidates)
         <AppCanvas ref="canvasRef" />
       </div>
       <aside class="sidebar">
-        <VoiceRecorder @transcript="sendMessage" />
-        <ChatLog />
-        <AssetCandidatePanel
-          :candidates="assetCandidates"
-          :show="showAssetPanel"
-          @search="handleAssetSearch"
-          @import="handleAssetImport"
+        <VoiceRecorder
+          ref="voiceRef"
+          @transcript="handleTranscript"
+          @status="handleVoiceStatus"
+          @error="handleVoiceError"
         />
+        <ChatLog />
+        <AssetCandidatePanel :candidates="assetCandidates" />
         <div class="events-panel" v-if="events.length">
           <div class="events-title">Event Stream</div>
           <div class="events-list">
@@ -179,14 +317,12 @@ provide('assetCandidates', assetCandidates)
             </div>
           </div>
         </div>
-        <SettingsPanel />
       </aside>
     </main>
 
     <footer class="footer">
-      <button @click="canvasRef?.undo()">Undo</button>
-      <button @click="canvasRef?.redo()">Redo</button>
-      <button @click="canvasRef?.clear()">Clear</button>
+      <span>Voice shortcuts: “撤销” · “重做” · “清空画布” · “确认清空” · “停止当前绘图” · “重试”</span>
+      <span v-if="pendingCommands.length">Queued: {{ pendingCommands.length }}</span>
     </footer>
   </div>
 </template>
@@ -260,17 +396,8 @@ body { font-family: 'Inter', sans-serif; background: #0F172A; color: #F8FAFC; he
 .event-type { color: #A5B4FC; }
 
 .footer {
-  display: flex; gap: 0.75rem; padding: 0.875rem 2rem;
+  display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.875rem 2rem;
   background: #0F172A; border-top: 1px solid rgba(99, 102, 241, 0.15);
-}
-.footer button {
-  padding: 0.5rem 1.25rem; border: 1px solid rgba(99, 102, 241, 0.3);
-  border-radius: 6px; background: rgba(99, 102, 241, 0.1);
-  color: #A5B4FC; cursor: pointer; font-weight: 500; font-size: 0.875rem;
-  transition: all 0.2s ease;
-}
-.footer button:hover {
-  background: rgba(99, 102, 241, 0.2); border-color: #6366F1;
-  transform: translateY(-1px);
+  color: #94A3B8; font-size: 0.8rem;
 }
 </style>

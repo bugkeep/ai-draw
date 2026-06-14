@@ -1,66 +1,142 @@
 <script setup>
-import { ref, inject } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
+import { normalizeVoiceTranscript } from '../services/voiceCommand.js'
 
-const emit = defineEmits(['transcript'])
+const emit = defineEmits(['transcript', 'status', 'error'])
 const isRecording = ref(false)
 const transcript = ref('')
-const btnText = ref('Start Recording')
+const btnText = ref('Start listening')
 let recognition = null
+let shouldListen = true
+let suspended = false
+let restartTimer = null
+let lastFinalText = ''
+let lastFinalAt = 0
+
+function emitStatus(value) {
+  emit('status', value)
+}
+
+function scheduleRestart() {
+  if (!shouldListen || suspended || restartTimer) return
+  restartTimer = window.setTimeout(() => {
+    restartTimer = null
+    start()
+  }, 350)
+}
 
 function initRecognition() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition
   if (!SR) {
-    console.warn('Speech Recognition not supported')
+    emit('error', '当前浏览器不支持语音识别，请使用最新版 Chrome 或 Edge。')
     return null
   }
   const r = new SR()
-  r.continuous = false
+  r.continuous = true
   r.interimResults = true
   r.lang = 'zh-CN'
 
   r.onresult = (event) => {
-    transcript.value = Array.from(event.results)
-      .map(result => result[0].transcript)
-      .join('')
-    if (event.results[0].isFinal && transcript.value.trim()) {
-      emit('transcript', transcript.value.trim())
+    const displayParts = []
+    const finalParts = []
+
+    for (let index = 0; index < event.results.length; index++) {
+      const result = event.results[index]
+      const text = result[0]?.transcript || ''
+      displayParts.push(text)
+      if (index >= event.resultIndex && result.isFinal) finalParts.push(text)
     }
+
+    transcript.value = displayParts.join('')
+    const finalText = normalizeVoiceTranscript(finalParts.join(''))
+    const now = Date.now()
+    if (finalText && (finalText !== lastFinalText || now - lastFinalAt > 1500)) {
+      lastFinalText = finalText
+      lastFinalAt = now
+      emit('transcript', finalText)
+    }
+  }
+
+  r.onstart = () => {
+    isRecording.value = true
+    btnText.value = 'Stop listening'
+    emitStatus('正在持续聆听')
   }
 
   r.onend = () => {
     isRecording.value = false
-    btnText.value = 'Start Recording'
+    btnText.value = 'Start listening'
+    if (shouldListen && !suspended) {
+      emitStatus('正在恢复语音识别')
+      scheduleRestart()
+    }
   }
 
   r.onerror = (event) => {
-    console.error('Speech error:', event.error)
     isRecording.value = false
-    btnText.value = 'Start Recording'
+    btnText.value = 'Start listening'
+    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+      shouldListen = false
+      emit('error', '需要授予麦克风权限后才能使用纯语音绘图。')
+      return
+    }
+    if (event.error !== 'no-speech' && event.error !== 'aborted') {
+      emit('error', `语音识别暂时不可用：${event.error}`)
+    }
   }
 
   return r
 }
 
-function toggle() {
-  if (isRecording.value) {
-    recognition?.stop()
-  } else {
-    if (!recognition) recognition = initRecognition()
-    if (!recognition) return
-    isRecording.value = true
-    btnText.value = 'Stop Recording'
+function start() {
+  shouldListen = true
+  suspended = false
+  if (!recognition) recognition = initRecognition()
+  if (!recognition || isRecording.value) return
+  try {
     recognition.start()
+  } catch (error) {
+    if (error?.name !== 'InvalidStateError') emit('error', `无法启动语音识别：${error.message}`)
   }
 }
+
+function stop() {
+  shouldListen = false
+  suspended = false
+  if (restartTimer) window.clearTimeout(restartTimer)
+  restartTimer = null
+  recognition?.stop()
+  emitStatus('语音识别已停止')
+}
+
+function suspendForSpeech() {
+  suspended = true
+  recognition?.stop()
+}
+
+function resumeAfterSpeech() {
+  suspended = false
+  if (shouldListen) scheduleRestart()
+}
+
+function toggle() {
+  if (shouldListen) stop()
+  else start()
+}
+
+onMounted(() => window.setTimeout(start, 300))
+onUnmounted(stop)
+
+defineExpose({ start, stop, suspendForSpeech, resumeAfterSpeech })
 </script>
 
 <template>
   <div class="voice-controls">
     <button class="btn-record" :class="{ recording: isRecording }" @click="toggle">
-      <span class="mic-icon">🎤</span>
+      <span class="mic-icon">MIC</span>
       <span>{{ btnText }}</span>
     </button>
-    <div class="transcript">{{ transcript || 'Speak something...' }}</div>
+    <div class="transcript">{{ transcript || '请直接说出绘图指令…' }}</div>
   </div>
 </template>
 
@@ -91,7 +167,7 @@ function toggle() {
   50% { box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); }
 }
 
-.mic-icon { font-size: 1.25rem; }
+.mic-icon { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; }
 
 .transcript {
   padding: 0.875rem; background: rgba(30, 41, 59, 0.8);
