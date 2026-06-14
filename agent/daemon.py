@@ -59,6 +59,7 @@ class TCPServer:
         self._runner: AgentRunner | None = None
         self._current_provider = ""
         self._current_api_key = ""
+        self._current_model = ""
         self._mcp_manager = McpManager()
         self._ready = asyncio.Event()
 
@@ -67,17 +68,17 @@ class TCPServer:
             raise ValueError(f"Handler for '{action}' must be async")
         self._handlers[action] = handler
 
-    def init_runner(self, provider: str = "openai", api_key: str = "",
+    def init_runner(self, provider: str = "openai", api_key: str = "", model: str = "",
                      block_tools: list[str] | None = None,
                      allow_tools: list[str] | None = None):
         providers = {
             "openai": lambda key: OpenAIProvider(
                 api_key=key or os.environ.get("OPENAI_API_KEY", ""),
-                model=os.environ.get("OPENAI_MODEL", "gpt-4o"),
+                model=model or os.environ.get("OPENAI_MODEL", "gpt-4o"),
             ),
             "bailian": lambda key: BailianProvider(
                 api_key=key or os.environ.get("DASHSCOPE_API_KEY", ""),
-                model=os.environ.get("BAILIAN_MODEL", "qwen-plus"),
+                model=model or os.environ.get("BAILIAN_MODEL", "qwen-plus"),
             ),
         }
         provider_fn = providers.get(provider, providers["openai"])
@@ -111,6 +112,7 @@ class TCPServer:
         self._runner = AgentRunner(config)
         self._current_provider = provider
         self._current_api_key = api_key
+        self._current_model = model
 
     async def handle_chat(self, payload: dict) -> dict:
         message = payload.get("message", "")
@@ -118,9 +120,11 @@ class TCPServer:
         history = sanitize_chat_history(payload.get("history", []))
         provider = payload.get("provider", "openai")
         api_key = payload.get("api_key", "")
+        model = payload.get("model", "")
 
-        if not self._runner or provider != self._current_provider or api_key != self._current_api_key:
-            self.init_runner(provider, api_key)
+        if (not self._runner or provider != self._current_provider
+                or api_key != self._current_api_key or model != self._current_model):
+            self.init_runner(provider, api_key, model)
 
         started_at = time.perf_counter()
         result = await self._runner.run(

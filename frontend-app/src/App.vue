@@ -3,8 +3,10 @@ import AppCanvas from './components/AppCanvas.vue'
 import VoiceRecorder from './components/VoiceRecorder.vue'
 import ChatLog from './components/ChatLog.vue'
 import AssetCandidatePanel from './components/AssetCandidatePanel.vue'
+import SettingsPanel from './components/SettingsPanel.vue'
 import { ref, provide, onMounted, onUnmounted } from 'vue'
 import { parseAssetCandidatesFromDescription } from './services/assetApi.js'
+import { buildModelConfig, loadSettings, saveSettings } from './services/appSettings.js'
 import { parseVoiceCommand } from './services/voiceCommand.js'
 
 const messages = ref([])
@@ -12,6 +14,8 @@ const isProcessing = ref(false)
 const status = ref('Ready')
 const canvasRef = ref(null)
 const voiceRef = ref(null)
+const appSettings = ref(loadSettings())
+const showSettings = ref(false)
 const events = ref([])
 const wsConnected = ref(false)
 const assetCandidates = ref([])
@@ -40,7 +44,7 @@ function addEvent(eventType, data) {
 
 function speak(text) {
   const message = String(text || '').trim().slice(0, 220)
-  if (!message || !window.speechSynthesis) return Promise.resolve()
+  if (!appSettings.value.speechEnabled || !message || !window.speechSynthesis) return Promise.resolve()
 
   voiceRef.value?.suspendForSpeech()
   window.speechSynthesis.cancel()
@@ -48,7 +52,7 @@ function speak(text) {
   return new Promise((resolve) => {
     const utterance = new SpeechSynthesisUtterance(message)
     utterance.lang = 'zh-CN'
-    utterance.rate = 1.08
+    utterance.rate = appSettings.value.speechRate
     const finish = () => {
       voiceRef.value?.resumeAfterSpeech()
       resolve()
@@ -141,6 +145,7 @@ async function executeRemoteCommand(text) {
         message: text,
         canvas_state: canvasState,
         history,
+        ...buildModelConfig(appSettings.value),
       }),
     })
     const data = await res.json()
@@ -278,6 +283,12 @@ function handleVoiceError(text) {
   status.value = 'Voice unavailable'
 }
 
+function handleSaveSettings(settings) {
+  appSettings.value = saveSettings(settings)
+  showSettings.value = false
+  status.value = 'Settings saved'
+}
+
 onMounted(connectWs)
 onUnmounted(() => { if (ws) ws.close() })
 
@@ -292,6 +303,12 @@ provide('assetCandidates', assetCandidates)
       <div class="header-right">
         <span class="ws-status" :class="{ connected: wsConnected }">{{ wsConnected ? 'WS' : '...' }}</span>
         <span class="status">{{ status }}</span>
+        <button class="settings-button" aria-label="Open settings" title="Settings" @click="showSettings = true">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 8.25A3.75 3.75 0 1 0 12 15.75 3.75 3.75 0 0 0 12 8.25Z" />
+            <path d="M19.1 13.5a7.7 7.7 0 0 0 .05-3l2-1.55-2-3.45-2.35.95a8.2 8.2 0 0 0-2.6-1.5L13.85 2h-4l-.35 2.95a8.2 8.2 0 0 0-2.6 1.5L4.55 5.5l-2 3.45 2 1.55a7.7 7.7 0 0 0 .05 3l-2.05 1.55 2 3.45 2.4-.95a8.2 8.2 0 0 0 2.55 1.5l.35 2.95h4l.35-2.95a8.2 8.2 0 0 0 2.55-1.5l2.4.95 2-3.45-2.05-1.55Z" />
+          </svg>
+        </button>
       </div>
     </header>
 
@@ -324,6 +341,12 @@ provide('assetCandidates', assetCandidates)
       <span>Voice shortcuts: “撤销” · “重做” · “清空画布” · “确认清空” · “停止当前绘图” · “重试”</span>
       <span v-if="pendingCommands.length">Queued: {{ pendingCommands.length }}</span>
     </footer>
+    <SettingsPanel
+      :show="showSettings"
+      :settings="appSettings"
+      @close="showSettings = false"
+      @save="handleSaveSettings"
+    />
   </div>
 </template>
 
@@ -340,6 +363,14 @@ body { font-family: 'Inter', sans-serif; background: #0F172A; color: #F8FAFC; he
   border-bottom: 1px solid rgba(99, 102, 241, 0.2);
 }
 .header-right { display: flex; align-items: center; gap: 0.75rem; }
+.settings-button {
+  width: 2.25rem; height: 2.25rem; display: grid; place-items: center;
+  border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 50%;
+  background: rgba(99, 102, 241, 0.12); color: #A5B4FC; cursor: pointer;
+  transition: all 0.2s ease;
+}
+.settings-button svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; stroke-width: 1.7; }
+.settings-button:hover { color: #F8FAFC; background: rgba(99, 102, 241, 0.3); transform: rotate(25deg); }
 .ws-status {
   padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600;
   background: rgba(239, 68, 68, 0.2); color: #F87171; letter-spacing: 0.05em;
