@@ -9,7 +9,12 @@ from assets.domain.errors import (
     AssetSanitizeError, AssetCacheError, AssetImportError,
 )
 from agent.router import DrawingModeRouter
-from agent.prompts import get_mode_prompt, BASE_SYSTEM_PROMPT, PLANNING_SYSTEM_PROMPT
+from agent.prompts import (
+    get_mode_prompt,
+    BASE_SYSTEM_PROMPT,
+    PLANNING_SYSTEM_PROMPT,
+    SOFTWARE_OPERATION_PROMPT,
+)
 
 
 # ── Domain model tests ──────────────────────────────────────────────────────
@@ -124,6 +129,11 @@ class TestDrawingModeRouter:
         r = self.route(router, "画一个椭圆")
         assert r.mode == DrawingMode.PRIMITIVE
 
+    def test_primitive_concentric_circle(self, router):
+        r = self.route(router, "生成一个同星圆，最里面是绿色，外层是蓝色")
+        assert r.mode == DrawingMode.PRIMITIVE
+        assert r.confidence >= 0.60
+
     # ── Canvas Edit ────────────────────────────────────────────────────
 
     def test_canvas_edit_move(self, router):
@@ -146,6 +156,16 @@ class TestDrawingModeRouter:
         r = self.route(router, "放大", canvas_state={"objects": [{"type": "circle"}]})
         assert r.mode == DrawingMode.CANVAS_EDIT
         assert r.requires_existing_object
+
+    @pytest.mark.parametrize("message", [
+        "把圆旋转45度",
+        "把房子置顶",
+        "所有图形居中对齐",
+        "三个圆横向均匀分布",
+    ])
+    def test_canvas_edit_voice_layout_operations(self, router, message):
+        r = self.route(router, message, canvas_state={"objects": [{"type": "circle"}]})
+        assert r.mode == DrawingMode.CANVAS_EDIT
 
     def test_canvas_edit_replace(self, router):
         r = self.route(router, "换一个更可爱的笑脸")
@@ -258,6 +278,8 @@ class TestModePrompts:
         p = get_mode_prompt("primitive")
         assert "Primitive Drawing Mode" in p
         assert "draw_circle" in p
+        assert "draw_concentric_circles" in p
+        assert "same center" in p
 
     def test_vector_asset_prompt(self):
         p = get_mode_prompt("vector_asset")
@@ -269,6 +291,10 @@ class TestModePrompts:
         p = get_mode_prompt("canvas_edit")
         assert "Canvas Edit Mode" in p
         assert "object_id" in p
+        assert "rotate_object" in p
+        assert "arrange_object" in p
+        assert "align_object" in p
+        assert "distribute_objects" in p
         assert "NOT by array index" in p
 
     def test_diagram_prompt(self):
@@ -304,17 +330,35 @@ class TestPromptTemplates:
     def test_base_prompt_has_canvas_placeholder(self):
         assert "{canvas_state}" in BASE_SYSTEM_PROMPT
 
+    def test_base_prompt_has_operation_placeholder(self):
+        assert "{operation_prompt}" in BASE_SYSTEM_PROMPT
+
     def test_planning_prompt_has_mode_placeholder(self):
         assert "{mode_prompt}" in PLANNING_SYSTEM_PROMPT
 
     def test_planning_prompt_has_canvas_placeholder(self):
         assert "{canvas_state}" in PLANNING_SYSTEM_PROMPT
 
+    def test_planning_prompt_has_operation_placeholder(self):
+        assert "{operation_prompt}" in PLANNING_SYSTEM_PROMPT
+
+    def test_operation_prompt_covers_common_drawing_software_actions(self):
+        p = SOFTWARE_OPERATION_PROMPT
+        assert "Brush" in p
+        assert "bezier path" in p
+        assert "align" in p
+        assert "Layers" in p
+
     def test_base_prompt_formatting(self):
         prompt = BASE_SYSTEM_PROMPT.format(
-            canvas_state="Empty canvas", mode_prompt=""
+            canvas_state="Empty canvas",
+            mode_prompt="",
+            operation_prompt=SOFTWARE_OPERATION_PROMPT,
         )
         assert "Empty canvas" in prompt
+        assert "Common Drawing Software Operations" in prompt
+        assert "rotate_object" in prompt
+        assert "align_object" in prompt
 
 
 # ── Complete routing accuracy ───────────────────────────────────────────────

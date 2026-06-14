@@ -4,8 +4,18 @@
 def primitive_prompt() -> str:
     return """--- Primitive Drawing Mode ---
 The user wants exact geometric shapes.  Use draw_circle, draw_rect, draw_line,
-draw_polygon, draw_polyline, draw_path as appropriate.  Do NOT search for
-external assets — the user explicitly requested basic geometry.
+draw_polygon, draw_polyline, draw_path, and draw_concentric_circles as
+appropriate.  Do NOT search for external assets — the user explicitly
+requested basic geometry.
+
+RELATION RULES:
+- If the user says concentric circles / 同心圆 / 同星圆 / 套圆 / 靶心, use
+  draw_concentric_circles. Do not draw separate unrelated circles.
+- For "inner/inside/center is green, outer layer is blue", the two circles
+  must share the same center; draw the larger outer layer first and the
+  smaller inner layer last.
+- Preserve explicit relationships such as inside/outside, above/below,
+  left/right, overlap, align, distribute, same size, and same center.
 """
 
 
@@ -31,6 +41,23 @@ RULES:
 5. Set a meaningful object_id and semantic_type on the imported asset.
 6. If NO good candidate is found (all scores low), fall back to drawing a
    simplified version with primitives and report the fallback.
+"""
+
+
+SOFTWARE_OPERATION_PROMPT = """--- Common Drawing Software Operations ---
+Recognize operation families common in drawing apps:
+- Brush / pencil / eraser / smudge / clone / blur / sharpen / dodge / burn /
+  paint bucket / fill / gradient / color replacement.
+- Shape / line / ellipse / polygon / polyline / pen / free pen / curvature pen /
+  bezier path / anchor point / stroke / fill / text.
+- Select / lasso / contiguous selection / move / resize / rotate / skew / crop /
+  align / distribute / reorder / group / layer order.
+- Layers / masks / clipping / blend modes / boolean combine / import / replace /
+  asset search.
+
+Map these requests to the nearest available tool. If a software-style action is
+not directly available, approximate it with the current vector tools and say so
+briefly.
 """
 
 
@@ -90,11 +117,15 @@ RULES:
 2. For position changes: move_object(object_id=..., dx=..., dy=...).
 3. For color changes: change_color(object_id=..., fill=...).
 4. For resize: resize_object(object_id=..., scale_x=..., scale_y=...).
-5. For deletion: delete_object(object_id=...).
-6. For replacement: use replace_vector_asset(object_id=..., candidate_asset_id=...).
+5. For rotation: rotate_object(object_id=..., degrees=...).
+6. For layer order: arrange_object(object_id=..., action="bring_front"/"send_back"/"bring_forward"/"send_backward").
+7. For alignment: align_object(selector="all" or object_id=..., mode="left"/"center"/"right"/"top"/"middle"/"bottom").
+8. For spacing: distribute_objects(axis="horizontal"/"vertical").
+9. For deletion: delete_object(object_id=...).
+10. For replacement: use replace_vector_asset(object_id=..., candidate_asset_id=...).
    Check available candidates first with list_asset_candidates().
-7. Undo/redo via undo() / redo().
-8. Always reference objects by object_id, NOT by array index.
+11. Undo/redo via undo() / redo().
+12. Always reference objects by object_id, NOT by array index.
 """
 
 
@@ -127,12 +158,19 @@ Available tools:
 - draw_polygon — closed polygons (triangles, stars, roofs). Minimum 3 points.
 - draw_polyline — open polylines (branching lines, mountain outlines). Minimum 2 points.
 - draw_path — SVG paths (bezier curves, arcs, complex contours)
+- draw_concentric_circles — shared-center layered circles for concentric / target shapes
 - draw_vector_composition — sanitized layered SVG for detailed subjects, perspective, gradients, highlights, and shadows
 - draw_perspective_vehicle — detailed editable three-quarter-view car with coherent 3D-like structure
+- rotate_object — rotate an object by degrees
+- arrange_object — change stacking order
+- align_object — align one object or all objects
+- distribute_objects — evenly distribute all objects
 - search_vector_asset — search SVG for common icons and objects
 - import_vector_asset — import a chosen SVG into the canvas
 - replace_vector_asset — replace an imported asset
 - list_asset_candidates — show previous search results
+
+{operation_prompt}
 
 Rules:
 1. Use tools to execute drawing operations - do NOT generate code directly
@@ -140,6 +178,7 @@ Rules:
 3. Before finishing, verify that every object explicitly requested by the user has a corresponding successful drawing tool call
 4. Batch independent tool calls in one response whenever possible; do not spend one round per tiny detail
 5. Choose the right tool: triangles → draw_polygon, curves → draw_path, straight multi-point lines → draw_polyline
+   Concentric / target / nested circles → draw_concentric_circles
    For detailed coherent subjects, perspective, depth, gradients, or 10+ related parts → draw_vector_composition
    For a detailed or perspective car/vehicle → draw_perspective_vehicle
 6. Choose reasonable parameters (coordinates, colors, sizes) based on the description
@@ -150,7 +189,7 @@ Rules:
 
 Handling user feedback:
 - If the user says "不好看" / "不像" / "重新画" / "改一下" / "换个风格" etc., use delete_object(selector="all") or clear_canvas first, then redraw with better parameters
-- If the user asks to modify an existing element (改颜色, 换颜色, 移动, 挪一下, 放大, 缩小), use move_object / change_color / resize_object
+- If the user asks to modify an existing element (改颜色, 换颜色, 移动, 挪一下, 放大, 缩小, 旋转, 置顶, 置底, 对齐, 均匀分布), use the canvas editing tools
 - Always check Current canvas state above before responding to feedback
 - When the canvas is not empty and the user gives new instructions, decide whether to add to or replace the existing content
 
@@ -183,18 +222,26 @@ Available drawing tools:
 - draw_polygon — closed polygons (triangles, stars, roofs, irregular shapes). Minimum 3 points.
 - draw_polyline — open polylines (branching lines, lightning, mountain outlines). Minimum 2 points.
 - draw_path — SVG paths (bezier curves, arcs, complex contours, smooth curves). Uses SVG path syntax: M/L/C/Q/A/Z.
+- draw_concentric_circles — shared-center layered circles for concentric / target shapes.
 - draw_vector_composition — sanitized layered SVG for coherent complex subjects, perspective, gradients, highlights, and shadows.
 - draw_perspective_vehicle — detailed editable front-right three-quarter-view car with coherent 3D-like structure.
+- rotate_object — rotate an object by degrees.
+- arrange_object — change stacking order.
+- align_object — align one object or all objects.
+- distribute_objects — evenly distribute all objects.
 - search_vector_asset — search SVG for common icons and objects
 - import_vector_asset — import a chosen SVG into the canvas
 - replace_vector_asset — replace an imported asset
 - list_asset_candidates — show previous search results
+
+{operation_prompt}
 
 --- Drawing Rules ---
 1. Choose the right drawing tool based on the shape type:
    - Triangle, star, roof → draw_polygon with 3+ points
    - Open line through multiple points → draw_polyline
    - Smooth curve, bezier, arc → draw_path with SVG path syntax
+   - Concentric / target / nested circles → draw_concentric_circles
    - Detailed single subject, perspective view, many related parts → draw_vector_composition with 10+ visible SVG elements
    - Detailed or perspective car/vehicle → draw_perspective_vehicle
 2. Before finishing, verify that every object explicitly requested by the user has a corresponding successful drawing tool call
@@ -218,6 +265,11 @@ For modification requests:
 - "移动" / "挪一下" → move_object tool
 - "放大" / "放大一点" → resize_object(scale_x=1.5, scale_y=1.5)
 - "缩小" / "缩小一点" → resize_object(scale_x=0.7, scale_y=0.7)
+- "旋转45度" → rotate_object(degrees=45)
+- "置顶/放到最前面" → arrange_object(action="bring_front")
+- "置底/放到最后面" → arrange_object(action="send_back")
+- "居中/左对齐/底部对齐" → align_object(mode="center"/"left"/"bottom")
+- "横向均匀分布/纵向均匀分布" → distribute_objects(axis="horizontal"/"vertical")
 
 --- Complex Objects Guide ---
 For abstract concepts (树/tree, 房子/house, 人/person, 花/flower, 山/mountain, 太阳/sun):
