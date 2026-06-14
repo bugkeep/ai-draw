@@ -10,6 +10,9 @@ from .duplicate import DuplicateObjectTool
 from .group import GroupObjectsTool, UngroupObjectsTool
 from .opacity import ChangeOpacityTool
 from .stroke import ChangeStrokeTool
+from .select import SelectObjectTool
+from .crop import CropObjectTool
+from .mask import ApplyClipMaskTool
 
 __all__ = [
     "DeleteObjectTool",
@@ -25,4 +28,7 @@ __all__ = [
     "UngroupObjectsTool",
     "ChangeOpacityTool",
     "ChangeStrokeTool",
+    "SelectObjectTool",
+    "CropObjectTool",
+    "ApplyClipMaskTool",
 ]

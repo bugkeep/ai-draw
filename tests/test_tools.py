@@ -18,6 +18,9 @@ from tools.editing.duplicate import DuplicateObjectTool
 from tools.editing.group import GroupObjectsTool, UngroupObjectsTool
 from tools.editing.opacity import ChangeOpacityTool
 from tools.editing.stroke import ChangeStrokeTool
+from tools.editing.select import SelectObjectTool
+from tools.editing.crop import CropObjectTool
+from tools.editing.mask import ApplyClipMaskTool
 from tools.history.undo import UndoTool
 from tools.history.redo import RedoTool
 from tools.history.clear import ClearCanvasTool
@@ -378,6 +381,51 @@ class TestChangeStrokeTool:
         assert "strokeWidth: 4.0" in result.code
 
 
+class TestSelectObjectTool:
+    def test_definition(self):
+        defn = SelectObjectTool().definition()
+        assert defn.name == "select_object"
+
+    def test_execute_by_type_and_color(self):
+        result = SelectObjectTool().execute(type="circle", color="red")
+        assert not result.is_error
+        assert "semanticType === 'circle'" in result.code
+        assert "obj.fill === 'red'" in result.code
+        assert "ActiveSelection" in result.code
+
+
+class TestCropObjectTool:
+    def test_definition(self):
+        defn = CropObjectTool().definition()
+        assert defn.name == "crop_object"
+
+    def test_execute_last_rect_crop(self):
+        result = CropObjectTool().execute(selector="last", x=10, y=20, width=100, height=80)
+        assert not result.is_error
+        assert "clipPath" in result.code
+        assert "new fabric.Rect" in result.code
+        assert "width: 100.0" in result.code
+        assert "height: 80.0" in result.code
+
+
+class TestApplyClipMaskTool:
+    def test_definition(self):
+        defn = ApplyClipMaskTool().definition()
+        assert defn.name == "apply_clip_mask"
+
+    def test_execute_applies_mask(self):
+        result = ApplyClipMaskTool().execute(target_object_id="image_1", mask_object_id="rect_1")
+        assert not result.is_error
+        assert "clipPath" in result.code
+        assert "objectId === 'image_1'" in result.code
+        assert "objectId === 'rect_1'" in result.code
+        assert "canvas.remove(mask)" in result.code
+
+    def test_rejects_same_target_and_mask(self):
+        result = ApplyClipMaskTool().execute(target_object_id="same", mask_object_id="same")
+        assert result.is_error
+
+
 class TestUndoTool:
     def test_definition(self):
         defn = UndoTool().definition()
@@ -415,7 +463,7 @@ class TestToolRegistryIntegration:
         reg = ToolRegistry()
         for tool_cls in ALL_TOOLS:
             reg.register(tool_cls())
-        assert len(reg) == 37
+        assert len(reg) == 40
 
     def test_get_definitions(self):
         from tools import ALL_TOOLS
@@ -437,5 +485,8 @@ class TestToolRegistryIntegration:
         assert "ungroup_objects" in names
         assert "change_opacity" in names
         assert "change_stroke" in names
+        assert "select_object" in names
+        assert "crop_object" in names
+        assert "apply_clip_mask" in names
         assert "undo" in names
         assert "clear_canvas" in names
