@@ -39,7 +39,8 @@ class ToolPolicy:
     # Canvas editing tools — auto-allow (user explicitly asked for drawing)
     CANVAS_EDIT = frozenset({
         "delete_object", "move_object", "change_color", "resize_object",
-        "rotate_object", "arrange_object", "align_object", "distribute_objects",
+        "rotate_object", "flip_object", "skew_object",
+        "arrange_object", "align_object", "distribute_objects",
         "duplicate_object", "group_objects", "ungroup_objects",
         "change_opacity", "change_stroke",
         "select_object", "select_by_region", "select_by_lasso", "select_similar",
