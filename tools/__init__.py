@@ -16,6 +16,11 @@ from .editing import (
     ArrangeObjectTool,
     AlignObjectTool,
     DistributeObjectsTool,
+    DuplicateObjectTool,
+    GroupObjectsTool,
+    UngroupObjectsTool,
+    ChangeOpacityTool,
+    ChangeStrokeTool,
 )
 from .history import UndoTool, RedoTool, ClearCanvasTool
 from .assets import (
@@ -49,6 +54,11 @@ ALL_TOOLS = [
     ArrangeObjectTool,
     AlignObjectTool,
     DistributeObjectsTool,
+    DuplicateObjectTool,
+    GroupObjectsTool,
+    UngroupObjectsTool,
+    ChangeOpacityTool,
+    ChangeStrokeTool,
     UndoTool,
     RedoTool,
     ClearCanvasTool,
@@ -74,6 +84,8 @@ __all__ = [
     "DrawPerspectiveVehicleTool",
     "DeleteObjectTool", "MoveObjectTool", "ChangeColorTool", "ResizeObjectTool",
     "RotateObjectTool", "ArrangeObjectTool", "AlignObjectTool", "DistributeObjectsTool",
+    "DuplicateObjectTool", "GroupObjectsTool", "UngroupObjectsTool",
+    "ChangeOpacityTool", "ChangeStrokeTool",
     "UndoTool", "RedoTool", "ClearCanvasTool",
     "ReadFileTool", "WriteFileTool", "ListDirTool",
     "BashTool", "SearchTextTool", "PatchFileTool",
