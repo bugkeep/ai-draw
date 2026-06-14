@@ -188,7 +188,7 @@ class TestToolRegistryIntegration:
         reg = ToolRegistry()
         for tool_cls in ALL_TOOLS:
             reg.register(tool_cls())
-        assert len(reg) == 18
+        assert len(reg) == 21
 
     def test_get_definitions(self):
         from tools import ALL_TOOLS
