@@ -31,6 +31,7 @@ class ToolPolicy:
         "task_list", "task_get",
         "note_save",
         "draw_circle", "draw_rect", "draw_line", "draw_text", "draw_ellipse",
+        "draw_polygon", "draw_polyline", "draw_path",
     })
 
     # Tools that modify state — ask user unless already approved.
