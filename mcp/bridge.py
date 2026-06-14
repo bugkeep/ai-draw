@@ -1,9 +1,7 @@
 """Wrap MCP tool definitions as ``BaseTool`` instances for the registry."""
 
-import json
-import asyncio
 from tools.base import BaseTool, ToolDefinition, ToolParameter, ToolResult
-from .client import McpStdioClient
+from .client import McpSyncClient
 
 
 def _mcp_schema_to_params(input_schema: dict) -> list[ToolParameter]:
@@ -42,10 +40,8 @@ class McpToolWrapper(BaseTool):
 
     def __init__(self, mcp_tool_name: str, description: str,
                  parameters: list[ToolParameter],
-                 client: McpStdioClient):
+                 client: McpSyncClient):
         self._mcp_name = mcp_tool_name
-        self._desc = description
-        self._params = parameters
         self._client = client
         self._defn = ToolDefinition(
             name=mcp_tool_name,
@@ -57,25 +53,9 @@ class McpToolWrapper(BaseTool):
         return self._defn
 
     def execute(self, **kwargs) -> ToolResult:
-        """Execute the MCP tool via the client.
-
-        The underlying MCP call is async, so we bridge via
-        ``asyncio.run()`` or a new event loop when one is already running.
-        """
+        """Execute the MCP tool via the sync client."""
         try:
-            result = asyncio.run(self._async_call(**kwargs))
-            return result
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            try:
-                result = loop.run_until_complete(self._async_call(**kwargs))
-                return result
-            finally:
-                loop.close()
-
-    async def _async_call(self, **kwargs) -> ToolResult:
-        try:
-            mcp_result = await self._client.call_tool(self._mcp_name, kwargs)
+            mcp_result = self._client.call_tool(self._mcp_name, kwargs)
         except Exception as e:
             return ToolResult(
                 is_error=True,

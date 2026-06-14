@@ -7,7 +7,7 @@ server process, lists its tools, wraps them as ``BaseTool`` instances via
 
 import os
 import json
-from .client import McpStdioClient
+from .client import McpSyncClient
 from .bridge import McpToolWrapper, _mcp_schema_to_params
 
 MCP_CONFIG_PATH = os.path.normpath(
@@ -40,7 +40,13 @@ class McpManager:
         self.tools: list[McpToolWrapper] = []
 
     async def start(self):
-        """Read config, spawn servers, collect tools."""
+        """Read config, spawn servers, collect tools.
+
+        Note: individual server I/O is synchronous (``McpSyncClient``
+        uses plain ``subprocess.Popen``), but ``start`` itself is async
+        so it can be ``await``-ed at daemon boot without blocking other
+        startup tasks.
+        """
         servers = self._load_config()
         for server_cfg in servers:
             name = server_cfg.get("name", "mcp")
@@ -49,21 +55,21 @@ class McpManager:
                 continue
             cwd = server_cfg.get("cwd")
             env = server_cfg.get("env")
-            client = McpStdioClient(
+            client = McpSyncClient(
                 name=name, cmd=cmd, cwd=cwd, env=env,
             )
             try:
-                await client.start(timeout=server_cfg.get("timeout", 10.0))
+                client.start(timeout=server_cfg.get("timeout", 10.0))
             except Exception as e:
                 print(f"[mcp] Failed to start '{name}': {e}")
                 continue
 
             # list tools
             try:
-                mcp_tools = await client.list_tools()
+                mcp_tools = client.list_tools()
             except Exception as e:
                 print(f"[mcp] Failed to list tools for '{name}': {e}")
-                await client.stop()
+                client.stop()
                 continue
 
             # wrap each tool
@@ -83,7 +89,7 @@ class McpManager:
     async def stop(self):
         for client in self._clients:
             try:
-                await client.stop()
+                client.stop()
             except Exception:
                 pass
         self._clients.clear()

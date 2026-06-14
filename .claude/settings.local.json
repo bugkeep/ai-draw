@@ -66,7 +66,9 @@
       "Bash(timeout 15 python -m pytest tests/test_runner.py tests/test_event_bus.py tests/test_protocol.py tests/test_subscription_replay.py -k \"not test_register_all_drawing_tools\" -x --tb=short)",
       "Bash(timeout 8 python -m pytest tests/test_subscription_replay.py -x --tb=short)",
       "Bash(python -m pytest tests/test_event_bus.py tests/test_protocol.py -x --tb=short -v)",
-      "Bash(python -m pytest tests/test_subscription_replay.py -x --tb=short -v)"
+      "Bash(python -m pytest tests/test_subscription_replay.py -x --tb=short -v)",
+      "Bash(timeout 15 python -c ' *)",
+      "Bash(python -m pytest tests/test_runner.py tests/test_event_bus.py tests/test_protocol.py -x --tb=short -q)"
     ]
   }
 }

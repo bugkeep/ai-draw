@@ -2,7 +2,7 @@ import json
 import time
 from events import EventBus, EventType, BaseEvent
 from tools.registry import ToolRegistry
-from tools.base import ToolResult
+from tools.base import BaseTool, ToolResult
 from agent.runner import AgentRunner, AgentConfig, new_run_id, classify_tool_error
 
 
@@ -92,7 +92,7 @@ class SubAgentRunner:
         }
 
 
-class SpawnAgentTool:
+class SpawnAgentTool(BaseTool):
     """Tool that lets the parent agent spawn an isolated sub-agent.
 
     Registered as ``spawn_agent`` in the parent's tool registry.
@@ -144,23 +144,14 @@ class SpawnAgentTool:
         )
 
     def execute(self, **kwargs) -> ToolResult:
-        """Execute is sync, but the actual work is async.
+        """Execute the sub-agent synchronously.
 
-        This method creates an asyncio task and blocks on it.
+        ``SubAgentRunner.run()`` is async internally but the sub-agent
+        runner creates its own event loop via a sync wrapper so it can be
+        called from ``BaseTool.execute()``.
         """
         import asyncio
-        try:
-            result = asyncio.run(self._async_execute(**kwargs))
-            return result
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            try:
-                result = loop.run_until_complete(self._async_execute(**kwargs))
-                return result
-            finally:
-                loop.close()
 
-    async def _async_execute(self, **kwargs) -> ToolResult:
         role = kwargs.get("role", "")
         role_prompt = kwargs.get("prompt", "")
         input_text = kwargs.get("input", "")
@@ -174,12 +165,19 @@ class SpawnAgentTool:
                 error_type="invalid_args",
             )
 
-        result = await self._sub_runner.run(
-            role=role,
-            role_prompt=role_prompt,
-            input_text=input_text,
-            allowed_tools=allowed,
-        )
+        try:
+            result = asyncio.run(self._sub_runner.run(
+                role=role,
+                role_prompt=role_prompt,
+                input_text=input_text,
+                allowed_tools=allowed,
+            ))
+        except Exception as e:
+            return ToolResult(
+                is_error=True,
+                error=f"Sub-agent '{role}' failed: {e}",
+                error_type="execution_error",
+            )
 
         if result["success"]:
             return ToolResult(

@@ -1,3 +1,9 @@
 {
-  "servers": []
+  "servers": [
+    {
+      "name": "echo-server",
+      "description": "MCP echo server for testing the bridge",
+      "command": ["python", "mcp/examples/echo_server.py"]
+    }
+  ]
 }
