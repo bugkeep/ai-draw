@@ -129,11 +129,13 @@ RULES:
 14. For outline/stroke: change_stroke(object_id=..., stroke=..., stroke_width=...).
 15. For rectangular crop: crop_object(object_id=..., x=..., y=..., width=..., height=...).
 16. For clipping/masks: apply_clip_mask(target_object_id=..., mask_object_id=...).
-17. For deletion: delete_object(object_id=...).
-18. For replacement: use replace_vector_asset(object_id=..., candidate_asset_id=...).
+17. For blend/composite modes: change_blend_mode(object_id=..., mode="multiply"/"screen"/"overlay"/...).
+18. For image filters: apply_image_filter(object_id=..., filter_type="brightness"/"contrast"/"blur"/"grayscale"/"invert"/"saturation", value=...).
+19. For deletion: delete_object(object_id=...).
+20. For replacement: use replace_vector_asset(object_id=..., candidate_asset_id=...).
    Check available candidates first with list_asset_candidates().
-19. Undo/redo via undo() / redo().
-20. Always reference objects by object_id, NOT by array index.
+21. Undo/redo via undo() / redo().
+22. Always reference objects by object_id, NOT by array index.
 """
 
 
@@ -180,6 +182,8 @@ Available tools:
 - select_object — select objects by object_id, selector, type, or color
 - crop_object — apply a rectangular crop
 - apply_clip_mask — use one object as another object's clipping mask
+- change_blend_mode — set object blend/composite mode
+- apply_image_filter — apply brightness, contrast, blur, grayscale, invert, or saturation filters to image objects
 - search_vector_asset — search SVG for common icons and objects
 - import_vector_asset — import a chosen SVG into the canvas
 - replace_vector_asset — replace an imported asset
@@ -204,7 +208,7 @@ Rules:
 
 Handling user feedback:
 - If the user says "不好看" / "不像" / "重新画" / "改一下" / "换个风格" etc., use delete_object(selector="all") or clear_canvas first, then redraw with better parameters
-- If the user asks to modify an existing element (改颜色, 换颜色, 移动, 挪一下, 放大, 缩小, 旋转, 置顶, 置底, 对齐, 均匀分布, 复制, 成组, 取消成组, 透明, 描边, 选中, 裁剪, 遮罩, 剪贴), use the canvas editing tools
+- If the user asks to modify an existing element (改颜色, 换颜色, 移动, 挪一下, 放大, 缩小, 旋转, 置顶, 置底, 对齐, 均匀分布, 复制, 成组, 取消成组, 透明, 描边, 选中, 裁剪, 遮罩, 剪贴, 混合模式, 滤镜, 模糊, 调亮, 灰度), use the canvas editing tools
 - Always check Current canvas state above before responding to feedback
 - When the canvas is not empty and the user gives new instructions, decide whether to add to or replace the existing content
 
@@ -251,6 +255,8 @@ Available drawing tools:
 - select_object — select objects by object_id, selector, type, or color.
 - crop_object — apply a rectangular crop.
 - apply_clip_mask — use one object as another object's clipping mask.
+- change_blend_mode — set object blend/composite mode.
+- apply_image_filter — apply brightness, contrast, blur, grayscale, invert, or saturation filters to image objects.
 - search_vector_asset — search SVG for common icons and objects
 - import_vector_asset — import a chosen SVG into the canvas
 - replace_vector_asset — replace an imported asset
@@ -300,6 +306,8 @@ For modification requests:
 - "选中红色圆/选中所有矩形" → select_object(type="circle", color="red") / select_object(type="rect")
 - "裁剪它/裁掉右边一点" → crop_object(selector="last", ...)
 - "用这个矩形做遮罩/剪贴到形状里" → apply_clip_mask(target_object_id=..., mask_object_id=...)
+- "改成正片叠底/滤色/叠加" → change_blend_mode(mode="multiply"/"screen"/"overlay")
+- "把图片调亮/加模糊/变灰度/反色/提高饱和度" → apply_image_filter(filter_type=..., value=...)
 
 --- Complex Objects Guide ---
 For abstract concepts (树/tree, 房子/house, 人/person, 花/flower, 山/mountain, 太阳/sun):

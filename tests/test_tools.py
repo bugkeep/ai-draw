@@ -21,6 +21,8 @@ from tools.editing.stroke import ChangeStrokeTool
 from tools.editing.select import SelectObjectTool
 from tools.editing.crop import CropObjectTool
 from tools.editing.mask import ApplyClipMaskTool
+from tools.editing.blend import ChangeBlendModeTool
+from tools.editing.filter import ApplyImageFilterTool
 from tools.history.undo import UndoTool
 from tools.history.redo import RedoTool
 from tools.history.clear import ClearCanvasTool
@@ -426,6 +428,44 @@ class TestApplyClipMaskTool:
         assert result.is_error
 
 
+class TestChangeBlendModeTool:
+    def test_definition(self):
+        defn = ChangeBlendModeTool().definition()
+        assert defn.name == "change_blend_mode"
+
+    def test_execute_multiply_last(self):
+        result = ChangeBlendModeTool().execute(selector="last", mode="multiply")
+        assert not result.is_error
+        assert "globalCompositeOperation: 'multiply'" in result.code
+        assert result.data["mode"] == "multiply"
+
+    def test_rejects_invalid_blend_mode(self):
+        result = ChangeBlendModeTool().execute(mode="not-a-mode")
+        assert result.is_error
+
+
+class TestApplyImageFilterTool:
+    def test_definition(self):
+        defn = ApplyImageFilterTool().definition()
+        assert defn.name == "apply_image_filter"
+
+    def test_execute_brightness(self):
+        result = ApplyImageFilterTool().execute(object_id="image_1", filter_type="brightness", value=0.25)
+        assert not result.is_error
+        assert "fabric.Image.filters.Brightness" in result.code
+        assert "brightness: 0.25" in result.code
+        assert "objectId === 'image_1'" in result.code
+
+    def test_execute_grayscale(self):
+        result = ApplyImageFilterTool().execute(selector="last", filter_type="grayscale")
+        assert not result.is_error
+        assert "fabric.Image.filters.Grayscale" in result.code
+
+    def test_rejects_invalid_filter_value(self):
+        result = ApplyImageFilterTool().execute(filter_type="blur", value=2)
+        assert result.is_error
+
+
 class TestUndoTool:
     def test_definition(self):
         defn = UndoTool().definition()
@@ -463,7 +503,7 @@ class TestToolRegistryIntegration:
         reg = ToolRegistry()
         for tool_cls in ALL_TOOLS:
             reg.register(tool_cls())
-        assert len(reg) == 40
+        assert len(reg) == 42
 
     def test_get_definitions(self):
         from tools import ALL_TOOLS
@@ -488,5 +528,7 @@ class TestToolRegistryIntegration:
         assert "select_object" in names
         assert "crop_object" in names
         assert "apply_clip_mask" in names
+        assert "change_blend_mode" in names
+        assert "apply_image_filter" in names
         assert "undo" in names
         assert "clear_canvas" in names
