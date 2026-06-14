@@ -4,11 +4,13 @@ import VoiceRecorder from './components/VoiceRecorder.vue'
 import ChatLog from './components/ChatLog.vue'
 import AssetCandidatePanel from './components/AssetCandidatePanel.vue'
 import SettingsPanel from './components/SettingsPanel.vue'
+import CapabilityNotice from './components/CapabilityNotice.vue'
 import { ref, provide, onMounted, onUnmounted } from 'vue'
 import { parseAssetCandidatesFromDescription } from './services/assetApi.js'
 import { buildModelConfig, loadSettings, saveSettings } from './services/appSettings.js'
 import { buildSuccessSpeech } from './services/responseFeedback.js'
 import { parseVoiceCommand } from './services/voiceCommand.js'
+import { rememberCapabilityNoticeDismissed, shouldShowCapabilityNotice } from './services/capabilityAnnouncement.js'
 
 const messages = ref([])
 const isProcessing = ref(false)
@@ -17,6 +19,7 @@ const canvasRef = ref(null)
 const voiceRef = ref(null)
 const appSettings = ref(loadSettings())
 const showSettings = ref(false)
+const showCapabilityNotice = ref(shouldShowCapabilityNotice())
 const events = ref([])
 const wsConnected = ref(false)
 const assetCandidates = ref([])
@@ -302,6 +305,11 @@ function handleSaveSettings(settings) {
   status.value = 'Settings saved'
 }
 
+function closeCapabilityNotice() {
+  showCapabilityNotice.value = false
+  rememberCapabilityNoticeDismissed()
+}
+
 onMounted(connectWs)
 onUnmounted(() => { if (ws) ws.close() })
 
@@ -316,6 +324,13 @@ provide('assetCandidates', assetCandidates)
       <div class="header-right">
         <span class="ws-status" :class="{ connected: wsConnected }">{{ wsConnected ? 'WS' : '...' }}</span>
         <span class="status">{{ status }}</span>
+        <button class="help-button" aria-label="Show voice command capabilities" title="Voice command capabilities" @click="showCapabilityNotice = true">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 17.25h.01" />
+            <path d="M9.35 9.3a2.95 2.95 0 1 1 4.85 2.25c-.95.68-1.58 1.16-1.75 2.2" />
+            <path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+          </svg>
+        </button>
         <button class="settings-button" aria-label="Open settings" title="Settings" @click="showSettings = true">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 8.25A3.75 3.75 0 1 0 12 15.75 3.75 3.75 0 0 0 12 8.25Z" />
@@ -360,6 +375,10 @@ provide('assetCandidates', assetCandidates)
       @close="showSettings = false"
       @save="handleSaveSettings"
     />
+    <CapabilityNotice
+      :show="showCapabilityNotice"
+      @close="closeCapabilityNotice"
+    />
   </div>
 </template>
 
@@ -382,8 +401,16 @@ body { font-family: 'Inter', sans-serif; background: #0F172A; color: #F8FAFC; he
   background: rgba(99, 102, 241, 0.12); color: #A5B4FC; cursor: pointer;
   transition: all 0.2s ease;
 }
+.help-button {
+  width: 2.25rem; height: 2.25rem; display: grid; place-items: center;
+  border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 50%;
+  background: rgba(245, 158, 11, 0.12); color: #FBBF24; cursor: pointer;
+  transition: all 0.2s ease;
+}
 .settings-button svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; stroke-width: 1.7; }
+.help-button svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .settings-button:hover { color: #F8FAFC; background: rgba(99, 102, 241, 0.3); transform: rotate(25deg); }
+.help-button:hover { color: #F8FAFC; background: rgba(245, 158, 11, 0.28); }
 .ws-status {
   padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600;
   background: rgba(239, 68, 68, 0.2); color: #F87171; letter-spacing: 0.05em;
