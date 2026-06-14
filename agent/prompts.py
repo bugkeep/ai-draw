@@ -121,16 +121,19 @@ RULES:
 6. For layer order: arrange_object(object_id=..., action="bring_front"/"send_back"/"bring_forward"/"send_backward").
 7. For alignment: align_object(selector="all" or object_id=..., mode="left"/"center"/"right"/"top"/"middle"/"bottom").
 8. For spacing: distribute_objects(axis="horizontal"/"vertical").
-9. For duplication: duplicate_object(object_id=... or selector="last", offset_x=..., offset_y=...).
-10. For grouping: group_objects(object_ids=[...]) or group_objects(selector="all").
-11. For ungrouping: ungroup_objects(object_id=... or selector="last").
-12. For opacity: change_opacity(object_id=..., opacity=0.5).
-13. For outline/stroke: change_stroke(object_id=..., stroke=..., stroke_width=...).
-14. For deletion: delete_object(object_id=...).
-15. For replacement: use replace_vector_asset(object_id=..., candidate_asset_id=...).
+9. For voice selection: select_object(object_id=..., selector=..., type=..., color=...).
+10. For duplication: duplicate_object(object_id=... or selector="last", offset_x=..., offset_y=...).
+11. For grouping: group_objects(object_ids=[...]) or group_objects(selector="all").
+12. For ungrouping: ungroup_objects(object_id=... or selector="last").
+13. For opacity: change_opacity(object_id=..., opacity=0.5).
+14. For outline/stroke: change_stroke(object_id=..., stroke=..., stroke_width=...).
+15. For rectangular crop: crop_object(object_id=..., x=..., y=..., width=..., height=...).
+16. For clipping/masks: apply_clip_mask(target_object_id=..., mask_object_id=...).
+17. For deletion: delete_object(object_id=...).
+18. For replacement: use replace_vector_asset(object_id=..., candidate_asset_id=...).
    Check available candidates first with list_asset_candidates().
-16. Undo/redo via undo() / redo().
-17. Always reference objects by object_id, NOT by array index.
+19. Undo/redo via undo() / redo().
+20. Always reference objects by object_id, NOT by array index.
 """
 
 
@@ -174,6 +177,9 @@ Available tools:
 - group_objects / ungroup_objects — group or ungroup objects
 - change_opacity — set object opacity
 - change_stroke — set object outline color and width
+- select_object — select objects by object_id, selector, type, or color
+- crop_object — apply a rectangular crop
+- apply_clip_mask — use one object as another object's clipping mask
 - search_vector_asset — search SVG for common icons and objects
 - import_vector_asset — import a chosen SVG into the canvas
 - replace_vector_asset — replace an imported asset
@@ -198,7 +204,7 @@ Rules:
 
 Handling user feedback:
 - If the user says "不好看" / "不像" / "重新画" / "改一下" / "换个风格" etc., use delete_object(selector="all") or clear_canvas first, then redraw with better parameters
-- If the user asks to modify an existing element (改颜色, 换颜色, 移动, 挪一下, 放大, 缩小, 旋转, 置顶, 置底, 对齐, 均匀分布, 复制, 成组, 取消成组, 透明, 描边), use the canvas editing tools
+- If the user asks to modify an existing element (改颜色, 换颜色, 移动, 挪一下, 放大, 缩小, 旋转, 置顶, 置底, 对齐, 均匀分布, 复制, 成组, 取消成组, 透明, 描边, 选中, 裁剪, 遮罩, 剪贴), use the canvas editing tools
 - Always check Current canvas state above before responding to feedback
 - When the canvas is not empty and the user gives new instructions, decide whether to add to or replace the existing content
 
@@ -242,6 +248,9 @@ Available drawing tools:
 - group_objects / ungroup_objects — group or ungroup objects.
 - change_opacity — set object opacity.
 - change_stroke — set object outline color and width.
+- select_object — select objects by object_id, selector, type, or color.
+- crop_object — apply a rectangular crop.
+- apply_clip_mask — use one object as another object's clipping mask.
 - search_vector_asset — search SVG for common icons and objects
 - import_vector_asset — import a chosen SVG into the canvas
 - replace_vector_asset — replace an imported asset
@@ -288,6 +297,9 @@ For modification requests:
 - "取消成组/拆开组合" → ungroup_objects(selector="last")
 - "半透明/透明度50%" → change_opacity(opacity=0.5)
 - "加黑色描边/边框粗一点" → change_stroke(stroke="black", stroke_width=...)
+- "选中红色圆/选中所有矩形" → select_object(type="circle", color="red") / select_object(type="rect")
+- "裁剪它/裁掉右边一点" → crop_object(selector="last", ...)
+- "用这个矩形做遮罩/剪贴到形状里" → apply_clip_mask(target_object_id=..., mask_object_id=...)
 
 --- Complex Objects Guide ---
 For abstract concepts (树/tree, 房子/house, 人/person, 花/flower, 山/mountain, 太阳/sun):

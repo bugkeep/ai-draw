@@ -167,6 +167,9 @@ class TestDrawingModeRouter:
         "取消成组",
         "把圆改成半透明",
         "加黑色描边",
+        "选中红色圆",
+        "裁剪最后一个对象",
+        "用矩形做遮罩",
     ])
     def test_canvas_edit_voice_layout_operations(self, router, message):
         r = self.route(router, message, canvas_state={"objects": [{"type": "circle"}]})
@@ -304,6 +307,9 @@ class TestModePrompts:
         assert "group_objects" in p
         assert "change_opacity" in p
         assert "change_stroke" in p
+        assert "select_object" in p
+        assert "crop_object" in p
+        assert "apply_clip_mask" in p
         assert "NOT by array index" in p
 
     def test_diagram_prompt(self):
@@ -370,6 +376,8 @@ class TestPromptTemplates:
         assert "align_object" in prompt
         assert "duplicate_object" in prompt
         assert "change_stroke" in prompt
+        assert "select_object" in prompt
+        assert "apply_clip_mask" in prompt
 
 
 # ── Complete routing accuracy ───────────────────────────────────────────────
