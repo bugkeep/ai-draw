@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from typing import Optional
+import os
 
 router = APIRouter()
 
@@ -9,7 +10,7 @@ class ChatRequest(BaseModel):
     message: str
     canvas_state: Optional[dict] = None
     history: Optional[list[dict]] = None
-    provider: Optional[str] = "bailian"
+    provider: Optional[str] = None
     api_key: Optional[str] = ""
 
 
@@ -56,7 +57,7 @@ async def chat(request: Request, body: ChatRequest):
             "message": body.message,
             "canvas_state": body.canvas_state or {},
             "history": body.history or [],
-            "provider": body.provider or "openai",
+            "provider": body.provider or os.environ.get("LLM_PROVIDER", "openai"),
             "api_key": body.api_key or "",
         })
         return ChatResponse(**result)

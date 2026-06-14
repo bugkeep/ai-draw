@@ -1,26 +1,7 @@
 <script setup>
-import { ref } from 'vue'
-
-const props = defineProps({
+defineProps({
   candidates: { type: Array, default: () => [] },
-  show: { type: Boolean, default: false },
 })
-
-const emit = defineEmits(['import', 'search'])
-
-const searchQuery = ref('')
-const searching = ref(false)
-
-function handleSearch() {
-  const q = searchQuery.value.trim()
-  if (!q) return
-  searching.value = true
-  emit('search', q)
-}
-
-function handleImport(assetId) {
-  emit('import', assetId)
-}
 
 function scoreColor(score) {
   if (score >= 90) return '#4ADE80'
@@ -36,20 +17,7 @@ function previewFailed(ev) {
 <template>
   <div class="asset-panel">
     <div class="asset-header">
-      <span class="asset-title">Asset Search</span>
-    </div>
-
-    <div class="search-row">
-      <input
-        v-model="searchQuery"
-        type="text"
-        class="search-input"
-        placeholder="Search icons..."
-        @keyup.enter="handleSearch"
-      />
-      <button class="search-btn" @click="handleSearch" :disabled="searching">
-        {{ searching ? '...' : 'Go' }}
-      </button>
+      <span class="asset-title">Voice-selected assets</span>
     </div>
 
     <div v-if="candidates.length > 0" class="candidates-list">
@@ -74,12 +42,11 @@ function previewFailed(ev) {
           </div>
           <div class="score-label">{{ c.score }}%</div>
         </div>
-        <button class="import-btn" @click="handleImport(c.assetId)">Use</button>
       </div>
     </div>
 
-    <div v-else-if="!show" class="empty-hint">
-      Search for SVG icons to place on canvas.
+    <div v-else class="empty-hint">
+      Ask by voice to draw an icon or replace an object.
     </div>
   </div>
 </template>
@@ -101,31 +68,6 @@ function previewFailed(ev) {
   font-size: 0.75rem; font-weight: 600; color: #64748B;
   text-transform: uppercase; letter-spacing: 0.05em;
 }
-
-.search-row {
-  display: flex; gap: 0.375rem; margin-bottom: 0.625rem;
-}
-
-.search-input {
-  flex: 1; padding: 0.5rem 0.625rem;
-  border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 6px;
-  background: rgba(15, 23, 42, 0.8); color: #F8FAFC;
-  font-size: 0.8rem;
-  transition: border-color 0.2s;
-}
-.search-input:focus {
-  outline: none; border-color: #6366F1;
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
-}
-.search-input::placeholder { color: #475569; }
-
-.search-btn {
-  padding: 0.5rem 0.75rem; border: none; border-radius: 6px;
-  background: #6366F1; color: white; font-size: 0.8rem; font-weight: 500;
-  cursor: pointer; transition: background 0.2s;
-}
-.search-btn:hover { background: #4F46E5; }
-.search-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .candidates-list {
   display: flex; flex-direction: column; gap: 0.5rem;
@@ -183,16 +125,6 @@ function previewFailed(ev) {
 
 .score-label {
   font-size: 0.65rem; color: #64748B;
-}
-
-.import-btn {
-  padding: 0.375rem 0.625rem; border: 1px solid rgba(99, 102, 241, 0.3);
-  border-radius: 4px; background: rgba(99, 102, 241, 0.15);
-  color: #A5B4FC; font-size: 0.75rem; font-weight: 500; cursor: pointer;
-  white-space: nowrap; transition: all 0.2s;
-}
-.import-btn:hover {
-  background: #6366F1; color: white; border-color: #6366F1;
 }
 
 .empty-hint {

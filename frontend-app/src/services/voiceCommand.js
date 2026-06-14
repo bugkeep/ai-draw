@@ -7,6 +7,7 @@ const COMMAND_RULES = [
   { type: 'request_clear', pattern: /^(?:清空|清除|删除)(?:整个|全部|所有)?画布$/u },
   { type: 'request_clear', pattern: /^重新开始$/u },
   { type: 'confirm_clear', pattern: /^(?:确认|确定)(?:清空|清除)?$/u },
+  { type: 'stop_current', pattern: /^(?:停止|取消|终止)(?:当前|正在执行的)?(?:绘图|任务|操作)$/u },
   { type: 'cancel', pattern: /^(?:取消|算了|不要|不用了|不要清空)$/u },
   { type: 'retry', pattern: /^(?:重试|再试一次|重新执行|再执行一次)$/u },
 ]

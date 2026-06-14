@@ -11,6 +11,9 @@ test('recognizes low-latency canvas commands', () => {
   assert.equal(parseVoiceCommand('再做一次').type, 'redo')
   assert.equal(parseVoiceCommand('清空整个画布').type, 'request_clear')
   assert.equal(parseVoiceCommand('确认清空').type, 'confirm_clear')
+  assert.equal(parseVoiceCommand('停止当前绘图').type, 'stop_current')
+  assert.equal(parseVoiceCommand('取消正在执行的任务').type, 'stop_current')
+  assert.equal(parseVoiceCommand('取消').type, 'cancel')
   assert.equal(parseVoiceCommand('再试一次').type, 'retry')
 })
 

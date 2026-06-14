@@ -3,7 +3,6 @@ import AppCanvas from './components/AppCanvas.vue'
 import VoiceRecorder from './components/VoiceRecorder.vue'
 import ChatLog from './components/ChatLog.vue'
 import AssetCandidatePanel from './components/AssetCandidatePanel.vue'
-import SettingsPanel from './components/SettingsPanel.vue'
 import { ref, provide, onMounted, onUnmounted } from 'vue'
 import { parseAssetCandidatesFromDescription } from './services/assetApi.js'
 import { parseVoiceCommand } from './services/voiceCommand.js'
@@ -13,24 +12,20 @@ const isProcessing = ref(false)
 const status = ref('Ready')
 const canvasRef = ref(null)
 const voiceRef = ref(null)
-const provider = ref(localStorage.getItem('provider') || 'openai')
-const apiKey = ref(localStorage.getItem('api_key') || '')
 const events = ref([])
 const wsConnected = ref(false)
 const assetCandidates = ref([])
-const showAssetPanel = ref(false)
 const pendingCommands = ref([])
 let ws = null
 let queueRunning = false
 let pendingClearConfirmation = false
 let lastRemoteCommand = ''
+let activeRequestController = null
 
 provide('messages', messages)
 provide('isProcessing', isProcessing)
 provide('status', status)
 provide('canvasRef', canvasRef)
-provide('provider', provider)
-provide('apiKey', apiKey)
 provide('events', events)
 provide('wsConnected', wsConnected)
 
@@ -97,7 +92,6 @@ function handleEvent(eventType, data) {
       status.value = `Executing ${toolName}...`
       if (toolName === 'search_vector_asset') {
         assetCandidates.value = []
-        showAssetPanel.value = true
       }
       break
     }
@@ -134,28 +128,29 @@ async function executeRemoteCommand(text) {
   status.value = pendingCommands.value.length
     ? `Processing... ${pendingCommands.value.length} queued`
     : 'Processing...'
+  const requestController = new AbortController()
+  activeRequestController = requestController
 
   try {
     const canvasState = canvasRef.value?.getState() || {}
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: requestController.signal,
       body: JSON.stringify({
         message: text,
         canvas_state: canvasState,
-        provider: provider.value,
-        api_key: apiKey.value,
         history,
       }),
     })
     const data = await res.json()
+    if (requestController.signal.aborted) return
 
     const assistantText = data.description || data.content
     if (assistantText) {
       const parsed = parseAssetCandidatesFromDescription(data.description)
       if (parsed.length > 0) {
         assetCandidates.value = parsed
-        showAssetPanel.value = true
       }
       addMessage(assistantText, 'assistant', data.code)
     }
@@ -171,8 +166,11 @@ async function executeRemoteCommand(text) {
       void speak(`${data.content || '绘图操作已完成'}${elapsed}`)
     }
   } catch (e) {
+    if (e.name === 'AbortError') return
     addMessage(`Error: ${e.message}`, 'system')
     await speak(`指令执行失败，${e.message}`)
+  } finally {
+    if (activeRequestController === requestController) activeRequestController = null
   }
 }
 
@@ -241,6 +239,20 @@ async function handleTranscript(rawText) {
     await speak('已取消')
     return
   }
+  if (command.type === 'stop_current') {
+    pendingClearConfirmation = false
+    const queuedCount = pendingCommands.value.length
+    pendingCommands.value.splice(0)
+    const hadActiveRequest = Boolean(activeRequestController)
+    activeRequestController?.abort()
+    addMessage(command.text, 'user', '', false)
+    await speak(
+      hadActiveRequest || queuedCount
+        ? '已停止当前绘图并清除等待中的指令'
+        : '当前没有正在执行的绘图指令',
+    )
+    return
+  }
   if (command.type === 'retry') {
     pendingClearConfirmation = false
     addMessage(command.text, 'user', '', false)
@@ -264,14 +276,6 @@ function handleVoiceStatus(text) {
 function handleVoiceError(text) {
   addMessage(text, 'system')
   status.value = 'Voice unavailable'
-}
-
-function handleAssetSearch(query) {
-  sendMessage(`search for SVG icons: ${query}`)
-}
-
-function handleAssetImport(assetId) {
-  sendMessage(`import the asset ${assetId} to the canvas`)
 }
 
 onMounted(connectWs)
@@ -303,12 +307,7 @@ provide('assetCandidates', assetCandidates)
           @error="handleVoiceError"
         />
         <ChatLog />
-        <AssetCandidatePanel
-          :candidates="assetCandidates"
-          :show="showAssetPanel"
-          @search="handleAssetSearch"
-          @import="handleAssetImport"
-        />
+        <AssetCandidatePanel :candidates="assetCandidates" />
         <div class="events-panel" v-if="events.length">
           <div class="events-title">Event Stream</div>
           <div class="events-list">
@@ -318,12 +317,11 @@ provide('assetCandidates', assetCandidates)
             </div>
           </div>
         </div>
-        <SettingsPanel />
       </aside>
     </main>
 
     <footer class="footer">
-      <span>Voice shortcuts: “撤销” · “重做” · “清空画布” · “确认清空” · “重试”</span>
+      <span>Voice shortcuts: “撤销” · “重做” · “清空画布” · “确认清空” · “停止当前绘图” · “重试”</span>
       <span v-if="pendingCommands.length">Queued: {{ pendingCommands.length }}</span>
     </footer>
   </div>

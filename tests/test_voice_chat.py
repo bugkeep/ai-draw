@@ -35,7 +35,8 @@ def test_sanitize_chat_history_rejects_system_and_bounds_content():
 
 
 @pytest.mark.asyncio
-async def test_chat_route_forwards_recent_voice_history():
+async def test_chat_route_forwards_recent_voice_history(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "bailian")
     client = FakeDaemonClient({"content": "ok", "latency_ms": 12.5})
     request = SimpleNamespace(
         app=SimpleNamespace(state=SimpleNamespace(daemon_client=client))
@@ -47,6 +48,8 @@ async def test_chat_route_forwards_recent_voice_history():
     assert response.content == "ok"
     assert response.latency_ms == 12.5
     assert client.calls[0][1]["history"] == history
+    assert client.calls[0][1]["provider"] == "bailian"
+    assert client.calls[0][1]["api_key"] == ""
 
 
 @pytest.mark.asyncio
