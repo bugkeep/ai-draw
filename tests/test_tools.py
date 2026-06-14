@@ -18,7 +18,7 @@ from tools.editing.duplicate import DuplicateObjectTool
 from tools.editing.group import GroupObjectsTool, UngroupObjectsTool
 from tools.editing.opacity import ChangeOpacityTool
 from tools.editing.stroke import ChangeStrokeTool
-from tools.editing.select import SelectObjectTool
+from tools.editing.select import SelectByLassoTool, SelectByRegionTool, SelectObjectTool, SelectSimilarTool
 from tools.editing.crop import CropObjectTool
 from tools.editing.mask import ApplyClipMaskTool
 from tools.editing.blend import ChangeBlendModeTool
@@ -391,9 +391,81 @@ class TestSelectObjectTool:
     def test_execute_by_type_and_color(self):
         result = SelectObjectTool().execute(type="circle", color="red")
         assert not result.is_error
-        assert "semanticType === 'circle'" in result.code
-        assert "obj.fill === 'red'" in result.code
+        assert "semanticType === \"circle\"" in result.code
+        assert "obj.fill === \"red\"" in result.code
         assert "ActiveSelection" in result.code
+
+
+class TestSelectByRegionTool:
+    def test_definition(self):
+        defn = SelectByRegionTool().definition()
+        assert defn.name == "select_by_region"
+
+    def test_execute_intersect_region_with_filters(self):
+        result = SelectByRegionTool().execute(
+            x=10,
+            y=20,
+            width=200,
+            height=120,
+            mode="intersect",
+            type="circle",
+            color="red",
+        )
+        assert not result.is_error
+        assert "getBoundingRect(true, true)" in result.code
+        assert "right: 210.0" in result.code
+        assert "bottom: 140.0" in result.code
+        assert "obj.semanticType === \"circle\"" in result.code
+        assert "obj.fill === \"red\"" in result.code
+        assert "ActiveSelection" in result.code
+
+    def test_execute_rejects_invalid_region(self):
+        result = SelectByRegionTool().execute(x=0, y=0, width=0, height=100)
+        assert result.is_error
+
+
+class TestSelectByLassoTool:
+    def test_definition(self):
+        defn = SelectByLassoTool().definition()
+        assert defn.name == "select_by_lasso"
+
+    def test_execute_lasso_points(self):
+        result = SelectByLassoTool().execute(
+            points=[{"x": 0, "y": 0}, {"x": 120, "y": 0}, {"x": 80, "y": 100}],
+            color="blue",
+        )
+        assert not result.is_error
+        assert "lassoPoints" in result.code
+        assert "const point = { x: rect.left + rect.width / 2" in result.code
+        assert "obj.fill === \"blue\"" in result.code
+        assert "ActiveSelection" in result.code
+
+    def test_execute_rejects_short_lasso(self):
+        result = SelectByLassoTool().execute(points=[{"x": 0, "y": 0}, {"x": 1, "y": 1}])
+        assert result.is_error
+
+
+class TestSelectSimilarTool:
+    def test_definition(self):
+        defn = SelectSimilarTool().definition()
+        assert defn.name == "select_similar"
+
+    def test_execute_similar_fill_and_type(self):
+        result = SelectSimilarTool().execute(object_id="circle_1", match_fill=True, match_type=True)
+        assert not result.is_error
+        assert "objectId === \"circle_1\"" in result.code
+        assert "obj.type === source.type" in result.code
+        assert "normalizeValue(obj.fill) === normalizeValue(source.fill)" in result.code
+        assert "ActiveSelection" in result.code
+
+    def test_execute_rejects_no_matcher(self):
+        result = SelectSimilarTool().execute(
+            match_fill=False,
+            match_stroke=False,
+            match_type=False,
+            match_semantic_type=False,
+        )
+        assert result.is_error
 
 
 class TestCropObjectTool:
@@ -503,7 +575,7 @@ class TestToolRegistryIntegration:
         reg = ToolRegistry()
         for tool_cls in ALL_TOOLS:
             reg.register(tool_cls())
-        assert len(reg) == 42
+        assert len(reg) == 45
 
     def test_get_definitions(self):
         from tools import ALL_TOOLS
@@ -526,6 +598,9 @@ class TestToolRegistryIntegration:
         assert "change_opacity" in names
         assert "change_stroke" in names
         assert "select_object" in names
+        assert "select_by_region" in names
+        assert "select_by_lasso" in names
+        assert "select_similar" in names
         assert "crop_object" in names
         assert "apply_clip_mask" in names
         assert "change_blend_mode" in names
