@@ -43,6 +43,7 @@ class ToolPolicy:
         "duplicate_object", "group_objects", "ungroup_objects",
         "change_opacity", "change_stroke",
         "select_object", "crop_object", "apply_clip_mask",
+        "change_blend_mode", "apply_image_filter",
         "undo", "redo", "clear_canvas",
         "import_vector_asset", "replace_vector_asset",
     })
