@@ -11,6 +11,7 @@ from tools.editing.move import MoveObjectTool
 from tools.editing.color import ChangeColorTool
 from tools.editing.resize import ResizeObjectTool
 from tools.editing.rotate import RotateObjectTool
+from tools.editing.transform import FlipObjectTool, SkewObjectTool
 from tools.editing.arrange import ArrangeObjectTool
 from tools.editing.align import AlignObjectTool
 from tools.editing.distribute import DistributeObjectsTool
@@ -274,6 +275,39 @@ class TestRotateObjectTool:
         assert "objectId === 'circle_1'" in result.code
         assert "+ 45.0" in result.code
         assert result.data["degrees"] == 45.0
+
+
+class TestFlipObjectTool:
+    def test_definition(self):
+        defn = FlipObjectTool().definition()
+        assert defn.name == "flip_object"
+
+    def test_execute_horizontal_flip(self):
+        result = FlipObjectTool().execute(selector="last", axis="horizontal")
+        assert not result.is_error
+        assert "flipX: !obj.flipX" in result.code
+        assert "if (false) obj.set({ flipY: !obj.flipY })" in result.code
+
+    def test_execute_rejects_invalid_axis(self):
+        result = FlipObjectTool().execute(axis="diagonal")
+        assert result.is_error
+
+
+class TestSkewObjectTool:
+    def test_definition(self):
+        defn = SkewObjectTool().definition()
+        assert defn.name == "skew_object"
+
+    def test_execute_skew_all(self):
+        result = SkewObjectTool().execute(selector="all", skew_x=12, skew_y=0)
+        assert not result.is_error
+        assert "nextSkewX = 12.0" in result.code
+        assert "skewX: nextSkewX" in result.code
+        assert "ActiveSelection" in result.code
+
+    def test_execute_rejects_extreme_skew(self):
+        result = SkewObjectTool().execute(skew_x=90)
+        assert result.is_error
 
 
 class TestArrangeObjectTool:
@@ -647,7 +681,7 @@ class TestToolRegistryIntegration:
         reg = ToolRegistry()
         for tool_cls in ALL_TOOLS:
             reg.register(tool_cls())
-        assert len(reg) == 48
+        assert len(reg) == 50
 
     def test_get_definitions(self):
         from tools import ALL_TOOLS
@@ -661,6 +695,8 @@ class TestToolRegistryIntegration:
         assert "draw_vector_composition" in names
         assert "draw_perspective_vehicle" in names
         assert "rotate_object" in names
+        assert "flip_object" in names
+        assert "skew_object" in names
         assert "arrange_object" in names
         assert "align_object" in names
         assert "distribute_objects" in names

@@ -30,6 +30,7 @@ _cr(r"^把.*(?:移动|挪|拖动|拖拽|移到|挪到|拖动到)", DrawingMode.C
 _cr(r"(?:往|向|朝).*(?:移动|挪|移|拖)", DrawingMode.CANVAS_EDIT, 0.45, "directional move request")
 _cr(r"(?:放大|缩小|拉大|拉小|变大|变小|扩大|缩小一点)", DrawingMode.CANVAS_EDIT, 0.50, "explicit resize request")
 _cr(r"(?:旋转|转动|转一下|rotate|顺时针|逆时针)", DrawingMode.CANVAS_EDIT, 0.50, "explicit rotate request")
+_cr(r"(?:翻转|镜像|水平翻转|垂直翻转|倾斜|斜切|flip|mirror|skew|slant)", DrawingMode.CANVAS_EDIT, 0.50, "explicit transform request")
 _cr(r"(?:置顶|置底|最前面|最后面|上一层|下一层|上移一层|下移一层|bring.?front|send.?back)", DrawingMode.CANVAS_EDIT, 0.50, "explicit stacking order request")
 _cr(r"(?:对齐|居中|左对齐|右对齐|顶部对齐|底部对齐|align)", DrawingMode.CANVAS_EDIT, 0.50, "explicit align request")
 _cr(r"(?:均匀分布|平均分布|等距|横向分布|纵向分布|distribute)", DrawingMode.CANVAS_EDIT, 0.50, "explicit distribute request")
