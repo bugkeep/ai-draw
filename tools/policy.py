@@ -42,6 +42,7 @@ class ToolPolicy:
         "rotate_object", "arrange_object", "align_object", "distribute_objects",
         "duplicate_object", "group_objects", "ungroup_objects",
         "change_opacity", "change_stroke",
+        "select_object", "crop_object", "apply_clip_mask",
         "undo", "redo", "clear_canvas",
         "import_vector_asset", "replace_vector_asset",
     })

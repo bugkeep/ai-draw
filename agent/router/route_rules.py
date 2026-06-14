@@ -37,6 +37,9 @@ _cr(r"(?:复制|拷贝|再来一个|一样的|duplicate|copy)", DrawingMode.CANV
 _cr(r"(?:成组|组合|合并成组|取消成组|取消组合|拆开组合|ungroup|group)", DrawingMode.CANVAS_EDIT, 0.50, "explicit group request")
 _cr(r"(?:透明|半透明|不透明度|透明度|opacity)", DrawingMode.CANVAS_EDIT, 0.50, "explicit opacity request")
 _cr(r"(?:描边|边框|轮廓线|outline|stroke)", DrawingMode.CANVAS_EDIT, 0.50, "explicit stroke request")
+_cr(r"(?:选中|选择|框选|选取|select)", DrawingMode.CANVAS_EDIT, 0.50, "explicit select request")
+_cr(r"(?:裁剪|裁掉|剪裁|crop)", DrawingMode.CANVAS_EDIT, 0.50, "explicit crop request")
+_cr(r"(?:遮罩|剪贴|剪贴蒙版|蒙版|mask|clip)", DrawingMode.CANVAS_EDIT, 0.50, "explicit mask request")
 # 改颜色
 _cr(r"(?:改|换|变成).*[颜颜]色", DrawingMode.CANVAS_EDIT, 0.50, "explicit color change")
 _cr(r"(?:改成|变为|变成)\s*(?:红色|蓝色|绿色|黄色|黑色|白色|紫色|橙色|粉色|灰色)", DrawingMode.CANVAS_EDIT, 0.50, "explicit recolor")
