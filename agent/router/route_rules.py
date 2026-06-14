@@ -101,6 +101,15 @@ _cr(
     "perspective or structurally detailed subject",
 )
 _cr(
+    (
+        r"(?:二维|2d|平面图像|平面感|贴片|纸片|乱七八糟|结构乱|结构不对|没有正常结构|"
+        r"没有.*(?:3d|三维|立体|透视|纵深|空间感)|不(?:像|够).*(?:3d|三维|立体|透视)|立体感不够)"
+    ),
+    DrawingMode.IMAGE_GENERATION,
+    0.80,
+    "feedback requesting a structured 3D redraw",
+)
+_cr(
     r"(?:detailed|complex|perspective|three[- ]quarter|3/4 view|isometric|realistic structure)",
     DrawingMode.IMAGE_GENERATION,
     0.75,
@@ -112,6 +121,12 @@ _cr(r"(?:背景|前景|远处|近处|周围|天空|地面).*(?:还有|以及|同
 
 _cr(r"(?:照片|写实|真实照片)", DrawingMode.VECTOR_ASSET, -0.30, "photo request, not vector")
 _cr(r"(?:流程图|架构|拓扑)", DrawingMode.VECTOR_ASSET, -0.40, "diagram request, not icon")
+_cr(
+    r"(?:3d|三维|立体|透视|正常结构|真实结构|复杂结构|二维|2d|平面图像|贴片|纸片)",
+    DrawingMode.VECTOR_ASSET,
+    -0.60,
+    "structured 3D request, not flat icon search",
+)
 
 
 def apply_rules(message: str, canvas_state: dict[str, Any] | None = None,
@@ -139,6 +154,10 @@ def apply_rules(message: str, canvas_state: dict[str, Any] | None = None,
             scores[DrawingMode.CANVAS_EDIT] = scores.get(DrawingMode.CANVAS_EDIT, 0.0) + 0.30
         if obj_count > 0 and _is_positional_reference(message):
             scores[DrawingMode.CANVAS_EDIT] = scores.get(DrawingMode.CANVAS_EDIT, 0.0) + 0.40
+        if obj_count > 0 and _is_redraw_feedback(message):
+            scores[DrawingMode.CANVAS_EDIT] = scores.get(DrawingMode.CANVAS_EDIT, 0.0) + 0.35
+        if obj_count > 0 and _is_structure_redraw_feedback(message):
+            scores[DrawingMode.IMAGE_GENERATION] = scores.get(DrawingMode.IMAGE_GENERATION, 0.0) + 1.00
 
     return scores
 
@@ -156,3 +175,24 @@ def _looks_like_multi_subject_scene(msg: str) -> bool:
     ))
     relations = re.findall(r"(?:旁边|附近|左边|右边|前面|后面|远处|近处)", msg)
     return len(subjects) >= 3 or (len(subjects) >= 2 and len(relations) >= 2)
+
+
+def _is_redraw_feedback(msg: str) -> bool:
+    """Detect dissatisfaction that usually means clear and redraw."""
+    return bool(re.search(
+        r"(?:不好看|不像|重新画|重画|改一下|换个风格|太平面|二维|2d|平面|贴片|纸片|"
+        r"乱七八糟|结构不对|没有正常结构|不够立体|立体感不够|没有.*3d|没有.*透视)",
+        msg,
+        re.IGNORECASE,
+    ))
+
+
+def _is_structure_redraw_feedback(msg: str) -> bool:
+    """Detect feedback that asks for stronger depth and coherent structure."""
+    return bool(re.search(
+        r"(?:太平面|二维|2d|平面图像|贴片|纸片|乱七八糟|结构不对|没有正常结构|"
+        r"不够立体|立体感不够|没有.*(?:3d|三维|立体|透视|纵深|空间感)|"
+        r"不(?:像|够).*(?:3d|三维|立体|透视))",
+        msg,
+        re.IGNORECASE,
+    ))
