@@ -82,10 +82,28 @@ def test_perspective_vehicle_has_detailed_three_quarter_structure():
 
     assert not result.is_error
     assert result.data["type"] == "perspective_vehicle"
-    assert result.data["visible_elements"] >= 30
+    assert result.data["visible_elements"] >= 45
     assert "bodySide" in svg
     assert "bodyFront" in svg
     assert "glass" in svg
+    assert "body_side_plane" in svg
+    assert "front_plane" in svg
+    assert "hood_top_plane" in svg
+    assert "cabin_roof_plane" in svg
+    assert "perspective_guides" in svg
+    assert "front_tire" in svg
+    assert "rear_tire" in svg
+    assert "cast_shadow" in svg
+    assert "body_highlight" in svg
+    assert "front_grille_left" in svg
+    assert "center_grille" in svg
+    assert "right_headlight" in svg
+    assert "front_bumper" in svg
+    assert "front_fog_lamp" in svg
+    assert "front_wheel_arch" in svg
+    assert "side_skirt" in svg
+    assert "front_door_seam" in svg
+    assert "body_belt_line" in svg
     assert "sports_car" in result.code
 
 

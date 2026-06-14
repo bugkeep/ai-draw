@@ -368,6 +368,8 @@ class AgentRunner:
             "windows": ("window", "windshield", "windscreen", "glass"),
             "depth lighting": ("shadow", "highlight", "reflection"),
             "3d structure": ("front_plane", "side_plane", "top_plane", "hood", "cabin", "perspective"),
+            "front details": ("grille", "headlight", "bumper", "fog_lamp", "marker_light"),
+            "side details": ("door", "wheel_arch", "fender", "side_skirt", "belt_line"),
         }
         return [
             name for name, alternatives in requirements.items()
