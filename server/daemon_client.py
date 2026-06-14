@@ -3,31 +3,33 @@ import json
 
 
 class DaemonClient:
+    """TCP client to the local daemon process.
+
+    Each ``send()`` opens a **new** connection so concurrent HTTP requests
+    never share a ``StreamReader`` / ``StreamWriter`` pair (which would
+    raise ``readuntil() called while another coroutine is already
+    waiting``).
+    """
+
     def __init__(self, host: str = "127.0.0.1", port: int = 8765):
         self.host = host
         self.port = port
-        self._reader: asyncio.StreamReader | None = None
-        self._writer: asyncio.StreamWriter | None = None
-
-    async def connect(self):
-        self._reader, self._writer = await asyncio.open_connection(
-            self.host, self.port
-        )
 
     async def send(self, action: str, payload: dict) -> dict:
-        if not self._writer:
-            await self.connect()
-        message = json.dumps({"action": action, "payload": payload}) + "\n"
-        self._writer.write(message.encode())
-        await self._writer.drain()
-        data = await self._reader.readline()
-        if not data:
-            raise ConnectionError("Daemon closed connection")
-        return json.loads(data.decode().strip())
-
-    async def close(self):
-        if self._writer:
-            self._writer.close()
-            await self._writer.wait_closed()
-            self._writer = None
-            self._reader = None
+        reader, writer = await asyncio.open_connection(
+            self.host, self.port
+        )
+        try:
+            message = json.dumps({"action": action, "payload": payload}) + "\n"
+            writer.write(message.encode())
+            await writer.drain()
+            data = await reader.readline()
+            if not data:
+                raise ConnectionError("Daemon closed connection")
+            return json.loads(data.decode().strip())
+        finally:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except Exception:
+                pass
