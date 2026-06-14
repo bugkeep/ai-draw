@@ -51,7 +51,7 @@ Recognize operation families common in drawing apps:
 - Shape / line / ellipse / polygon / polyline / pen / free pen / curvature pen /
   bezier path / anchor point / stroke / fill / text.
 - Select / marquee / lasso / magic wand / similar-object selection /
-  contiguous selection / move / resize / rotate / skew / crop /
+  contiguous selection / move / resize / rotate / flip / mirror / skew / crop /
   align / distribute / reorder / group / layer order.
 - Layers / masks / clipping / blend modes / boolean combine / import / replace /
   asset search.
@@ -119,30 +119,32 @@ RULES:
 3. For color changes: change_color(object_id=..., fill=...).
 4. For resize: resize_object(object_id=..., scale_x=..., scale_y=...).
 5. For rotation: rotate_object(object_id=..., degrees=...).
-6. For layer order: arrange_object(object_id=..., action="bring_front"/"send_back"/"bring_forward"/"send_backward").
-7. For alignment: align_object(selector="all" or object_id=..., mode="left"/"center"/"right"/"top"/"middle"/"bottom").
-8. For spacing: distribute_objects(axis="horizontal"/"vertical").
-9. For voice selection by id/type/color: select_object(object_id=..., selector=..., type=..., color=...).
-10. For rectangular marquee/region selection: select_by_region(x=..., y=..., width=..., height=..., mode="intersect"/"contain").
-11. For lasso/freehand selection: select_by_lasso(points=[{"x": ..., "y": ...}, ...]).
-12. For magic-wand/similar object selection: select_similar(object_id=... or selector="last", match_fill=True, match_type=True).
-13. For solid fills / paint bucket: change_fill(object_id=..., color=...).
-14. For gradient fills: apply_gradient_fill(object_id=..., gradient_type="linear"/"radial", color_stops=[...]).
-15. For eyedropper/style copying: copy_object_style(source_object_id=..., target_object_id=...).
-16. For duplication: duplicate_object(object_id=... or selector="last", offset_x=..., offset_y=...).
-17. For grouping: group_objects(object_ids=[...]) or group_objects(selector="all").
-18. For ungrouping: ungroup_objects(object_id=... or selector="last").
-19. For opacity: change_opacity(object_id=..., opacity=0.5).
-20. For outline/stroke: change_stroke(object_id=..., stroke=..., stroke_width=...).
-21. For rectangular crop: crop_object(object_id=..., x=..., y=..., width=..., height=...).
-22. For clipping/masks: apply_clip_mask(target_object_id=..., mask_object_id=...).
-23. For blend/composite modes: change_blend_mode(object_id=..., mode="multiply"/"screen"/"overlay"/...).
-24. For image filters: apply_image_filter(object_id=..., filter_type="brightness"/"contrast"/"blur"/"grayscale"/"invert"/"saturation", value=...).
-25. For deletion: delete_object(object_id=...).
-26. For replacement: use replace_vector_asset(object_id=..., candidate_asset_id=...).
+6. For flip/mirror: flip_object(object_id=..., axis="horizontal"/"vertical"/"both").
+7. For skew/slant: skew_object(object_id=..., skew_x=..., skew_y=...).
+8. For layer order: arrange_object(object_id=..., action="bring_front"/"send_back"/"bring_forward"/"send_backward").
+9. For alignment: align_object(selector="all" or object_id=..., mode="left"/"center"/"right"/"top"/"middle"/"bottom").
+10. For spacing: distribute_objects(axis="horizontal"/"vertical").
+11. For voice selection by id/type/color: select_object(object_id=..., selector=..., type=..., color=...).
+12. For rectangular marquee/region selection: select_by_region(x=..., y=..., width=..., height=..., mode="intersect"/"contain").
+13. For lasso/freehand selection: select_by_lasso(points=[{"x": ..., "y": ...}, ...]).
+14. For magic-wand/similar object selection: select_similar(object_id=... or selector="last", match_fill=True, match_type=True).
+15. For solid fills / paint bucket: change_fill(object_id=..., color=...).
+16. For gradient fills: apply_gradient_fill(object_id=..., gradient_type="linear"/"radial", color_stops=[...]).
+17. For eyedropper/style copying: copy_object_style(source_object_id=..., target_object_id=...).
+18. For duplication: duplicate_object(object_id=... or selector="last", offset_x=..., offset_y=...).
+19. For grouping: group_objects(object_ids=[...]) or group_objects(selector="all").
+20. For ungrouping: ungroup_objects(object_id=... or selector="last").
+21. For opacity: change_opacity(object_id=..., opacity=0.5).
+22. For outline/stroke: change_stroke(object_id=..., stroke=..., stroke_width=...).
+23. For rectangular crop: crop_object(object_id=..., x=..., y=..., width=..., height=...).
+24. For clipping/masks: apply_clip_mask(target_object_id=..., mask_object_id=...).
+25. For blend/composite modes: change_blend_mode(object_id=..., mode="multiply"/"screen"/"overlay"/...).
+26. For image filters: apply_image_filter(object_id=..., filter_type="brightness"/"contrast"/"blur"/"grayscale"/"invert"/"saturation", value=...).
+27. For deletion: delete_object(object_id=...).
+28. For replacement: use replace_vector_asset(object_id=..., candidate_asset_id=...).
    Check available candidates first with list_asset_candidates().
-27. Undo/redo via undo() / redo().
-28. Always reference objects by object_id, NOT by array index.
+29. Undo/redo via undo() / redo().
+30. Always reference objects by object_id, NOT by array index.
 """
 
 
@@ -179,6 +181,8 @@ Available tools:
 - draw_vector_composition — sanitized layered SVG for detailed subjects, perspective, gradients, highlights, and shadows
 - draw_perspective_vehicle — detailed editable three-quarter-view car with coherent 3D-like structure
 - rotate_object — rotate an object by degrees
+- flip_object — flip or mirror objects horizontally or vertically
+- skew_object — skew or slant objects by degrees
 - arrange_object — change stacking order
 - align_object — align one object or all objects
 - distribute_objects — evenly distribute all objects
@@ -221,7 +225,7 @@ Rules:
 
 Handling user feedback:
 - If the user says "不好看" / "不像" / "重新画" / "改一下" / "换个风格" etc., use delete_object(selector="all") or clear_canvas first, then redraw with better parameters
-- If the user asks to modify an existing element (改颜色, 换颜色, 填充, 渐变, 油漆桶, 吸管, 复制样式, 移动, 挪一下, 放大, 缩小, 旋转, 置顶, 置底, 对齐, 均匀分布, 复制, 成组, 取消成组, 透明, 描边, 选中, 框选, 套索, 魔棒, 相似对象, 裁剪, 遮罩, 剪贴, 混合模式, 滤镜, 模糊, 调亮, 灰度), use the canvas editing tools
+- If the user asks to modify an existing element (改颜色, 换颜色, 填充, 渐变, 油漆桶, 吸管, 复制样式, 移动, 挪一下, 放大, 缩小, 旋转, 翻转, 镜像, 倾斜, 置顶, 置底, 对齐, 均匀分布, 复制, 成组, 取消成组, 透明, 描边, 选中, 框选, 套索, 魔棒, 相似对象, 裁剪, 遮罩, 剪贴, 混合模式, 滤镜, 模糊, 调亮, 灰度), use the canvas editing tools
 - Always check Current canvas state above before responding to feedback
 - When the canvas is not empty and the user gives new instructions, decide whether to add to or replace the existing content
 
@@ -258,6 +262,8 @@ Available drawing tools:
 - draw_vector_composition — sanitized layered SVG for coherent complex subjects, perspective, gradients, highlights, and shadows.
 - draw_perspective_vehicle — detailed editable front-right three-quarter-view car with coherent 3D-like structure.
 - rotate_object — rotate an object by degrees.
+- flip_object — flip or mirror objects horizontally or vertically.
+- skew_object — skew or slant objects by degrees.
 - arrange_object — change stacking order.
 - align_object — align one object or all objects.
 - distribute_objects — evenly distribute all objects.
@@ -313,6 +319,8 @@ For modification requests:
 - "放大" / "放大一点" → resize_object(scale_x=1.5, scale_y=1.5)
 - "缩小" / "缩小一点" → resize_object(scale_x=0.7, scale_y=0.7)
 - "旋转45度" → rotate_object(degrees=45)
+- "水平翻转/镜像一下" → flip_object(axis="horizontal")
+- "向右倾斜一点" → skew_object(skew_x=...)
 - "置顶/放到最前面" → arrange_object(action="bring_front")
 - "置底/放到最后面" → arrange_object(action="send_back")
 - "居中/左对齐/底部对齐" → align_object(mode="center"/"left"/"bottom")

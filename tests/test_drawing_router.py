@@ -159,6 +159,8 @@ class TestDrawingModeRouter:
 
     @pytest.mark.parametrize("message", [
         "把圆旋转45度",
+        "水平翻转这个图形",
+        "向右倾斜一点",
         "把房子置顶",
         "所有图形居中对齐",
         "三个圆横向均匀分布",
@@ -308,6 +310,8 @@ class TestModePrompts:
         assert "Canvas Edit Mode" in p
         assert "object_id" in p
         assert "rotate_object" in p
+        assert "flip_object" in p
+        assert "skew_object" in p
         assert "arrange_object" in p
         assert "align_object" in p
         assert "distribute_objects" in p
@@ -391,6 +395,8 @@ class TestPromptTemplates:
         assert "Empty canvas" in prompt
         assert "Common Drawing Software Operations" in prompt
         assert "rotate_object" in prompt
+        assert "flip_object" in prompt
+        assert "skew_object" in prompt
         assert "align_object" in prompt
         assert "duplicate_object" in prompt
         assert "change_stroke" in prompt
