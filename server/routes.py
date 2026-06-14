@@ -8,6 +8,7 @@ router = APIRouter()
 class ChatRequest(BaseModel):
     message: str
     canvas_state: Optional[dict] = None
+    history: Optional[list[dict]] = None
     provider: Optional[str] = "bailian"
     api_key: Optional[str] = ""
 
@@ -21,6 +22,7 @@ class ChatResponse(BaseModel):
     success: bool = True
     error: str = ""
     rounds: int = 0
+    latency_ms: float = 0
 
 
 class SessionCreateRequest(BaseModel):
@@ -53,6 +55,7 @@ async def chat(request: Request, body: ChatRequest):
         result = await client.send("chat", {
             "message": body.message,
             "canvas_state": body.canvas_state or {},
+            "history": body.history or [],
             "provider": body.provider or "openai",
             "api_key": body.api_key or "",
         })
