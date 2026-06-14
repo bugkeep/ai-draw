@@ -146,6 +146,27 @@ class TestAgentRunnerAct:
 
 class TestAgentRunnerLoop:
     @pytest.mark.asyncio
+    async def test_concentric_circle_request_uses_direct_shared_center_tool(self):
+        async def should_not_call_llm(messages, tools=None, model=None, **kwargs):
+            raise AssertionError("concentric circle requests should not need an LLM round")
+
+        provider = MagicMock()
+        provider.achat = should_not_call_llm
+        runner = AgentRunner(AgentConfig(provider=provider, registry=make_registry()))
+
+        result = await runner.run("生成一个同星圆，最里面是绿色，外层是蓝色")
+
+        assert result.success
+        assert result.rounds == 1
+        assert len(result.tool_calls) == 1
+        call = result.tool_calls[0]
+        assert call["name"] == "draw_concentric_circles"
+        assert call["arguments"]["inner_color"] == "green"
+        assert call["arguments"]["outer_color"] == "blue"
+        assert "concentric_circles_outer" in result.code
+        assert "concentric_circles_inner" in result.code
+
+    @pytest.mark.asyncio
     async def test_multi_round(self):
         tc1 = ToolCall(id="c1", name="draw_circle", arguments={"color": "red"})
         tc2 = ToolCall(id="c2", name="draw_rect", arguments={"color": "blue"})
