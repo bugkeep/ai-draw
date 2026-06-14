@@ -37,6 +37,7 @@ _cr(r"(?:复制|拷贝|再来一个|一样的|duplicate|copy)", DrawingMode.CANV
 _cr(r"(?:成组|组合|合并成组|取消成组|取消组合|拆开组合|ungroup|group)", DrawingMode.CANVAS_EDIT, 0.50, "explicit group request")
 _cr(r"(?:透明|半透明|不透明度|透明度|opacity)", DrawingMode.CANVAS_EDIT, 0.50, "explicit opacity request")
 _cr(r"(?:描边|边框|轮廓线|outline|stroke)", DrawingMode.CANVAS_EDIT, 0.50, "explicit stroke request")
+_cr(r"(?:填充|油漆桶|渐变|吸管|取色|复制样式|fill|paint.?bucket|gradient|eyedropper|sample.?color|copy.?style)", DrawingMode.CANVAS_EDIT, 0.50, "explicit fill/style request")
 _cr(r"(?:选中|选择|框选|区域选择|选取|套索|魔棒|选择相似|相似对象|select|marquee|region|lasso|magic.?wand|similar)", DrawingMode.CANVAS_EDIT, 0.50, "explicit select request")
 _cr(r"(?:裁剪|裁掉|剪裁|crop)", DrawingMode.CANVAS_EDIT, 0.50, "explicit crop request")
 _cr(r"(?:遮罩|剪贴|剪贴蒙版|蒙版|mask|clip)", DrawingMode.CANVAS_EDIT, 0.50, "explicit mask request")
