@@ -144,18 +144,24 @@ class TCPServer:
         Called by the frontend after the user sees the approval card::
 
             {"action": "permission_respond",
-             "payload": {"request_id": "...", "approved": true}}
+             "payload": {
+               "request_id": "...",
+               "approved": true,
+               "response_type": "once" | "always"
+             }}
         """
         if self._runner is None:
             return {"error": "No active runner"}
         mgr = self._runner.registry.permissions
         req_id = payload.get("request_id", "")
         approved = payload.get("approved", False)
-        found = mgr.respond(req_id, approved)
+        response_type = payload.get("response_type", "once")
+        found = mgr.respond(req_id, approved, response_type)
         if found:
             await self.event_bus.dispatch(
                 BaseEvent(EventType.PERMISSION_RESPONDED, {
                     "request_id": req_id, "approved": approved,
+                    "response_type": response_type,
                 })
             )
             return {"status": "ok"}
