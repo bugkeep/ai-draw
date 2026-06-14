@@ -134,6 +134,16 @@ class TestDrawingModeRouter:
         assert r.mode == DrawingMode.PRIMITIVE
         assert r.confidence >= 0.60
 
+    @pytest.mark.parametrize("message", [
+        "生成一个同兴圆，最里面是绿色，外层是蓝色",
+        "画一个圆，里面绿色，外面蓝色",
+        "画两个套着的圆，里圈绿色，外圈蓝色",
+    ])
+    def test_primitive_concentric_circle_spoken_variants(self, router, message):
+        r = self.route(router, message)
+        assert r.mode == DrawingMode.PRIMITIVE
+        assert r.confidence >= 0.60
+
     # ── Canvas Edit ────────────────────────────────────────────────────
 
     def test_canvas_edit_move(self, router):

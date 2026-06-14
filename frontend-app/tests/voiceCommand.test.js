@@ -9,6 +9,7 @@ test('normalizes common speech fillers and punctuation', () => {
 test('repairs common Chinese drawing recognition mistakes', () => {
   assert.equal(normalizeVoiceTranscript('带你来画一棵树'), '画一棵树')
   assert.equal(normalizeVoiceTranscript('话术'), '画树')
+  assert.equal(normalizeVoiceTranscript('生成一个同星园，最里面是绿色，外层是蓝色'), '生成一个同星圆 最里面是绿色 外层是蓝色')
   assert.equal(
     normalizeVoiceTranscript('树旁边有应该有一棵房子，树旁边有有一个人，人人旁边有一条河'),
     '树旁边应该有一座房子 树旁边有一个人 人旁边有一条河',
