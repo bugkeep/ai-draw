@@ -40,6 +40,8 @@ class ToolPolicy:
     CANVAS_EDIT = frozenset({
         "delete_object", "move_object", "change_color", "resize_object",
         "rotate_object", "arrange_object", "align_object", "distribute_objects",
+        "duplicate_object", "group_objects", "ungroup_objects",
+        "change_opacity", "change_stroke",
         "undo", "redo", "clear_canvas",
         "import_vector_asset", "replace_vector_asset",
     })

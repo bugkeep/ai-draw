@@ -14,6 +14,10 @@ from tools.editing.rotate import RotateObjectTool
 from tools.editing.arrange import ArrangeObjectTool
 from tools.editing.align import AlignObjectTool
 from tools.editing.distribute import DistributeObjectsTool
+from tools.editing.duplicate import DuplicateObjectTool
+from tools.editing.group import GroupObjectsTool, UngroupObjectsTool
+from tools.editing.opacity import ChangeOpacityTool
+from tools.editing.stroke import ChangeStrokeTool
 from tools.history.undo import UndoTool
 from tools.history.redo import RedoTool
 from tools.history.clear import ClearCanvasTool
@@ -306,6 +310,74 @@ class TestDistributeObjectsTool:
         assert result.data["axis"] == "horizontal"
 
 
+class TestDuplicateObjectTool:
+    def test_definition(self):
+        defn = DuplicateObjectTool().definition()
+        assert defn.name == "duplicate_object"
+
+    def test_execute_last(self):
+        result = DuplicateObjectTool().execute(selector="last", offset_x=40, offset_y=10)
+        assert not result.is_error
+        assert "source.clone" in result.code
+        assert "+ 40.0" in result.code
+        assert "+ 10.0" in result.code
+
+
+class TestGroupObjectsTool:
+    def test_definition(self):
+        defn = GroupObjectsTool().definition()
+        assert defn.name == "group_objects"
+
+    def test_execute_group_all(self):
+        result = GroupObjectsTool().execute(selector="all", group_id="group_1")
+        assert not result.is_error
+        assert "new fabric.Group" in result.code
+        assert "objectId: \"group_1\"" in result.code
+
+    def test_execute_requires_source(self):
+        result = GroupObjectsTool().execute()
+        assert result.is_error
+
+
+class TestUngroupObjectsTool:
+    def test_definition(self):
+        defn = UngroupObjectsTool().definition()
+        assert defn.name == "ungroup_objects"
+
+    def test_execute_last(self):
+        result = UngroupObjectsTool().execute(selector="last")
+        assert not result.is_error
+        assert "_restoreObjectsState" in result.code
+
+
+class TestChangeOpacityTool:
+    def test_definition(self):
+        defn = ChangeOpacityTool().definition()
+        assert defn.name == "change_opacity"
+
+    def test_execute_by_object_id(self):
+        result = ChangeOpacityTool().execute(object_id="circle_1", opacity=0.5)
+        assert not result.is_error
+        assert "opacity: 0.5" in result.code
+        assert result.data["opacity"] == 0.5
+
+    def test_execute_rejects_invalid_opacity(self):
+        result = ChangeOpacityTool().execute(opacity=1.5)
+        assert result.is_error
+
+
+class TestChangeStrokeTool:
+    def test_definition(self):
+        defn = ChangeStrokeTool().definition()
+        assert defn.name == "change_stroke"
+
+    def test_execute_all(self):
+        result = ChangeStrokeTool().execute(selector="all", stroke="black", stroke_width=4)
+        assert not result.is_error
+        assert "stroke: 'black'" in result.code
+        assert "strokeWidth: 4.0" in result.code
+
+
 class TestUndoTool:
     def test_definition(self):
         defn = UndoTool().definition()
@@ -343,7 +415,7 @@ class TestToolRegistryIntegration:
         reg = ToolRegistry()
         for tool_cls in ALL_TOOLS:
             reg.register(tool_cls())
-        assert len(reg) == 32
+        assert len(reg) == 37
 
     def test_get_definitions(self):
         from tools import ALL_TOOLS
@@ -360,5 +432,10 @@ class TestToolRegistryIntegration:
         assert "arrange_object" in names
         assert "align_object" in names
         assert "distribute_objects" in names
+        assert "duplicate_object" in names
+        assert "group_objects" in names
+        assert "ungroup_objects" in names
+        assert "change_opacity" in names
+        assert "change_stroke" in names
         assert "undo" in names
         assert "clear_canvas" in names
