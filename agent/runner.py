@@ -22,7 +22,7 @@ DETAILED_COMPOSITION_MIN_ELEMENTS = 10
 COMPLEX_SCENE_MIN_ROUNDS = 12
 DRAWING_TOOL_PREFIX = "draw_"
 CONCENTRIC_CIRCLE_RE = re.compile(
-    r"(?:同心圆|同星圆|同圆心|套圆|套着的圆|靶心|concentric|bullseye)",
+    r"(?:同心圆|同星圆|同兴圆|同型圆|同圆心|套圆|套着的圆|嵌套圆|双层圆|两层圆|内外圆|里外圆|靶心|concentric|bullseye)",
     re.IGNORECASE,
 )
 
@@ -54,6 +54,51 @@ CN_COLOR_MAP = {
 }
 
 COLOR_RE = "|".join(sorted(map(re.escape, CN_COLOR_MAP), key=len, reverse=True))
+INNER_LAYER_PATTERN = r"(?:最里面|最内层|里面|里层|里圈|内层|内圈|中心|中间|内部|内侧|内|里)"
+OUTER_LAYER_PATTERN = r"(?:最外层|外层|外圈|外面|外边|外侧|外部|外环|外围|外)"
+INNER_LAYER_RE = re.compile(INNER_LAYER_PATTERN)
+OUTER_LAYER_RE = re.compile(OUTER_LAYER_PATTERN)
+CIRCLE_WORD_RE = re.compile(r"(?:圆|circle)", re.IGNORECASE)
+DRAW_REQUEST_RE = re.compile(r"(?:画|生成|绘制|做|来一个|draw|create|make)", re.IGNORECASE)
+EDITING_INTENT_RE = re.compile(
+    r"(?:删除|删掉|移除|清除|清空|改|换|变成|移动|挪|旋转|缩放|放大|缩小|选中|选择|裁剪|遮罩|取消)"
+)
+NESTED_CIRCLE_RE = re.compile(
+    r"(?:圆(?:里|里面|中间|中心)(?:再)?(?:有|画|套).{0,20}圆|"
+    r"圆(?:套着|包含|包住).{0,20}圆|"
+    r"大圆.{0,20}小圆|小圆.{0,20}大圆)"
+)
+
+
+def _looks_like_concentric_circle_request(message: str) -> bool:
+    if CONCENTRIC_CIRCLE_RE.search(message):
+        return True
+    if not CIRCLE_WORD_RE.search(message):
+        return False
+    if INNER_LAYER_RE.search(message) and OUTER_LAYER_RE.search(message):
+        return True
+    return bool(NESTED_CIRCLE_RE.search(message))
+
+
+def _is_editing_intent_without_draw_request(message: str) -> bool:
+    return bool(EDITING_INTENT_RE.search(message) and not DRAW_REQUEST_RE.search(message))
+
+
+def _extract_color_after_role(message: str, role_pattern: str) -> str | None:
+    match = re.search(
+        rf"(?:{role_pattern})\s*(?:的)?\s*(?:圆|圈|一层|区域)?\s*"
+        rf"(?:是|为|用|填充成|填成|颜色是|颜色为|:|：)?\s*({COLOR_RE})",
+        message,
+    )
+    return CN_COLOR_MAP[match.group(1)] if match else None
+
+
+def _extract_color_before_role(message: str, role_pattern: str) -> str | None:
+    match = re.search(
+        rf"({COLOR_RE})\s*(?:的)?\s*(?:{role_pattern})\s*(?:圆|圈|层|区域)?",
+        message,
+    )
+    return CN_COLOR_MAP[match.group(1)] if match else None
 
 
 def new_run_id() -> str:
@@ -373,7 +418,9 @@ class AgentRunner:
 
     @staticmethod
     def _build_concentric_circle_args(message: str) -> dict | None:
-        if not CONCENTRIC_CIRCLE_RE.search(message):
+        if not _looks_like_concentric_circle_request(message):
+            return None
+        if _is_editing_intent_without_draw_request(message):
             return None
 
         nums = [float(n) for n in re.findall(r"\d+(?:\.\d+)?", message)]
@@ -395,24 +442,32 @@ class AgentRunner:
             args["center_x"] = float(center_match.group(1))
             args["center_y"] = float(center_match.group(2))
 
-        outer_match = re.search(r"(?:外层|外圈|外面|外边)[^，。,；;]*?(%s)" % COLOR_RE, message)
-        inner_match = re.search(r"(?:最里面|里面|内层|内圈|中心|中间)[^，。,；;]*?(%s)" % COLOR_RE, message)
-        if outer_match:
-            args["outer_color"] = CN_COLOR_MAP[outer_match.group(1)]
-        if inner_match:
-            args["inner_color"] = CN_COLOR_MAP[inner_match.group(1)]
+        outer_color = (
+            _extract_color_before_role(message, OUTER_LAYER_PATTERN)
+            or _extract_color_after_role(message, OUTER_LAYER_PATTERN)
+        )
+        inner_color = (
+            _extract_color_before_role(message, INNER_LAYER_PATTERN)
+            or _extract_color_after_role(message, INNER_LAYER_PATTERN)
+        )
+        if outer_color:
+            args["outer_color"] = outer_color
+        if inner_color:
+            args["inner_color"] = inner_color
 
         # Common spoken order: "最里面是绿色，外层是蓝色". If role-specific
         # parsing failed, infer from the first two colors in the sentence.
         color_hits = re.findall(COLOR_RE, message)
-        if len(color_hits) >= 2 and not inner_match and not outer_match:
+        if len(color_hits) >= 2 and not inner_color and not outer_color:
             args["inner_color"] = CN_COLOR_MAP[color_hits[0]]
             args["outer_color"] = CN_COLOR_MAP[color_hits[1]]
+        elif len(color_hits) == 1 and not inner_color and not outer_color:
+            args["outer_color"] = CN_COLOR_MAP[color_hits[0]]
 
-        radius_match = re.search(r"(?:外层|外圈|外面|外边).*?(?:半径|r)\s*[:：=]?\s*(\d+(?:\.\d+)?)", message, re.IGNORECASE)
+        radius_match = re.search(rf"(?:{OUTER_LAYER_PATTERN}).*?(?:半径|r)\s*[:：=]?\s*(\d+(?:\.\d+)?)", message, re.IGNORECASE)
         if radius_match:
             args["outer_radius"] = float(radius_match.group(1))
-        radius_match = re.search(r"(?:最里面|里面|内层|内圈|中心|中间).*?(?:半径|r)\s*[:：=]?\s*(\d+(?:\.\d+)?)", message, re.IGNORECASE)
+        radius_match = re.search(rf"(?:{INNER_LAYER_PATTERN}).*?(?:半径|r)\s*[:：=]?\s*(\d+(?:\.\d+)?)", message, re.IGNORECASE)
         if radius_match:
             args["inner_radius"] = float(radius_match.group(1))
         elif len(nums) >= 1 and "半径" in message and args["outer_radius"] == 120:

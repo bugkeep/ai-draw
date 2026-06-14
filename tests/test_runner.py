@@ -167,6 +167,45 @@ class TestAgentRunnerLoop:
         assert "concentric_circles_inner" in result.code
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("message", [
+        "生成一个同兴圆，最里面是绿色，外层是蓝色",
+        "画一个圆，里面绿色，外面蓝色",
+        "画一个蓝色外圈绿色内圈的圆",
+        "画两个套着的圆，里圈绿色，外圈蓝色",
+    ])
+    async def test_layered_circle_phrasings_use_concentric_tool(self, message):
+        async def should_not_call_llm(messages, tools=None, model=None, **kwargs):
+            raise AssertionError("layered circle requests should not need an LLM round")
+
+        provider = MagicMock()
+        provider.achat = should_not_call_llm
+        runner = AgentRunner(AgentConfig(provider=provider, registry=make_registry()))
+
+        result = await runner.run(message)
+
+        assert result.success
+        assert result.rounds == 1
+        call = result.tool_calls[0]
+        assert call["name"] == "draw_concentric_circles"
+        assert call["arguments"]["inner_color"] == "green"
+        assert call["arguments"]["outer_color"] == "blue"
+        assert "concentric_circles_outer" in result.code
+        assert "concentric_circles_inner" in result.code
+
+    @pytest.mark.asyncio
+    async def test_recolor_existing_outer_circle_stays_with_llm_edit_path(self):
+        provider = make_provider([LLMResponse(content="ok")])
+        runner = AgentRunner(AgentConfig(provider=provider, registry=make_registry()))
+
+        result = await runner.run(
+            "把外圈改成蓝色",
+            canvas_state={"objects": [{"type": "circle", "object_id": "circle_1"}]},
+        )
+
+        assert result.success
+        assert not result.tool_calls
+
+    @pytest.mark.asyncio
     async def test_multi_round(self):
         tc1 = ToolCall(id="c1", name="draw_circle", arguments={"color": "red"})
         tc2 = ToolCall(id="c2", name="draw_rect", arguments={"color": "blue"})

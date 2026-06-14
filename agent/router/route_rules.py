@@ -70,7 +70,9 @@ _cr(r"画\s*(?:一[个棵只朵座条颗株])?\s*(?:树|树木|花朵|花|草|�
 _cr(r"画一个?\s*(?:多边形|五边形|六边形)", DrawingMode.PRIMITIVE, 0.50, "explicit polygon request")
 _cr(r"画一个?\s*(?:路径|path|bezier|贝塞尔|曲线)", DrawingMode.PRIMITIVE, 0.50, "explicit path/curve request")
 _cr(r"画一个?\s*(?:文本|文字|标签|标注)", DrawingMode.PRIMITIVE, 0.50, "explicit text request")
-_cr(r"(?:同心圆|同星圆|同圆心|套圆|靶心|concentric|bullseye)", DrawingMode.PRIMITIVE, 0.60, "explicit concentric circle request")
+_cr(r"(?:同心圆|同星圆|同兴圆|同型圆|同圆心|套圆|套着的圆|嵌套圆|双层圆|两层圆|内外圆|里外圆|靶心|concentric|bullseye)", DrawingMode.PRIMITIVE, 0.60, "explicit concentric circle request")
+_cr(r"(?:圆).*(?:里面|里层|里圈|内层|内圈|中心|中间|内部).*(?:外面|外层|外圈|外边|外侧|外部)", DrawingMode.PRIMITIVE, 0.60, "inner and outer circle layers")
+_cr(r"(?:圆).*(?:外面|外层|外圈|外边|外侧|外部).*(?:里面|里层|里圈|内层|内圈|中心|中间|内部)", DrawingMode.PRIMITIVE, 0.60, "inner and outer circle layers")
 
 # ── DIAGRAM rules ──────────────────────────────────────────────────────────
 

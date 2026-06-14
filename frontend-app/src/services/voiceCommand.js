@@ -6,6 +6,7 @@ const EXACT_RECOGNITION_CORRECTIONS = new Map([
 
 const RECOGNITION_CORRECTIONS = [
   [/^(?:带你来|但你来|带你|来)(?=画)/u, ''],
+  [/(同心|同星|同兴|同型|套)(?:园|元)(?=$|\s|里|内|外|，|,)/gu, '$1圆'],
   [/有应该有/gu, '应该有'],
   [/有有/gu, '有'],
   [/一棵房子/gu, '一座房子'],
