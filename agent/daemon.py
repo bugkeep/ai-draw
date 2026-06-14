@@ -2,6 +2,7 @@ import asyncio
 import json
 import inspect
 import uuid
+import os
 from typing import Callable
 from events import (
     EventBus,
@@ -13,22 +14,175 @@ from events import (
     ClientConnectEvent,
     ClientDisconnectEvent,
     ClientErrorEvent,
+    EventBroadcaster,
+    Subscription,
 )
+from protocol import JsonRpcRequest
+from core.app import _replay_events, events_file
+from traces import DaemonTracer
+from providers.openai_provider import OpenAIProvider
+from providers.bailian_provider import BailianProvider
+from tools import ALL_TOOLS
+from tools.registry import ToolRegistry
+from agent.runner import AgentRunner, AgentConfig
+from mcp.manager import McpManager
 
 
 class TCPServer:
-    def __init__(self, host: str = "127.0.0.1", port: int = 8765):
+    def __init__(self, host: str = "127.0.0.1", port: int = 8765, broadcaster: EventBroadcaster | None = None, event_bus: EventBus | None = None, tracer: DaemonTracer | None = None):
         self.host = host
         self.port = port
-        self.event_bus = EventBus()
+        self.broadcaster = broadcaster
+        self.event_bus = event_bus or EventBus()
+        self.tracer = tracer
         self._handlers: dict[str, Callable] = {}
+        self._runner: AgentRunner | None = None
+        self._current_provider = ""
+        self._current_api_key = ""
+        self._mcp_manager = McpManager()
 
     def register_handler(self, action: str, handler: Callable):
         if not inspect.iscoroutinefunction(handler):
             raise ValueError(f"Handler for '{action}' must be async")
         self._handlers[action] = handler
 
+    def init_runner(self, provider: str = "openai", api_key: str = "",
+                     block_tools: list[str] | None = None,
+                     allow_tools: list[str] | None = None):
+        providers = {
+            "openai": lambda key: OpenAIProvider(
+                api_key=key or os.environ.get("OPENAI_API_KEY", ""),
+                model=os.environ.get("OPENAI_MODEL", "gpt-4o"),
+            ),
+            "bailian": lambda key: BailianProvider(
+                api_key=key or os.environ.get("DASHSCOPE_API_KEY", ""),
+                model=os.environ.get("BAILIAN_MODEL", "qwen-plus"),
+            ),
+        }
+        provider_fn = providers.get(provider, providers["openai"])
+        prov = provider_fn(api_key)
+
+        from tools.policy import ToolPolicy
+        from tools.manager import PermissionManager
+
+        def _on_permission_request(req_id: str, tool_name: str, args: dict):
+            asyncio.ensure_future(self.event_bus.dispatch(
+                BaseEvent(EventType.PERMISSION_REQUESTED, {
+                    "request_id": req_id,
+                    "tool_name": tool_name,
+                    "arguments": args,
+                })
+            ))
+
+        policy = ToolPolicy(allow_only=allow_tools)
+        if block_tools:
+            policy.block(*block_tools)
+        perms = PermissionManager(policy=policy, on_request=_on_permission_request)
+
+        registry = ToolRegistry()
+        registry.permissions = perms
+        for tool_cls in ALL_TOOLS:
+            registry.register(tool_cls())
+        # register MCP tools if available
+        for mcp_tool in self._mcp_manager.tools:
+            registry.register(mcp_tool)
+        config = AgentConfig(provider=prov, registry=registry, event_bus=self.event_bus, tracer=self.tracer)
+        self._runner = AgentRunner(config)
+        self._current_provider = provider
+        self._current_api_key = api_key
+
+    async def handle_chat(self, payload: dict) -> dict:
+        message = payload.get("message", "")
+        canvas_state = payload.get("canvas_state", {})
+        provider = payload.get("provider", "openai")
+        api_key = payload.get("api_key", "")
+
+        if not self._runner or provider != self._current_provider or api_key != self._current_api_key:
+            self.init_runner(provider, api_key)
+
+        result = await self._runner.run(message=message, canvas_state=canvas_state)
+        return {
+            "run_id": result.run_id,
+            "content": result.content,
+            "code": result.code,
+            "description": result.description,
+            "tool_calls": len(result.tool_calls),
+            "success": result.success,
+            "error": result.error,
+            "rounds": result.rounds,
+        }
+
+    async def handle_update_permissions(self, payload: dict) -> dict:
+        """Update tool permissions at runtime.
+
+        Payload::
+
+            {
+              "block": ["bash"],          // add to blocklist
+              "unblock": ["search_text"], // remove from blocklist
+              "allow_only": null,         // set to [] to allow all
+            }
+        """
+        if self._runner is None:
+            return {"error": "No active runner"}
+
+        mgr = self._runner.registry.permissions
+        policy = mgr.policy
+
+        blocked = payload.get("block")
+        if blocked:
+            policy.block(*blocked)
+
+        unblocked = payload.get("unblock")
+        if unblocked:
+            policy.unblock(*unblocked)
+
+        allow_only = payload.get("allow_only")
+        if allow_only is not None:
+            policy.allow_only = allow_only
+
+        return {"status": "ok"}
+
+    async def handle_permission_respond(self, payload: dict) -> dict:
+        """Resolve a pending permission request.
+
+        Called by the frontend after the user sees the approval card::
+
+            {"action": "permission_respond",
+             "payload": {
+               "request_id": "...",
+               "approved": true,
+               "response_type": "once" | "always"
+             }}
+        """
+        if self._runner is None:
+            return {"error": "No active runner"}
+        mgr = self._runner.registry.permissions
+        req_id = payload.get("request_id", "")
+        approved = payload.get("approved", False)
+        response_type = payload.get("response_type", "once")
+        found = mgr.respond(req_id, approved, response_type)
+        if found:
+            await self.event_bus.dispatch(
+                BaseEvent(EventType.PERMISSION_RESPONDED, {
+                    "request_id": req_id, "approved": approved,
+                    "response_type": response_type,
+                })
+            )
+            return {"status": "ok"}
+        return {"status": "not_found"}
+
     async def start(self):
+        self._handlers.setdefault("chat", self.handle_chat)
+        self._handlers.setdefault("update_permissions", self.handle_update_permissions)
+        self._handlers.setdefault("permission_respond", self.handle_permission_respond)
+
+        # start MCP servers
+        try:
+            await self._mcp_manager.start()
+        except Exception as e:
+            print(f"[daemon] MCP start warning: {e}")
+
         await self.event_bus.dispatch(
             SocketStartEvent(host=self.host, port=self.port)
         )
@@ -54,6 +208,11 @@ class TCPServer:
     def stop(self):
         if hasattr(self, "_server") and self._server:
             self._server.close()
+        # stop MCP
+        try:
+            asyncio.ensure_future(self._mcp_manager.stop())
+        except Exception:
+            pass
 
     async def _handle_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -66,6 +225,11 @@ class TCPServer:
             ClientConnectEvent(client_addr=client_addr, client_id=client_id)
         )
 
+        # NOTE: event subscription is registered per-request inside the
+        # ``event_subscribe`` handler below — NOT here — so that
+        # request-response actions (chat, run, session.*) get clean reply
+        # messages without event-push interleaving.
+
         try:
             while True:
                 data = await reader.readline()
@@ -73,21 +237,58 @@ class TCPServer:
                     break
 
                 try:
-                    message = json.loads(data.decode().strip())
-                except json.JSONDecodeError as e:
-                    error_response = json.dumps({"error": f"Invalid JSON: {e}"}) + "\n"
-                    writer.write(error_response.encode())
+                    raw = json.loads(data.decode().strip())
+                    req = JsonRpcRequest.model_validate(raw)
+                except Exception:
+                    err = json.dumps({"error": "parse error"}) + "\n"
+                    writer.write(err.encode())
                     await writer.drain()
                     continue
 
-                action = message.get("action")
-                payload = message.get("payload", {})
+                action = req.action
+                payload = req.payload
+
+                if self.tracer:
+                    self.tracer.on_ipc_request(action, payload, client_id=client_id)
 
                 await self.event_bus.dispatch(
                     BaseEvent(EventType.VOICE_RECEIVED, payload)
                 )
 
-                if action in self._handlers:
+                if action == "event_subscribe":
+                    topics = payload.get("topics", ["*"])
+                    scope = payload.get("scope", "global")
+
+                    count = 0
+                    run_id = ""
+                    if scope.startswith("run:"):
+                        run_id = scope[4:]
+                        fp = events_file(run_id)
+                        if os.path.isfile(fp):
+                            with open(fp, encoding="utf-8") as f:
+                                count = sum(1 for line in f if line.strip())
+
+                    result = {"replayed_count": count}
+                    response = json.dumps(result) + "\n"
+                    writer.write(response.encode())
+                    await writer.drain()
+
+                    if self.tracer:
+                        self.tracer.on_ipc_response("event_subscribe", result, run_id=run_id, client_id=client_id)
+
+                    if run_id:
+                        await _replay_events(run_id, writer)
+
+                    if self.broadcaster:
+                        self.broadcaster.subscribe(Subscription(
+                            sub_id=f"sub-{client_id}",
+                            writer=writer,
+                            topics=topics,
+                            scope=scope,
+                        ))
+
+                    continue
+                elif action in self._handlers:
                     result = await self._handlers[action](payload)
                 else:
                     result = {"error": f"Unknown action: {action}"}
@@ -95,6 +296,9 @@ class TCPServer:
                 response = json.dumps(result) + "\n"
                 writer.write(response.encode())
                 await writer.drain()
+
+                if self.tracer:
+                    self.tracer.on_ipc_response(action, result, run_id=result.get("run_id", ""), client_id=client_id)
 
         except asyncio.IncompleteReadError:
             await self.event_bus.dispatch(
@@ -111,6 +315,8 @@ class TCPServer:
                 )
             )
         finally:
+            if self.broadcaster:
+                self.broadcaster.unsubscribe(writer)
             await self.event_bus.dispatch(
                 ClientDisconnectEvent(
                     client_addr=client_addr, client_id=client_id, reason="cleanup"
@@ -120,17 +326,8 @@ class TCPServer:
             await writer.wait_closed()
 
 
-async def handle_chat(payload: dict) -> dict:
-    return {
-        "code": "",
-        "description": f"Received: {payload.get('message', '')}",
-        "tool_calls": 0
-    }
-
-
 async def main():
     server = TCPServer()
-    server.register_handler("chat", handle_chat)
     await server.start()
 
 

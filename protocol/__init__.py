@@ -1,14 +1,16 @@
-from .models import ProtocolMessage, ProtocolResponse, Session, QueuedMessage
+from .models import JsonRpcRequest, ProtocolMessage, ProtocolResponse, Session, QueuedMessage, EventPushEnvelope
 from .handler import ProtocolHandler
 from .session import SessionManager
 from .queue import MessageQueue
 from .heartbeat import HeartbeatManager
 
 __all__ = [
+    "JsonRpcRequest",
     "ProtocolMessage",
     "ProtocolResponse",
     "Session",
     "QueuedMessage",
+    "EventPushEnvelope",
     "ProtocolHandler",
     "SessionManager",
     "MessageQueue",

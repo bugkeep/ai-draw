@@ -1,3 +1,4 @@
+import json
 from enum import Enum
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -25,16 +26,37 @@ class EventType(Enum):
     LLM_REQUEST = "llm_request"
     LLM_RESPONSE = "llm_response"
     LLM_ERROR = "llm_error"
+    LLM_RETRY = "llm_retry"
 
     # 诊断事件 - Tool
     TOOL_CALL = "tool_call"
     TOOL_RESULT = "tool_result"
     TOOL_ERROR = "tool_error"
+    TOOL_BLOCKED = "tool_blocked"        # 权限审批拒绝
+    TOOL_VALIDATION_ERROR = "tool_validation_error"  # 参数校验失败
 
     # 诊断事件 - Agent
     AGENT_START = "agent_start"
     AGENT_STOP = "agent_stop"
     AGENT_ERROR = "agent_error"
+
+    # 会话事件
+    SESSION_CREATED = "session_created"
+
+    # 权限事件
+    PERMISSION_REQUESTED = "permission_requested"
+    PERMISSION_RESPONDED = "permission_responded"
+
+    # 上下文水位事件
+    CONTEXT_WATERMARK = "context_watermark"
+    CONTEXT_COMPACTED = "context_compacted"
+
+    # 子 Agent 事件
+    SUB_AGENT_START = "sub_agent_start"
+    SUB_AGENT_STOP = "sub_agent_stop"
+
+    # 技能事件
+    SKILL_INVOKED = "skill_invoked"
 
 
 @dataclass
@@ -42,6 +64,15 @@ class BaseEvent:
     event_type: EventType = EventType.SYSTEM
     data: dict = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
+    topic: str = ""
+    run_id: str = ""
+
+    def get_topic(self) -> str:
+        """Derive dot-separated topic from event_type if not explicitly set.
+
+        e.g. EventType.LLM_REQUEST → "llm.request"
+        """
+        return self.topic or self.event_type.name.lower().replace("_", ".")
 
 
 @dataclass
@@ -122,3 +153,15 @@ class EventBus:
                 self._global_handlers.remove(entry)
             elif entry in self._handlers.get(event.event_type, []):
                 self._handlers[event.event_type].remove(entry)
+
+
+def format_event_push(event: BaseEvent) -> str:
+    """Serialize an event into the standard EventPushEnvelope wire format."""
+    return json.dumps({
+        "type": "event_push",
+        "topic": event.get_topic(),
+        "event_type": event.event_type.value,
+        "data": event.data,
+        "timestamp": event.timestamp,
+        "run_id": event.run_id or event.data.get("run_id", ""),
+    }, ensure_ascii=False)
