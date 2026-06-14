@@ -167,6 +167,9 @@ class TestDrawingModeRouter:
         "取消成组",
         "把圆改成半透明",
         "加黑色描边",
+        "把圆填充成绿色",
+        "给矩形加蓝到紫的渐变",
+        "用吸管复制这个颜色",
         "选中红色圆",
         "框选左上角的图形",
         "套索选择这些对象",
@@ -316,6 +319,9 @@ class TestModePrompts:
         assert "select_by_region" in p
         assert "select_by_lasso" in p
         assert "select_similar" in p
+        assert "change_fill" in p
+        assert "apply_gradient_fill" in p
+        assert "copy_object_style" in p
         assert "crop_object" in p
         assert "apply_clip_mask" in p
         assert "change_blend_mode" in p
@@ -370,6 +376,7 @@ class TestPromptTemplates:
     def test_operation_prompt_covers_common_drawing_software_actions(self):
         p = SOFTWARE_OPERATION_PROMPT
         assert "Brush" in p
+        assert "eyedropper" in p
         assert "bezier path" in p
         assert "align" in p
         assert "magic wand" in p
@@ -391,6 +398,9 @@ class TestPromptTemplates:
         assert "select_by_region" in prompt
         assert "select_by_lasso" in prompt
         assert "select_similar" in prompt
+        assert "change_fill" in prompt
+        assert "apply_gradient_fill" in prompt
+        assert "copy_object_style" in prompt
         assert "apply_clip_mask" in prompt
         assert "change_blend_mode" in prompt
         assert "apply_image_filter" in prompt

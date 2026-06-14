@@ -47,7 +47,7 @@ RULES:
 SOFTWARE_OPERATION_PROMPT = """--- Common Drawing Software Operations ---
 Recognize operation families common in drawing apps:
 - Brush / pencil / eraser / smudge / clone / blur / sharpen / dodge / burn /
-  paint bucket / fill / gradient / color replacement.
+  paint bucket / fill / gradient / eyedropper / color replacement.
 - Shape / line / ellipse / polygon / polyline / pen / free pen / curvature pen /
   bezier path / anchor point / stroke / fill / text.
 - Select / marquee / lasso / magic wand / similar-object selection /
@@ -126,20 +126,23 @@ RULES:
 10. For rectangular marquee/region selection: select_by_region(x=..., y=..., width=..., height=..., mode="intersect"/"contain").
 11. For lasso/freehand selection: select_by_lasso(points=[{"x": ..., "y": ...}, ...]).
 12. For magic-wand/similar object selection: select_similar(object_id=... or selector="last", match_fill=True, match_type=True).
-13. For duplication: duplicate_object(object_id=... or selector="last", offset_x=..., offset_y=...).
-14. For grouping: group_objects(object_ids=[...]) or group_objects(selector="all").
-15. For ungrouping: ungroup_objects(object_id=... or selector="last").
-16. For opacity: change_opacity(object_id=..., opacity=0.5).
-17. For outline/stroke: change_stroke(object_id=..., stroke=..., stroke_width=...).
-18. For rectangular crop: crop_object(object_id=..., x=..., y=..., width=..., height=...).
-19. For clipping/masks: apply_clip_mask(target_object_id=..., mask_object_id=...).
-20. For blend/composite modes: change_blend_mode(object_id=..., mode="multiply"/"screen"/"overlay"/...).
-21. For image filters: apply_image_filter(object_id=..., filter_type="brightness"/"contrast"/"blur"/"grayscale"/"invert"/"saturation", value=...).
-22. For deletion: delete_object(object_id=...).
-23. For replacement: use replace_vector_asset(object_id=..., candidate_asset_id=...).
+13. For solid fills / paint bucket: change_fill(object_id=..., color=...).
+14. For gradient fills: apply_gradient_fill(object_id=..., gradient_type="linear"/"radial", color_stops=[...]).
+15. For eyedropper/style copying: copy_object_style(source_object_id=..., target_object_id=...).
+16. For duplication: duplicate_object(object_id=... or selector="last", offset_x=..., offset_y=...).
+17. For grouping: group_objects(object_ids=[...]) or group_objects(selector="all").
+18. For ungrouping: ungroup_objects(object_id=... or selector="last").
+19. For opacity: change_opacity(object_id=..., opacity=0.5).
+20. For outline/stroke: change_stroke(object_id=..., stroke=..., stroke_width=...).
+21. For rectangular crop: crop_object(object_id=..., x=..., y=..., width=..., height=...).
+22. For clipping/masks: apply_clip_mask(target_object_id=..., mask_object_id=...).
+23. For blend/composite modes: change_blend_mode(object_id=..., mode="multiply"/"screen"/"overlay"/...).
+24. For image filters: apply_image_filter(object_id=..., filter_type="brightness"/"contrast"/"blur"/"grayscale"/"invert"/"saturation", value=...).
+25. For deletion: delete_object(object_id=...).
+26. For replacement: use replace_vector_asset(object_id=..., candidate_asset_id=...).
    Check available candidates first with list_asset_candidates().
-24. Undo/redo via undo() / redo().
-25. Always reference objects by object_id, NOT by array index.
+27. Undo/redo via undo() / redo().
+28. Always reference objects by object_id, NOT by array index.
 """
 
 
@@ -187,6 +190,9 @@ Available tools:
 - select_by_region — rectangular marquee selection by bounds
 - select_by_lasso — freehand polygon lasso selection by object centers
 - select_similar — magic-wand-style object selection by similar fill/stroke/type
+- change_fill — set solid fill color
+- apply_gradient_fill — apply linear or radial gradient fill
+- copy_object_style — eyedropper-style fill/stroke/opacity copy
 - crop_object — apply a rectangular crop
 - apply_clip_mask — use one object as another object's clipping mask
 - change_blend_mode — set object blend/composite mode
@@ -215,7 +221,7 @@ Rules:
 
 Handling user feedback:
 - If the user says "不好看" / "不像" / "重新画" / "改一下" / "换个风格" etc., use delete_object(selector="all") or clear_canvas first, then redraw with better parameters
-- If the user asks to modify an existing element (改颜色, 换颜色, 移动, 挪一下, 放大, 缩小, 旋转, 置顶, 置底, 对齐, 均匀分布, 复制, 成组, 取消成组, 透明, 描边, 选中, 框选, 套索, 魔棒, 相似对象, 裁剪, 遮罩, 剪贴, 混合模式, 滤镜, 模糊, 调亮, 灰度), use the canvas editing tools
+- If the user asks to modify an existing element (改颜色, 换颜色, 填充, 渐变, 油漆桶, 吸管, 复制样式, 移动, 挪一下, 放大, 缩小, 旋转, 置顶, 置底, 对齐, 均匀分布, 复制, 成组, 取消成组, 透明, 描边, 选中, 框选, 套索, 魔棒, 相似对象, 裁剪, 遮罩, 剪贴, 混合模式, 滤镜, 模糊, 调亮, 灰度), use the canvas editing tools
 - Always check Current canvas state above before responding to feedback
 - When the canvas is not empty and the user gives new instructions, decide whether to add to or replace the existing content
 
@@ -263,6 +269,9 @@ Available drawing tools:
 - select_by_region — rectangular marquee selection by bounds.
 - select_by_lasso — freehand polygon lasso selection by object centers.
 - select_similar — magic-wand-style object selection by similar fill/stroke/type.
+- change_fill — set solid fill color.
+- apply_gradient_fill — apply linear or radial gradient fill.
+- copy_object_style — eyedropper-style fill/stroke/opacity copy.
 - crop_object — apply a rectangular crop.
 - apply_clip_mask — use one object as another object's clipping mask.
 - change_blend_mode — set object blend/composite mode.
@@ -317,6 +326,9 @@ For modification requests:
 - "框选左上角/选中这一片" → select_by_region(x=..., y=..., width=..., height=...)
 - "套索选择这些图形" → select_by_lasso(points=[...])
 - "魔棒/选择相似颜色/选择同类对象" → select_similar(selector="last", match_fill=True, match_type=True)
+- "填充成绿色/油漆桶填蓝色" → change_fill(color="green")
+- "加蓝到紫的渐变" → apply_gradient_fill(color_stops=[...])
+- "用吸管复制这个颜色/复制样式到另一个对象" → copy_object_style(source_object_id=..., target_object_id=...)
 - "裁剪它/裁掉右边一点" → crop_object(selector="last", ...)
 - "用这个矩形做遮罩/剪贴到形状里" → apply_clip_mask(target_object_id=..., mask_object_id=...)
 - "改成正片叠底/滤色/叠加" → change_blend_mode(mode="multiply"/"screen"/"overlay")
