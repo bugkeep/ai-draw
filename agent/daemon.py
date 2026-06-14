@@ -40,6 +40,7 @@ class TCPServer:
         self._current_provider = ""
         self._current_api_key = ""
         self._mcp_manager = McpManager()
+        self._ready = asyncio.Event()
 
     def register_handler(self, action: str, handler: Callable):
         if not inspect.iscoroutinefunction(handler):
@@ -193,6 +194,7 @@ class TCPServer:
             )
             addr = self._server.sockets[0].getsockname()
             self.port = addr[1]
+            self._ready.set()
             print(f"TCP Server listening on {addr[0]}:{addr[1]}")
 
             async with self._server:

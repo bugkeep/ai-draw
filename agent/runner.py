@@ -10,8 +10,15 @@ from tools.base import ToolResult
 from tools.registry import ToolRegistry
 from traces import DaemonTracer
 from events import EventBus, EventType, BaseEvent
-from .prompts import SYSTEM_PROMPT
+from .prompts import BASE_SYSTEM_PROMPT
 from .context import format_three_layer_context
+from agent.router import DrawingModeRouter
+from .prompts import get_mode_prompt
+
+
+COMPLEX_SCENE_MIN_DRAW_CALLS = 6
+COMPLEX_SCENE_MIN_ROUNDS = 12
+DRAWING_TOOL_PREFIX = "draw_"
 
 
 def new_run_id() -> str:
@@ -97,10 +104,11 @@ class AgentConfig:
     registry: ToolRegistry | None = None
     event_bus: EventBus | None = None
     tracer: DaemonTracer | None = None
-    system_prompt: str = SYSTEM_PROMPT
+    system_prompt: str = ""  # defaults to BASE_SYSTEM_PROMPT in __init__
     max_rounds: int = 5
     compact_threshold: float = 0.80     # context_pct triggers auto-compact
     compact_keep_rounds: int = 3         # rounds to preserve after compact
+    router: DrawingModeRouter | None = None
 
 
 class AgentRunner:
@@ -110,11 +118,12 @@ class AgentRunner:
         self.registry = config.registry or ToolRegistry()
         self.event_bus = config.event_bus or EventBus()
         self.tracer = config.tracer
-        self.system_prompt = config.system_prompt
+        self.system_prompt = config.system_prompt or BASE_SYSTEM_PROMPT
         self.max_rounds = config.max_rounds
 
         self.compact_threshold = config.compact_threshold
         self.compact_keep_rounds = config.compact_keep_rounds
+        self.router = config.router or DrawingModeRouter()
 
         if not self.provider:
             raise ValueError("LLMProvider is required")
@@ -154,9 +163,22 @@ class AgentRunner:
         if store is not None:
             history = store.read_messages(truncate_tool_result=True)
 
+        # ── intent routing ────────────────────────────────────────────
+        route = await self.router.route(message, canvas_state, history)
+        await self._dispatch_event(EventType.ROUTING_RESULT, {
+            "mode": route.mode.value,
+            "confidence": route.confidence,
+            "subject": route.subject,
+            "reason": route.reason,
+            "requires_search": route.requires_search,
+        }, run_id=run_id)
+        mode_prompt = get_mode_prompt(route.mode.value)
+
         # ── three-layer context injection ──────────────────────────────
         three_layer = format_three_layer_context(store)
-        system_prompt = self.system_prompt.format(canvas_state=canvas_desc)
+        system_prompt = self.system_prompt.format(
+            canvas_state=canvas_desc, mode_prompt=mode_prompt
+        )
         if three_layer:
             system_prompt += "\n\n" + three_layer
 
@@ -177,10 +199,13 @@ class AgentRunner:
         new_messages: list[dict] = []
         last_content = ""
         round_num = 0
+        round_limit = self.max_rounds
+        if route.mode.value == "image_generation":
+            round_limit = max(round_limit, COMPLEX_SCENE_MIN_ROUNDS)
 
         await self._dispatch_event(EventType.AGENT_START, {"message": message}, run_id=run_id)
 
-        for round_num in range(1, self.max_rounds + 1):
+        for round_num in range(1, round_limit + 1):
             plan_result = await self._plan(messages, tool_defs, run_id=run_id, round_num=round_num)
             if plan_result is None:
                 break
@@ -220,6 +245,24 @@ class AgentRunner:
             last_content = response.content or last_content
 
             if not response.tool_calls:
+                if self._complex_scene_incomplete(route.mode.value, all_tool_calls):
+                    assistant_msg = {
+                        "role": "assistant",
+                        "content": response.content or "",
+                    }
+                    continuation_msg = {
+                        "role": "user",
+                        "content": (
+                            "The complex editable scene is not complete yet. "
+                            "Continue drawing the missing layers, named subjects, "
+                            "spatial relationships, and visual details. Use several "
+                            "drawing tool calls in this response, and only finish "
+                            "after at least 6 successful drawing operations."
+                        ),
+                    }
+                    messages.extend([assistant_msg, continuation_msg])
+                    new_messages.extend([assistant_msg, continuation_msg])
+                    continue
                 break
 
             observe_msg = self._observe(response)
@@ -228,7 +271,7 @@ class AgentRunner:
             for tr in act_results:
                 if not tr["is_error"]:
                     if tr["code"]:
-                        all_code.append(tr["code"])
+                        all_code.append(f"{{\n{tr['code']}\n}}")
                     if tr["description"]:
                         all_desc.append(tr["description"])
                 all_tool_calls.append({
@@ -281,6 +324,17 @@ class AgentRunner:
             rounds=round_num,
             new_messages=new_messages,
         )
+
+    @staticmethod
+    def _complex_scene_incomplete(mode: str, tool_calls: list[dict]) -> bool:
+        if mode != "image_generation":
+            return False
+        successful_draw_calls = sum(
+            1 for call in tool_calls
+            if not call.get("is_error")
+            and str(call.get("name", "")).startswith(DRAWING_TOOL_PREFIX)
+        )
+        return successful_draw_calls < COMPLEX_SCENE_MIN_DRAW_CALLS
 
     async def _plan(self, messages: list[dict], tools: list[dict], run_id: str = "", round_num: int = 0) -> tuple[LLMResponse, str | None] | None:
         model = getattr(self.provider, "model", "")
@@ -459,7 +513,9 @@ class AgentRunner:
             left = obj.get("left", 0)
             top = obj.get("top", 0)
             fill = obj.get("fill", "")
-            parts.append(f"  [{i}] {obj_type} at ({left},{top}) fill={fill}")
+            oid = obj.get("object_id", "")
+            id_part = f" id={oid}" if oid else ""
+            parts.append(f"  [{i}] {obj_type} at ({left},{top}) fill={fill}{id_part}")
         return f"{len(objects)} objects:\n" + "\n".join(parts)
 
     def _compact_messages(self, messages: list[dict],

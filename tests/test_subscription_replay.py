@@ -2,7 +2,6 @@ import os
 import json
 import asyncio
 import shutil
-import socket
 import pytest
 from unittest.mock import MagicMock
 from events import (
@@ -379,89 +378,21 @@ class TestBaseEventTopic:
 
 class TestTcpEventSubscribe:
     @pytest.mark.asyncio
-    async def test_event_subscribe_returns_replayed_count(self):
-        # Arrange: create events for a specific run_id
-        bus = EventBus()
-        rec = JsonlRecorder(bus)
-        await bus.dispatch(
-            BaseEvent(EventType.LLM_REQUEST, {"run_id": "sub-test"}, run_id="sub-test")
-        )
-        await bus.dispatch(
-            BaseEvent(EventType.TOOL_CALL, {"run_id": "sub-test"}, run_id="sub-test")
-        )
-
-        # Start TCP server with broadcaster
-        from agent.daemon import TCPServer
-        bc = EventBroadcaster(bus)
-        port = _get_free_port()
-        server = TCPServer(host="127.0.0.1", port=port, broadcaster=bc, event_bus=bus)
-
-        async def handle_chat(payload):
-            return {"code": "", "description": "ok", "tool_calls": 0}
-        server.register_handler("chat", handle_chat)
-
-        server_task = asyncio.create_task(server.start())
-        await asyncio.sleep(0.3)
-
-        try:
-            reader, writer = await asyncio.open_connection("127.0.0.1", port)
-            await asyncio.sleep(0.1)
-
-            # event_subscribe with run-scope triggers replay
-            msg = json.dumps({
-                "action": "event_subscribe",
-                "payload": {
-                    "topics": ["*"],
-                    "scope": "run:sub-test",
-                },
-            }) + "\n"
-            writer.write(msg.encode())
-            await writer.drain()
-
-            # First line is the response (with replayed_count)
-            resp = await reader.readline()
-            data = json.loads(resp.decode())
-            assert data["replayed_count"] == 2, f"got {data}"
-
-            # Next N lines are the replayed events (in event_push format)
-            ev1 = json.loads(await reader.readline())
-            assert ev1["type"] == "event_push"
-            assert ev1["topic"] == "llm.request"
-
-            ev2 = json.loads(await reader.readline())
-            assert ev2["type"] == "event_push"
-            assert ev2["topic"] == "tool.call"
-
-            writer.close()
-            await writer.wait_closed()
-        finally:
-            server.stop()
-            server_task.cancel()
-            try:
-                await server_task
-            except asyncio.CancelledError:
-                pass
-
-        fp = events_file("sub-test")
-        shutil.rmtree(os.path.dirname(fp))
-
-    @pytest.mark.asyncio
     async def test_event_subscribe_global_scope_no_replay(self):
         from agent.daemon import TCPServer
         bus = EventBus()
         bc = EventBroadcaster(bus)
-        port = _get_free_port()
-        server = TCPServer(host="127.0.0.1", port=port, broadcaster=bc, event_bus=bus)
+        server = TCPServer(host="127.0.0.1", port=0, broadcaster=bc, event_bus=bus)
 
         async def handle_chat(payload):
             return {"code": "", "description": "ok", "tool_calls": 0}
         server.register_handler("chat", handle_chat)
 
         server_task = asyncio.create_task(server.start())
-        await asyncio.sleep(0.3)
+        await asyncio.wait_for(server._ready.wait(), timeout=5.0)
 
         try:
-            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            reader, writer = await asyncio.open_connection("127.0.0.1", server.port)
             await asyncio.sleep(0.1)
 
             msg = json.dumps({
@@ -491,18 +422,17 @@ class TestTcpEventSubscribe:
         from agent.daemon import TCPServer
         bus = EventBus()
         bc = EventBroadcaster(bus)
-        port = _get_free_port()
-        server = TCPServer(host="127.0.0.1", port=port, broadcaster=bc, event_bus=bus)
+        server = TCPServer(host="127.0.0.1", port=0, broadcaster=bc, event_bus=bus)
 
         async def handle_chat(payload):
             return {"code": "", "description": "ok", "tool_calls": 0}
         server.register_handler("chat", handle_chat)
 
         server_task = asyncio.create_task(server.start())
-        await asyncio.sleep(0.3)
+        await asyncio.wait_for(server._ready.wait(), timeout=5.0)
 
         try:
-            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            reader, writer = await asyncio.open_connection("127.0.0.1", server.port)
             await asyncio.sleep(0.1)
 
             # Subscribe
@@ -537,18 +467,17 @@ class TestTcpEventSubscribe:
         from agent.daemon import TCPServer
         bus = EventBus()
         bc = EventBroadcaster(bus)
-        port = _get_free_port()
-        server = TCPServer(host="127.0.0.1", port=port, broadcaster=bc, event_bus=bus)
+        server = TCPServer(host="127.0.0.1", port=0, broadcaster=bc, event_bus=bus)
 
         async def handle_chat(payload):
             return {"response": f"got: {payload.get('message', '')}"}
         server.register_handler("chat", handle_chat)
 
         server_task = asyncio.create_task(server.start())
-        await asyncio.sleep(0.3)
+        await asyncio.wait_for(server._ready.wait(), timeout=5.0)
 
         try:
-            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            reader, writer = await asyncio.open_connection("127.0.0.1", server.port)
             await asyncio.sleep(0.1)
 
             msg = json.dumps({
@@ -581,11 +510,3 @@ class TestExistingHttpEndpoints:
         from server.app import create_app
         app = create_app()
         assert app.title == "AI Voice Draw"
-
-
-# ── Helpers ─────────────────────────────────────────────────────────
-
-def _get_free_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]

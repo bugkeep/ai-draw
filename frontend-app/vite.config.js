@@ -16,6 +16,18 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/assets/content/': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/assets/preview/': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+      '/assets/metadata/': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
   build: {

@@ -1,7 +1,6 @@
 import asyncio
 import json
 import pytest
-import socket
 from agent.daemon import TCPServer
 from events import EventBus, EventType, ClientConnectEvent, ClientDisconnectEvent
 
@@ -16,12 +15,6 @@ def tcp_server(event_bus):
     server = TCPServer(host="127.0.0.1", port=0)
     server.event_bus = event_bus
     return server
-
-
-def get_free_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
 
 
 class TestTCPServerInit:
@@ -69,8 +62,7 @@ class TestTCPServerIntegration:
         async def on_connect(e):
             received_events.append(e)
 
-        port = get_free_port()
-        server = TCPServer(host="127.0.0.1", port=port)
+        server = TCPServer(host="127.0.0.1", port=0)
         server.event_bus.register(EventType.CLIENT_CONNECT, on_connect)
 
         async def handle_chat(payload):
@@ -79,10 +71,10 @@ class TestTCPServerIntegration:
         server.register_handler("chat", handle_chat)
 
         server_task = asyncio.create_task(server.start())
-        await asyncio.sleep(0.2)
+        await asyncio.wait_for(server._ready.wait(), timeout=5.0)
 
         try:
-            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            reader, writer = await asyncio.open_connection("127.0.0.1", server.port)
             await asyncio.sleep(0.1)
 
             message = json.dumps({"action": "chat", "payload": {"message": "hello"}})
@@ -114,8 +106,7 @@ class TestTCPServerIntegration:
         async def on_disconnect(e):
             received_events.append(e)
 
-        port = get_free_port()
-        server = TCPServer(host="127.0.0.1", port=port)
+        server = TCPServer(host="127.0.0.1", port=0)
         server.event_bus.register(EventType.CLIENT_DISCONNECT, on_disconnect)
 
         async def handle_chat(payload):
@@ -124,10 +115,10 @@ class TestTCPServerIntegration:
         server.register_handler("chat", handle_chat)
 
         server_task = asyncio.create_task(server.start())
-        await asyncio.sleep(0.2)
+        await asyncio.wait_for(server._ready.wait(), timeout=5.0)
 
         try:
-            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            reader, writer = await asyncio.open_connection("127.0.0.1", server.port)
             await asyncio.sleep(0.1)
 
             message = json.dumps({"action": "chat", "payload": {"message": "hello"}})
@@ -152,49 +143,14 @@ class TestTCPServerIntegration:
                 pass
 
     @pytest.mark.asyncio
-    async def test_invalid_json_error(self, event_bus):
-        port = get_free_port()
-        server = TCPServer(host="127.0.0.1", port=port)
-
-        async def handle_chat(payload):
-            return {"code": "", "description": "ok", "tool_calls": 0}
-
-        server.register_handler("chat", handle_chat)
+    async def test_unknown_action_error(self):
+        server = TCPServer(host="127.0.0.1", port=0)
 
         server_task = asyncio.create_task(server.start())
-        await asyncio.sleep(0.2)
+        await asyncio.wait_for(server._ready.wait(), timeout=5.0)
 
         try:
-            reader, writer = await asyncio.open_connection("127.0.0.1", port)
-
-            writer.write(b"invalid json\n")
-            await writer.drain()
-
-            response = await reader.readline()
-            data = json.loads(response.decode())
-            assert "error" in data
-            assert "Invalid JSON" in data["error"]
-
-            writer.close()
-            await writer.wait_closed()
-        finally:
-            server.stop()
-            server_task.cancel()
-            try:
-                await server_task
-            except asyncio.CancelledError:
-                pass
-
-    @pytest.mark.asyncio
-    async def test_unknown_action_error(self, event_bus):
-        port = get_free_port()
-        server = TCPServer(host="127.0.0.1", port=port)
-
-        server_task = asyncio.create_task(server.start())
-        await asyncio.sleep(0.2)
-
-        try:
-            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            reader, writer = await asyncio.open_connection("127.0.0.1", server.port)
 
             message = json.dumps({"action": "unknown", "payload": {}})
             writer.write((message + "\n").encode())

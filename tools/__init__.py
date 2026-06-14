@@ -6,6 +6,12 @@ from .drawing import (
 )
 from .editing import DeleteObjectTool, MoveObjectTool, ChangeColorTool, ResizeObjectTool
 from .history import UndoTool, RedoTool, ClearCanvasTool
+from .assets import (
+    SearchVectorAssetTool,
+    ImportVectorAssetTool,
+    ReplaceVectorAssetTool,
+    ListAssetCandidatesTool,
+)
 from .execution import (
     ReadFileTool, WriteFileTool, ListDirTool,
     BashTool, SearchTextTool, PatchFileTool,
@@ -33,6 +39,10 @@ ALL_TOOLS = [
     BashTool,
     SearchTextTool,
     PatchFileTool,
+    SearchVectorAssetTool,
+    ImportVectorAssetTool,
+    ReplaceVectorAssetTool,
+    ListAssetCandidatesTool,
 ]
 
 __all__ = [
@@ -44,5 +54,7 @@ __all__ = [
     "UndoTool", "RedoTool", "ClearCanvasTool",
     "ReadFileTool", "WriteFileTool", "ListDirTool",
     "BashTool", "SearchTextTool", "PatchFileTool",
+    "SearchVectorAssetTool", "ImportVectorAssetTool",
+    "ReplaceVectorAssetTool", "ListAssetCandidatesTool",
     "ALL_TOOLS",
 ]

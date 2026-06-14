@@ -124,6 +124,36 @@ function serializeObject(obj) {
   return base
 }
 
+function importSVG(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    if (!canvas) return reject(new Error('Canvas not ready'))
+    fabric.loadSVGFromURL(url, (objects, imgOptions) => {
+      if (!objects || objects.length === 0) {
+        return reject(new Error('SVG returned no objects'))
+      }
+      const group = fabric.util.groupSVGElements(objects, imgOptions)
+      group.set({
+        left: options.left ?? 100,
+        top: options.top ?? 100,
+        objectId: options.objectId || `svg_${Date.now()}`,
+        semanticType: options.semanticType || 'svg_asset',
+        ...options,
+      })
+      if (options.width && options.height) {
+        group.set({
+          scaleX: options.width / (group.width || 1),
+          scaleY: options.height / (group.height || 1),
+        })
+      }
+      canvas.add(group)
+      canvas.setActiveObject(group)
+      canvas.requestRenderAll()
+      saveState()
+      resolve(group)
+    }, reject)
+  })
+}
+
 function getState() {
   if (!canvas) return { objects: [], canvas_size: { width: 800, height: 600 } }
   return {
@@ -132,7 +162,7 @@ function getState() {
   }
 }
 
-defineExpose({ undo, redo, clear, executeCode, getState })
+defineExpose({ undo, redo, clear, executeCode, importSVG, getState })
 </script>
 
 <template>

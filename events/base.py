@@ -58,6 +58,9 @@ class EventType(Enum):
     # 技能事件
     SKILL_INVOKED = "skill_invoked"
 
+    # 路由事件
+    ROUTING_RESULT = "routing_result"
+
 
 @dataclass
 class BaseEvent:

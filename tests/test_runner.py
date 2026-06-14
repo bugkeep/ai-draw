@@ -193,6 +193,40 @@ class TestAgentRunnerLoop:
         result = await runner.run("hello")
         assert result.rounds == 1
 
+    @pytest.mark.asyncio
+    async def test_complex_scene_continues_past_early_finish_and_default_limit(self):
+        call_count = 0
+
+        async def achat(messages, tools=None, model=None, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count in (2, 8):
+                return LLMResponse(content="Done")
+            tc = ToolCall(
+                id=f"c{call_count}",
+                name="draw_circle",
+                arguments={
+                    "center_x": 100 + call_count * 20,
+                    "center_y": 100,
+                    "radius": 10,
+                    "color": "green",
+                },
+            )
+            return LLMResponse(content="Adding detail", tool_calls=[tc])
+
+        provider = MagicMock()
+        provider.achat = achat
+        runner = AgentRunner(AgentConfig(
+            provider=provider,
+            registry=make_registry(),
+            max_rounds=3,
+        ))
+
+        result = await runner.run("画一幅细节丰富的森林插画")
+
+        assert len(result.tool_calls) == 6
+        assert result.rounds == 8
+
 
 class TestAgentRunnerEvents:
     @pytest.mark.asyncio
