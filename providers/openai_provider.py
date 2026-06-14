@@ -1,6 +1,6 @@
 import os
 from openai import OpenAI, AsyncOpenAI
-from providers.base import LLMProvider, LLMResponse, ToolCall
+from providers.base import LLMProvider, LLMResponse, ToolCall, get_context_window
 
 
 class OpenAIProvider:
@@ -70,6 +70,8 @@ class OpenAIProvider:
 
         content = response.choices[0].message.content or ""
         token_usage = response.usage.total_tokens if response.usage else 0
+        model_name = response.model
+        cw = get_context_window(model_name)
 
         tool_calls = []
         if response.choices[0].message.tool_calls:
@@ -78,8 +80,10 @@ class OpenAIProvider:
 
         return LLMResponse(
             content=content,
-            model=response.model,
+            model=model_name,
             tokens_used=token_usage,
+            context_window=cw,
+            context_pct=round(token_usage / cw, 4) if cw else 0.0,
             tool_calls=tool_calls,
             raw=response,
         )
@@ -104,6 +108,8 @@ class OpenAIProvider:
 
         content = response.choices[0].message.content or ""
         token_usage = response.usage.total_tokens if response.usage else 0
+        model_name = response.model
+        cw = get_context_window(model_name)
 
         tool_calls = []
         if response.choices[0].message.tool_calls:
@@ -112,8 +118,10 @@ class OpenAIProvider:
 
         return LLMResponse(
             content=content,
-            model=response.model,
+            model=model_name,
             tokens_used=token_usage,
+            context_window=cw,
+            context_pct=round(token_usage / cw, 4) if cw else 0.0,
             tool_calls=tool_calls,
             raw=response,
         )

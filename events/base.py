@@ -47,6 +47,10 @@ class EventType(Enum):
     PERMISSION_REQUESTED = "permission_requested"
     PERMISSION_RESPONDED = "permission_responded"
 
+    # 上下文水位事件
+    CONTEXT_WATERMARK = "context_watermark"
+    CONTEXT_COMPACTED = "context_compacted"
+
 
 @dataclass
 class BaseEvent:

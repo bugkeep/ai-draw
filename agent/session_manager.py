@@ -6,6 +6,10 @@ from typing import Any
 
 RUNS_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "runs"))
 
+# Truncate tool result content to this many chars when read back into memory.
+# The original thread.jsonl on disk is NOT modified.
+_TRUNCATE_TOOL_RESULT_CHARS = 2000
+
 
 class SessionStore:
     """Read/write session data (thread + notes) from the filesystem.
@@ -29,16 +33,32 @@ class SessionStore:
 
     # ── thread ─────────────────────────────────────────────────────────
 
-    def read_messages(self) -> list[dict]:
-        """Return stored messages as-is (API-ready format)."""
+    def read_messages(self, truncate_tool_result: bool = True,
+                       max_tool_chars: int = 0) -> list[dict]:
+        """Return stored messages, optionally truncating large tool results.
+
+        ``truncate_tool_result`` — when True, tool-role content longer than
+        ``max_tool_chars`` is truncated in the returned list (the original
+        ``thread.jsonl`` on disk is NOT modified).
+
+        If ``max_tool_chars`` is 0 (default), uses
+        ``_TRUNCATE_TOOL_RESULT_CHARS``.
+        """
         if not os.path.isfile(self._thread_path):
             return []
+        max_chars = max_tool_chars or _TRUNCATE_TOOL_RESULT_CHARS
         msgs: list[dict] = []
         with open(self._thread_path, encoding="utf-8") as f:
             for line in f:
                 s = line.strip()
                 if s:
-                    msgs.append(json.loads(s))
+                    msg = json.loads(s)
+                    if truncate_tool_result and msg.get("role") == "tool":
+                        content = msg.get("content", "")
+                        if isinstance(content, str) and len(content) > max_chars:
+                            msg = dict(msg)
+                            msg["content"] = content[:max_chars] + f"\n... (truncated {len(content) - max_chars} chars)"
+                    msgs.append(msg)
         return msgs
 
     def append_message(self, role: str, content: str = "",
