@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, defineExpose } from 'vue'
+import { ref, onMounted } from 'vue'
 import { fabric } from 'fabric'
 
 const canvasEl = ref(null)
@@ -36,14 +36,18 @@ function undo() {
   if (historyIndex.value > 0) {
     historyIndex.value--
     canvas.loadFromJSON(history.value[historyIndex.value], () => canvas.renderAll())
+    return true
   }
+  return false
 }
 
 function redo() {
   if (historyIndex.value < history.value.length - 1) {
     historyIndex.value++
     canvas.loadFromJSON(history.value[historyIndex.value], () => canvas.renderAll())
+    return true
   }
+  return false
 }
 
 function clear() {
@@ -51,6 +55,7 @@ function clear() {
   canvas.backgroundColor = '#ffffff'
   canvas.renderAll()
   saveState()
+  return true
 }
 
 async function executeCode(code) {
