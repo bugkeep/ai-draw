@@ -192,6 +192,10 @@ class TestDrawingModeRouter:
         "用矩形做遮罩",
         "把图层改成正片叠底",
         "给图片加模糊滤镜",
+        "锁定最后一个对象",
+        "隐藏蓝色圆",
+        "显示所有图层",
+        "取消隐藏对象",
     ])
     def test_canvas_edit_voice_layout_operations(self, router, message):
         r = self.route(router, message, canvas_state={"objects": [{"type": "circle"}]})
@@ -352,6 +356,8 @@ class TestModePrompts:
         assert "apply_clip_mask" in p
         assert "change_blend_mode" in p
         assert "apply_image_filter" in p
+        assert "set_object_lock" in p
+        assert "set_object_visibility" in p
         assert "NOT by array index" in p
 
     def test_diagram_prompt(self):
@@ -444,6 +450,8 @@ class TestPromptTemplates:
         assert "apply_clip_mask" in prompt
         assert "change_blend_mode" in prompt
         assert "apply_image_filter" in prompt
+        assert "set_object_lock" in prompt
+        assert "set_object_visibility" in prompt
 
 
 # ── Complete routing accuracy ───────────────────────────────────────────────

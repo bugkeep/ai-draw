@@ -18,6 +18,7 @@ from .mask import ApplyClipMaskTool
 from .blend import ChangeBlendModeTool
 from .filter import ApplyImageFilterTool
 from .boolean import BooleanShapeOperationTool
+from .state import SetObjectLockTool, SetObjectVisibilityTool
 
 __all__ = [
     "DeleteObjectTool",
@@ -47,4 +48,6 @@ __all__ = [
     "ChangeBlendModeTool",
     "ApplyImageFilterTool",
     "BooleanShapeOperationTool",
+    "SetObjectLockTool",
+    "SetObjectVisibilityTool",
 ]
