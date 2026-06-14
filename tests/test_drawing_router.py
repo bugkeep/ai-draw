@@ -188,9 +188,9 @@ class TestDrawingModeRouter:
         r = self.route(router, "画一朵白云")
         assert r.mode == DrawingMode.VECTOR_ASSET
 
-    def test_vector_tree(self, router):
+    def test_primitive_tree(self, router):
         r = self.route(router, "画一棵大树")
-        assert r.mode == DrawingMode.VECTOR_ASSET
+        assert r.mode == DrawingMode.PRIMITIVE
 
     def test_vector_star(self, router):
         r = self.route(router, "画一颗星星")
@@ -204,6 +204,10 @@ class TestDrawingModeRouter:
 
     def test_image_gen_scene(self, router):
         r = self.route(router, "画一个东京雨夜街景")
+        assert r.mode == DrawingMode.IMAGE_GENERATION
+
+    def test_image_gen_detailed_illustration(self, router):
+        r = self.route(router, "画一幅细节丰富的森林插画")
         assert r.mode == DrawingMode.IMAGE_GENERATION
 
     # ── Subject extraction ─────────────────────────────────────────────
@@ -259,6 +263,9 @@ class TestModePrompts:
     def test_image_gen_prompt(self):
         p = get_mode_prompt("image_generation")
         assert "Image Generation Mode" in p
+        assert "editable vector scene" in p
+        assert "at least 6" in p
+        assert "Do NOT" in p and "center every unspecified element" in p
 
     def test_raster_prompt(self):
         p = get_mode_prompt("raster_asset")

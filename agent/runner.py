@@ -16,6 +16,11 @@ from agent.router import DrawingModeRouter
 from .prompts import get_mode_prompt
 
 
+COMPLEX_SCENE_MIN_DRAW_CALLS = 6
+COMPLEX_SCENE_MIN_ROUNDS = 12
+DRAWING_TOOL_PREFIX = "draw_"
+
+
 def new_run_id() -> str:
     t = time.localtime()
     ts = time.strftime("%y%m%d-%H%M%S", t)
@@ -194,10 +199,13 @@ class AgentRunner:
         new_messages: list[dict] = []
         last_content = ""
         round_num = 0
+        round_limit = self.max_rounds
+        if route.mode.value == "image_generation":
+            round_limit = max(round_limit, COMPLEX_SCENE_MIN_ROUNDS)
 
         await self._dispatch_event(EventType.AGENT_START, {"message": message}, run_id=run_id)
 
-        for round_num in range(1, self.max_rounds + 1):
+        for round_num in range(1, round_limit + 1):
             plan_result = await self._plan(messages, tool_defs, run_id=run_id, round_num=round_num)
             if plan_result is None:
                 break
@@ -237,6 +245,24 @@ class AgentRunner:
             last_content = response.content or last_content
 
             if not response.tool_calls:
+                if self._complex_scene_incomplete(route.mode.value, all_tool_calls):
+                    assistant_msg = {
+                        "role": "assistant",
+                        "content": response.content or "",
+                    }
+                    continuation_msg = {
+                        "role": "user",
+                        "content": (
+                            "The complex editable scene is not complete yet. "
+                            "Continue drawing the missing layers, named subjects, "
+                            "spatial relationships, and visual details. Use several "
+                            "drawing tool calls in this response, and only finish "
+                            "after at least 6 successful drawing operations."
+                        ),
+                    }
+                    messages.extend([assistant_msg, continuation_msg])
+                    new_messages.extend([assistant_msg, continuation_msg])
+                    continue
                 break
 
             observe_msg = self._observe(response)
@@ -245,7 +271,7 @@ class AgentRunner:
             for tr in act_results:
                 if not tr["is_error"]:
                     if tr["code"]:
-                        all_code.append(tr["code"])
+                        all_code.append(f"{{\n{tr['code']}\n}}")
                     if tr["description"]:
                         all_desc.append(tr["description"])
                 all_tool_calls.append({
@@ -298,6 +324,17 @@ class AgentRunner:
             rounds=round_num,
             new_messages=new_messages,
         )
+
+    @staticmethod
+    def _complex_scene_incomplete(mode: str, tool_calls: list[dict]) -> bool:
+        if mode != "image_generation":
+            return False
+        successful_draw_calls = sum(
+            1 for call in tool_calls
+            if not call.get("is_error")
+            and str(call.get("name", "")).startswith(DRAWING_TOOL_PREFIX)
+        )
+        return successful_draw_calls < COMPLEX_SCENE_MIN_DRAW_CALLS
 
     async def _plan(self, messages: list[dict], tools: list[dict], run_id: str = "", round_num: int = 0) -> tuple[LLMResponse, str | None] | None:
         model = getattr(self.provider, "model", "")

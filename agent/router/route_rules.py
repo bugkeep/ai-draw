@@ -50,6 +50,7 @@ _cr(r"画一个?\s*(?:直线|线段|线|线条)", DrawingMode.PRIMITIVE, 0.50, "
 _cr(r"画一个?\s*(?:三角形|三角)", DrawingMode.PRIMITIVE, 0.50, "explicit triangle request")
 _cr(r"画一个?\s*(?:椭圆|椭圆形|椭圆)", DrawingMode.PRIMITIVE, 0.50, "explicit ellipse request")
 _cr(r"画一个?\s*(?:五角星|星星)", DrawingMode.PRIMITIVE, 0.40, "explicit star request")
+_cr(r"画\s*(?:一[个棵只朵座条颗株])?\s*(?:树|树木|花朵|花|草|叶子|森林)", DrawingMode.PRIMITIVE, 0.45, "nature object → draw with primitives")
 _cr(r"画一个?\s*(?:多边形|五边形|六边形)", DrawingMode.PRIMITIVE, 0.50, "explicit polygon request")
 _cr(r"画一个?\s*(?:路径|path|bezier|贝塞尔|曲线)", DrawingMode.PRIMITIVE, 0.50, "explicit path/curve request")
 _cr(r"画一个?\s*(?:文本|文字|标签|标注)", DrawingMode.PRIMITIVE, 0.50, "explicit text request")
@@ -70,7 +71,7 @@ _cr(_VECTOR_WORD + r"(?:爱心|心形|心)", DrawingMode.VECTOR_ASSET, 0.50, "he
 _cr(_VECTOR_WORD + r"(?:汽车|车|轿车|卡车|公交|自行车|飞机|火车|船|摩托车)", DrawingMode.VECTOR_ASSET, 0.50, "vehicle icon")
 _cr(_VECTOR_WORD + r"(?:猫|狗|兔子|小鸟|鱼|蝴蝶|蜜蜂|熊猫|老虎|狮子|企鹅|大象|猴子)", DrawingMode.VECTOR_ASSET, 0.50, "animal icon")
 _cr(_VECTOR_WORD + r"(?:云|云朵|太阳|月亮|星星|彩虹|闪电|雪花)", DrawingMode.VECTOR_ASSET, 0.50, "weather icon")
-_cr(_VECTOR_WORD + r"(?:树|花朵|花|草|叶子|树木|森林)", DrawingMode.VECTOR_ASSET, 0.45, "nature icon")
+_cr(_VECTOR_WORD + r"(?:花朵|花|草|叶子|森林)", DrawingMode.VECTOR_ASSET, 0.45, "nature icon")
 _cr(_VECTOR_WORD + r"(?:房子|房屋|城堡|建筑|楼房|教堂|塔)", DrawingMode.VECTOR_ASSET, 0.45, "building icon")
 _cr(_VECTOR_WORD + r"(?:苹果|香蕉|草莓|西瓜|水果|食物|汉堡|披萨|蛋糕|冰淇淋)", DrawingMode.VECTOR_ASSET, 0.45, "food icon")
 _cr(_VECTOR_WORD + r"(?:电脑|手机|鼠标|键盘|打印机|屏幕|相机|电视机)", DrawingMode.VECTOR_ASSET, 0.45, "device icon")
@@ -92,6 +93,8 @@ _cr(r"(?:找一张|搜索).*(?:照片|图片|图)", DrawingMode.RASTER_ASSET, 0.
 
 _cr(r"(?:场景|街景|风景|风景画|山水|日落|日出|夜景)", DrawingMode.IMAGE_GENERATION, 0.50, "scene description")
 _cr(r"(?:骑.*的.*|戴.*的.*|穿着.*的.*)", DrawingMode.IMAGE_GENERATION, 0.40, "character with modifiers")
+_cr(r"(?:复杂|细节丰富|丰富细节|完整画面|完整场景|一幅.*(?:画|插画)|插画)", DrawingMode.IMAGE_GENERATION, 0.55, "explicit detailed composition")
+_cr(r"(?:背景|前景|远处|近处|周围|天空|地面).*(?:还有|以及|同时|旁边|远处|近处|前景|背景)", DrawingMode.IMAGE_GENERATION, 0.45, "multi-layer composition")
 
 # ── Negative rules (de-boosts for misclassification) ────────────────────────
 

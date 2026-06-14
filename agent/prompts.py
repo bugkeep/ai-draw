@@ -44,9 +44,26 @@ for photo requests.
 
 def image_generation_prompt() -> str:
     return """--- Image Generation Mode ---
-The user wants an original, complex scene.  This requires generating a new
-image rather than searching existing assets.  Fall back to the image
-generation tool when available.
+The user wants an original, complex scene.  No raster text-to-image tool is
+available, so build a detailed, editable vector scene with the drawing tools.
+
+COMPLETION RULES:
+1. Plan the composition as background, midground, foreground, and detail
+   layers before drawing.
+2. Assign distinct coordinates and sizes across the 800x600 canvas.  Do NOT
+   center every unspecified element or stack unrelated subjects on top of
+   each other.
+3. Draw every subject and spatial relationship explicitly named by the user.
+4. Use multiple shapes and paths for important subjects instead of one
+   placeholder shape.  A complex scene should normally contain at least 6
+   drawing operations.
+5. Batch independent drawing tool calls in the same response when possible.
+6. Continue adding missing layers and details after tool results.  Do NOT
+   claim the scene is complete after drawing only one or two objects.
+7. Draw large background elements first and small foreground details last so
+   Fabric.js stacking order remains correct.
+8. Be honest that the result is an editable vector illustration, not a
+   photorealistic generated image.
 """
 
 
@@ -104,12 +121,14 @@ Available tools:
 Rules:
 1. Use tools to execute drawing operations - do NOT generate code directly
 2. If the user describes something complex (e.g. "draw a smiley face"), break it down into multiple simple tool calls
-3. Choose the right tool: triangles → draw_polygon, curves → draw_path, straight multi-point lines → draw_polyline
-4. Choose reasonable parameters (coordinates, colors, sizes) based on the description
-5. If no position is specified, center the object on the canvas
-6. If no color or a named color is specified, map Chinese color names: 红色→red, 蓝色→blue, 绿色→green, 黄色→yellow, 黑色→black, 白色→white, 紫色→purple, 橙色→orange, 粉色→pink, 灰色→gray
-7. All important objects should get a stable object_id and semantic_type
-8. Be concise in your text response - confirm what you drew
+3. Before finishing, verify that every object explicitly requested by the user has a corresponding successful drawing tool call
+4. Batch independent tool calls in one response whenever possible; do not spend one round per tiny detail
+5. Choose the right tool: triangles → draw_polygon, curves → draw_path, straight multi-point lines → draw_polyline
+6. Choose reasonable parameters (coordinates, colors, sizes) based on the description
+7. If no position is specified, center the object on the canvas
+8. If no color or a named color is specified, map Chinese color names: 红色→red, 蓝色→blue, 绿色→green, 黄色→yellow, 黑色→black, 白色→white, 紫色→purple, 橙色→orange, 粉色→pink, 灰色→gray
+9. All important objects should get a stable object_id and semantic_type
+10. Be concise in your text response - confirm what you drew
 
 Handling user feedback:
 - If the user says "不好看" / "不像" / "重新画" / "改一下" / "换个风格" etc., use delete_object(selector="all") or clear_canvas first, then redraw with better parameters
@@ -156,12 +175,14 @@ Available drawing tools:
    - Triangle, star, roof → draw_polygon with 3+ points
    - Open line through multiple points → draw_polyline
    - Smooth curve, bezier, arc → draw_path with SVG path syntax
-2. Choose reasonable parameters (coordinates, colors, sizes) based on the description
-3. If no position is specified, center the object on the canvas
-4. If no color is specified, use a random bright color
-5. Map Chinese color names: 红色→red, 蓝色→blue, 绿色→green, 黄色→yellow, 黑色→black, 白色→white, 紫色→purple, 橙色→orange, 粉色→pink, 灰色→gray
-6. Position mapping: 左上角→(100,100), 右上角→(700,100), 左下角→(100,500), 右下角→(500,500), 中间/中央→(400,300)
-7. All important objects should get a stable object_id and semantic_type so they can be referenced later
+2. Before finishing, verify that every object explicitly requested by the user has a corresponding successful drawing tool call
+3. Batch independent tool calls in one response whenever possible; do not spend one round per tiny detail
+4. Choose reasonable parameters (coordinates, colors, sizes) based on the description
+5. If no position is specified, center the object on the canvas
+6. If no color is specified, use a random bright color
+7. Map Chinese color names: 红色→red, 蓝色→blue, 绿色→green, 黄色→yellow, 黑色→black, 白色→white, 紫色→purple, 橙色→orange, 粉色→pink, 灰色→gray
+8. Position mapping: 左上角→(100,100), 右上角→(700,100), 左下角→(100,500), 右下角→(500,500), 中间/中央→(400,300)
+9. All important objects should get a stable object_id and semantic_type so they can be referenced later
 
 --- Handling User Feedback ---
 When the user is dissatisfied with what was drawn:
