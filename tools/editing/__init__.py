@@ -6,6 +6,10 @@ from .rotate import RotateObjectTool
 from .arrange import ArrangeObjectTool
 from .align import AlignObjectTool
 from .distribute import DistributeObjectsTool
+from .duplicate import DuplicateObjectTool
+from .group import GroupObjectsTool, UngroupObjectsTool
+from .opacity import ChangeOpacityTool
+from .stroke import ChangeStrokeTool
 
 __all__ = [
     "DeleteObjectTool",
@@ -16,4 +20,9 @@ __all__ = [
     "ArrangeObjectTool",
     "AlignObjectTool",
     "DistributeObjectsTool",
+    "DuplicateObjectTool",
+    "GroupObjectsTool",
+    "UngroupObjectsTool",
+    "ChangeOpacityTool",
+    "ChangeStrokeTool",
 ]

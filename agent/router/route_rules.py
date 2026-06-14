@@ -33,6 +33,10 @@ _cr(r"(?:旋转|转动|转一下|rotate|顺时针|逆时针)", DrawingMode.CANVA
 _cr(r"(?:置顶|置底|最前面|最后面|上一层|下一层|上移一层|下移一层|bring.?front|send.?back)", DrawingMode.CANVAS_EDIT, 0.50, "explicit stacking order request")
 _cr(r"(?:对齐|居中|左对齐|右对齐|顶部对齐|底部对齐|align)", DrawingMode.CANVAS_EDIT, 0.50, "explicit align request")
 _cr(r"(?:均匀分布|平均分布|等距|横向分布|纵向分布|distribute)", DrawingMode.CANVAS_EDIT, 0.50, "explicit distribute request")
+_cr(r"(?:复制|拷贝|再来一个|一样的|duplicate|copy)", DrawingMode.CANVAS_EDIT, 0.50, "explicit duplicate request")
+_cr(r"(?:成组|组合|合并成组|取消成组|取消组合|拆开组合|ungroup|group)", DrawingMode.CANVAS_EDIT, 0.50, "explicit group request")
+_cr(r"(?:透明|半透明|不透明度|透明度|opacity)", DrawingMode.CANVAS_EDIT, 0.50, "explicit opacity request")
+_cr(r"(?:描边|边框|轮廓线|outline|stroke)", DrawingMode.CANVAS_EDIT, 0.50, "explicit stroke request")
 # 改颜色
 _cr(r"(?:改|换|变成).*[颜颜]色", DrawingMode.CANVAS_EDIT, 0.50, "explicit color change")
 _cr(r"(?:改成|变为|变成)\s*(?:红色|蓝色|绿色|黄色|黑色|白色|紫色|橙色|粉色|灰色)", DrawingMode.CANVAS_EDIT, 0.50, "explicit recolor")

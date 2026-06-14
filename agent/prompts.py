@@ -121,11 +121,16 @@ RULES:
 6. For layer order: arrange_object(object_id=..., action="bring_front"/"send_back"/"bring_forward"/"send_backward").
 7. For alignment: align_object(selector="all" or object_id=..., mode="left"/"center"/"right"/"top"/"middle"/"bottom").
 8. For spacing: distribute_objects(axis="horizontal"/"vertical").
-9. For deletion: delete_object(object_id=...).
-10. For replacement: use replace_vector_asset(object_id=..., candidate_asset_id=...).
+9. For duplication: duplicate_object(object_id=... or selector="last", offset_x=..., offset_y=...).
+10. For grouping: group_objects(object_ids=[...]) or group_objects(selector="all").
+11. For ungrouping: ungroup_objects(object_id=... or selector="last").
+12. For opacity: change_opacity(object_id=..., opacity=0.5).
+13. For outline/stroke: change_stroke(object_id=..., stroke=..., stroke_width=...).
+14. For deletion: delete_object(object_id=...).
+15. For replacement: use replace_vector_asset(object_id=..., candidate_asset_id=...).
    Check available candidates first with list_asset_candidates().
-11. Undo/redo via undo() / redo().
-12. Always reference objects by object_id, NOT by array index.
+16. Undo/redo via undo() / redo().
+17. Always reference objects by object_id, NOT by array index.
 """
 
 
@@ -165,6 +170,10 @@ Available tools:
 - arrange_object — change stacking order
 - align_object — align one object or all objects
 - distribute_objects — evenly distribute all objects
+- duplicate_object — duplicate an object with an offset
+- group_objects / ungroup_objects — group or ungroup objects
+- change_opacity — set object opacity
+- change_stroke — set object outline color and width
 - search_vector_asset — search SVG for common icons and objects
 - import_vector_asset — import a chosen SVG into the canvas
 - replace_vector_asset — replace an imported asset
@@ -189,7 +198,7 @@ Rules:
 
 Handling user feedback:
 - If the user says "不好看" / "不像" / "重新画" / "改一下" / "换个风格" etc., use delete_object(selector="all") or clear_canvas first, then redraw with better parameters
-- If the user asks to modify an existing element (改颜色, 换颜色, 移动, 挪一下, 放大, 缩小, 旋转, 置顶, 置底, 对齐, 均匀分布), use the canvas editing tools
+- If the user asks to modify an existing element (改颜色, 换颜色, 移动, 挪一下, 放大, 缩小, 旋转, 置顶, 置底, 对齐, 均匀分布, 复制, 成组, 取消成组, 透明, 描边), use the canvas editing tools
 - Always check Current canvas state above before responding to feedback
 - When the canvas is not empty and the user gives new instructions, decide whether to add to or replace the existing content
 
@@ -229,6 +238,10 @@ Available drawing tools:
 - arrange_object — change stacking order.
 - align_object — align one object or all objects.
 - distribute_objects — evenly distribute all objects.
+- duplicate_object — duplicate an object with an offset.
+- group_objects / ungroup_objects — group or ungroup objects.
+- change_opacity — set object opacity.
+- change_stroke — set object outline color and width.
 - search_vector_asset — search SVG for common icons and objects
 - import_vector_asset — import a chosen SVG into the canvas
 - replace_vector_asset — replace an imported asset
@@ -270,6 +283,11 @@ For modification requests:
 - "置底/放到最后面" → arrange_object(action="send_back")
 - "居中/左对齐/底部对齐" → align_object(mode="center"/"left"/"bottom")
 - "横向均匀分布/纵向均匀分布" → distribute_objects(axis="horizontal"/"vertical")
+- "复制一个/再来一个一样的" → duplicate_object(selector="last")
+- "把它们成组/组合起来" → group_objects(selector="all") or group_objects(object_ids=[...])
+- "取消成组/拆开组合" → ungroup_objects(selector="last")
+- "半透明/透明度50%" → change_opacity(opacity=0.5)
+- "加黑色描边/边框粗一点" → change_stroke(stroke="black", stroke_width=...)
 
 --- Complex Objects Guide ---
 For abstract concepts (树/tree, 房子/house, 人/person, 花/flower, 山/mountain, 太阳/sun):
