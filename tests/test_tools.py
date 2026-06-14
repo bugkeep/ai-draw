@@ -26,6 +26,7 @@ from tools.editing.mask import ApplyClipMaskTool
 from tools.editing.blend import ChangeBlendModeTool
 from tools.editing.filter import ApplyImageFilterTool
 from tools.editing.boolean import BooleanShapeOperationTool
+from tools.editing.state import SetObjectLockTool, SetObjectVisibilityTool
 from tools.history.undo import UndoTool
 from tools.history.redo import RedoTool
 from tools.history.clear import ClearCanvasTool
@@ -692,6 +693,63 @@ class TestApplyImageFilterTool:
         assert result.is_error
 
 
+class TestSetObjectLockTool:
+    def test_definition(self):
+        defn = SetObjectLockTool().definition()
+        assert defn.name == "set_object_lock"
+
+    def test_execute_locks_object_by_id(self):
+        result = SetObjectLockTool().execute(object_id="circle_1", locked=True)
+        assert not result.is_error
+        assert 'objectId === "circle_1"' in result.code
+        assert "selectable: !true" in result.code
+        assert "evented: !true" in result.code
+        assert "lockMovementX: true" in result.code
+        assert "lockedByVoice = true" in result.code
+        assert result.data["locked"] is True
+
+    def test_execute_unlocks_all_objects(self):
+        result = SetObjectLockTool().execute(selector="all", locked=False)
+        assert not result.is_error
+        assert "canvas.getObjects()" in result.code
+        assert "lockRotation: false" in result.code
+        assert "hasControls: !false" in result.code
+
+    def test_execute_filters_by_type_and_color(self):
+        result = SetObjectLockTool().execute(type="circle", color="blue", locked=True)
+        assert not result.is_error
+        assert 'obj.semanticType === "circle"' in result.code
+        assert 'obj.fill === "blue"' in result.code
+
+    def test_rejects_invalid_selector(self):
+        result = SetObjectLockTool().execute(selector="unknown", locked=True)
+        assert result.is_error
+
+
+class TestSetObjectVisibilityTool:
+    def test_definition(self):
+        defn = SetObjectVisibilityTool().definition()
+        assert defn.name == "set_object_visibility"
+
+    def test_execute_hides_last_object(self):
+        result = SetObjectVisibilityTool().execute(selector="last", visible=False)
+        assert not result.is_error
+        assert "canvas.getObjects().at(-1)" in result.code
+        assert "visible: false" in result.code
+        assert "hiddenByVoice = !false" in result.code
+        assert result.data["visible"] is False
+
+    def test_execute_shows_object_by_id(self):
+        result = SetObjectVisibilityTool().execute(object_id="rect_1", visible=True)
+        assert not result.is_error
+        assert 'objectId === "rect_1"' in result.code
+        assert "visible: true" in result.code
+
+    def test_rejects_invalid_selector(self):
+        result = SetObjectVisibilityTool().execute(selector="abc", visible=True)
+        assert result.is_error
+
+
 class TestUndoTool:
     def test_definition(self):
         defn = UndoTool().definition()
@@ -729,7 +787,7 @@ class TestToolRegistryIntegration:
         reg = ToolRegistry()
         for tool_cls in ALL_TOOLS:
             reg.register(tool_cls())
-        assert len(reg) == 51
+        assert len(reg) == 53
 
     def test_get_definitions(self):
         from tools import ALL_TOOLS
@@ -765,5 +823,7 @@ class TestToolRegistryIntegration:
         assert "boolean_shape_operation" in names
         assert "change_blend_mode" in names
         assert "apply_image_filter" in names
+        assert "set_object_lock" in names
+        assert "set_object_visibility" in names
         assert "undo" in names
         assert "clear_canvas" in names
