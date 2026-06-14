@@ -25,6 +25,18 @@ test('recognizes low-latency canvas commands', () => {
   assert.equal(parseVoiceCommand('取消正在执行的任务').type, 'stop_current')
   assert.equal(parseVoiceCommand('取消').type, 'cancel')
   assert.equal(parseVoiceCommand('再试一次').type, 'retry')
+  assert.deepEqual(
+    parseVoiceCommand('导出当前画布为PNG'),
+    { type: 'export_canvas', text: '导出当前画布为PNG', format: 'png' },
+  )
+  assert.deepEqual(
+    parseVoiceCommand('保存作品为SVG'),
+    { type: 'export_canvas', text: '保存作品为SVG', format: 'svg' },
+  )
+  assert.deepEqual(
+    parseVoiceCommand('下载JPG图片'),
+    { type: 'export_canvas', text: '下载JPG图片', format: 'jpeg' },
+  )
 })
 
 test('keeps drawing instructions for the agent', () => {

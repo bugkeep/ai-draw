@@ -58,6 +58,48 @@ function clear() {
   return true
 }
 
+function downloadDataUrl(dataUrl, filename) {
+  const link = document.createElement('a')
+  link.href = dataUrl
+  link.download = filename
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
+function exportCanvas(format = 'png') {
+  if (!canvas) return { success: false, error: 'Canvas not ready' }
+  const safeFormat = ['png', 'jpeg', 'svg'].includes(format) ? format : 'png'
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const filename = `ai-draw-${timestamp}.${safeFormat === 'jpeg' ? 'jpg' : safeFormat}`
+
+  try {
+    canvas.discardActiveObject()
+    canvas.renderAll()
+
+    if (safeFormat === 'svg') {
+      const svg = canvas.toSVG()
+      const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      downloadDataUrl(url, filename)
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } else {
+      const dataUrl = canvas.toDataURL({
+        format: safeFormat,
+        quality: safeFormat === 'jpeg' ? 0.92 : 1,
+        multiplier: 1,
+      })
+      downloadDataUrl(dataUrl, filename)
+    }
+
+    return { success: true, format: safeFormat, filename }
+  } catch (e) {
+    console.error('Export canvas error:', e)
+    return { success: false, error: e.message || 'Export failed' }
+  }
+}
+
 async function executeCode(code) {
   try {
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
@@ -167,7 +209,7 @@ function getState() {
   }
 }
 
-defineExpose({ undo, redo, clear, executeCode, importSVG, getState })
+defineExpose({ undo, redo, clear, exportCanvas, executeCode, importSVG, getState })
 </script>
 
 <template>

@@ -14,6 +14,12 @@ const RECOGNITION_CORRECTIONS = [
   [/人人旁边/gu, '人旁边'],
 ]
 
+const EXPORT_FORMAT_RULES = [
+  { format: 'svg', pattern: /\bsvg\b|矢量|可编辑/iu },
+  { format: 'jpeg', pattern: /\bjpeg\b|\bjpg\b|照片/iu },
+  { format: 'png', pattern: /\bpng\b|透明/iu },
+]
+
 const COMMAND_RULES = [
   { type: 'undo', pattern: /^(?:撤销|撤消|回退|返回上一步|上一步)(?:操作)?$/u },
   { type: 'redo', pattern: /^(?:重做|恢复|恢复上一步|再做一次)(?:操作)?$/u },
@@ -23,7 +29,18 @@ const COMMAND_RULES = [
   { type: 'stop_current', pattern: /^(?:停止|取消|终止)(?:当前|正在执行的)?(?:绘图|任务|操作)$/u },
   { type: 'cancel', pattern: /^(?:取消|算了|不要|不用了|不要清空)$/u },
   { type: 'retry', pattern: /^(?:重试|再试一次|重新执行|再执行一次)$/u },
+  {
+    type: 'export_canvas',
+    pattern: /^(?:导出|保存|下载|存成|另存为).{0,40}$/u,
+  },
 ]
+
+function detectExportFormat(text) {
+  for (const rule of EXPORT_FORMAT_RULES) {
+    if (rule.pattern.test(text)) return rule.format
+  }
+  return 'png'
+}
 
 export function normalizeVoiceTranscript(rawText) {
   let text = String(rawText || '')
@@ -46,7 +63,12 @@ export function parseVoiceCommand(rawText) {
   if (!text || NOISE_ONLY.test(text)) return { type: 'empty', text: '' }
 
   for (const rule of COMMAND_RULES) {
-    if (rule.pattern.test(text)) return { type: rule.type, text }
+    if (rule.pattern.test(text)) {
+      if (rule.type === 'export_canvas') {
+        return { type: rule.type, text, format: detectExportFormat(text) }
+      }
+      return { type: rule.type, text }
+    }
   }
 
   return { type: 'draw', text }
