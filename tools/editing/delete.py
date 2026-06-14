@@ -5,19 +5,43 @@ class DeleteObjectTool(BaseTool):
     def definition(self) -> ToolDefinition:
         return ToolDefinition(
             name="delete_object",
-            description="Delete object(s) from canvas by type or color",
+            description="Delete object(s) from canvas by selector, type, or color",
             parameters=[
+                ToolParameter(name="selector", type="string", description="Object selector: 'last', 'all', or index number (optional, mutually exclusive with type/color)", required=False),
                 ToolParameter(name="type", type="string", description="Object type to delete (circle, rect, line, text, ellipse)", required=False),
                 ToolParameter(name="color", type="string", description="Object color to delete", required=False),
             ],
         )
 
     def execute(self, **kwargs) -> ToolResult:
+        selector = kwargs.get("selector", "")
         obj_type = kwargs.get("type", "")
         color = kwargs.get("color", "")
 
+        if selector:
+            if selector == "last":
+                code = (
+                    f"const last = canvas.getObjects().at(-1);"
+                    f"if (last) {{ canvas.remove(last); canvas.renderAll(); }}"
+                )
+                description = "Deleted the last object"
+            elif selector == "all":
+                code = "canvas.clear(); canvas.backgroundColor = '#ffffff'; canvas.renderAll();"
+                description = "Deleted all objects"
+            else:
+                try:
+                    idx = int(selector)
+                except ValueError:
+                    return ToolResult(is_error=True, error=f"Invalid selector: {selector}")
+                code = (
+                    f"const obj = canvas.getObjects()[{idx}];"
+                    f"if (obj) {{ canvas.remove(obj); canvas.renderAll(); }}"
+                )
+                description = f"Deleted object at index {idx}"
+            return ToolResult(code=code, description=description, data={"selector": selector})
+
         if not obj_type and not color:
-            return ToolResult(is_error=True, error="Must specify type or color to delete")
+            return ToolResult(is_error=True, error="Must specify selector, type, or color to delete")
 
         conditions = []
         if obj_type:

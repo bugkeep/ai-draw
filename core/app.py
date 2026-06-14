@@ -158,6 +158,7 @@ class SessionHandler:
     async def handle_send_message(self, payload: dict) -> dict:
         session_id = payload.get("session_id", "")
         message = payload.get("message", "")
+        canvas_state = payload.get("canvas_state", {})
 
         if not session_id or not message:
             return {"error": "session_id and message are required"}
@@ -187,6 +188,7 @@ class SessionHandler:
         # 3. start run with session context restored
         task = asyncio.create_task(
             self._run_with_session(message, session, store, run_id,
+                                   canvas_state=canvas_state,
                                    skill=skill, skill_args=skill_args)
         )
         self._running_runs[run_id] = task
@@ -196,6 +198,7 @@ class SessionHandler:
 
     async def _run_with_session(self, message: str, session: dict,
                                  store, run_id: str,
+                                 canvas_state: dict | None = None,
                                  skill=None, skill_args: str = ""):
         try:
             if skill is not None:
@@ -220,6 +223,7 @@ class SessionHandler:
             else:
                 result = await self._daemon._runner.run_and_capture(
                     message=message,
+                    canvas_state=canvas_state,
                     run_id=run_id,
                     session=session,
                     store=store,
