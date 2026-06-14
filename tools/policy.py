@@ -47,6 +47,7 @@ class ToolPolicy:
         "change_fill", "apply_gradient_fill", "copy_object_style",
         "crop_object", "apply_clip_mask",
         "change_blend_mode", "apply_image_filter",
+        "boolean_shape_operation",
         "undo", "redo", "clear_canvas",
         "import_vector_asset", "replace_vector_asset",
     })
