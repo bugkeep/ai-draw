@@ -14,6 +14,11 @@ MCP_CONFIG_PATH = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "config.json")
 )
 
+# Global MCP config in the user's home directory, merged with the project config.
+GLOBAL_MCP_CONFIG = os.path.normpath(
+    os.path.join(os.path.expanduser("~"), ".claude", "mcp_servers.json")
+)
+
 
 class McpManager:
     """Manages multiple MCP server connections and their tool wrappers.
@@ -85,11 +90,22 @@ class McpManager:
         self.tools.clear()
 
     def _load_config(self) -> list[dict]:
-        if not os.path.isfile(self._config_path):
-            return []
-        try:
-            with open(self._config_path, encoding="utf-8") as f:
-                data = json.load(f)
-            return data.get("servers", [])
-        except Exception:
-            return []
+        """Load servers from project config and global config, merged."""
+        servers = []
+        seen_names = set()
+
+        for path in (self._config_path, GLOBAL_MCP_CONFIG):
+            if not os.path.isfile(path):
+                continue
+            try:
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+                for server in data.get("servers", []):
+                    name = server.get("name", "")
+                    if name and name not in seen_names:
+                        servers.append(server)
+                        seen_names.add(name)
+            except Exception:
+                continue
+
+        return servers

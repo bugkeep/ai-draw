@@ -55,6 +55,9 @@ class EventType(Enum):
     SUB_AGENT_START = "sub_agent_start"
     SUB_AGENT_STOP = "sub_agent_stop"
 
+    # 技能事件
+    SKILL_INVOKED = "skill_invoked"
+
 
 @dataclass
 class BaseEvent:

@@ -197,6 +197,15 @@ class SessionHandler:
                                  skill=None, skill_args: str = ""):
         try:
             if skill is not None:
+                # dispatch skill.invoked event
+                await self._daemon.event_bus.dispatch(
+                    BaseEvent(EventType.SKILL_INVOKED, {
+                        "command": skill.command,
+                        "args": skill_args,
+                        "tools": skill.tools,
+                        "prompt_preview": skill.prompt[:200],
+                    }, run_id=run_id)
+                )
                 # skill mode — use skill prompt + restricted registry
                 self._daemon._runner._build_skill_registry(skill)
                 self._daemon._runner.system_prompt = skill.prompt

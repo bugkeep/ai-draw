@@ -537,11 +537,17 @@ class AgentRunner:
         """Replace the tool registry with one restricted to the skill's whitelist.
 
         Also registers ``spawn_agent`` so the agent can delegate work to
-        sub-agents.
+        sub-agents.  The permission policy's ``allow_only`` is set to
+        the skill's tool list so that even if a tool somehow leaks in, it
+        is blocked at the policy level.
         """
         allowed = set(skill.tools or [])
         new_registry = ToolRegistry()
         new_registry.permissions = self.registry.permissions
+
+        # lock policy to the skill's whitelist
+        if new_registry.permissions and new_registry.permissions.policy:
+            new_registry.permissions.policy.allow_only = list(allowed)
 
         for name in allowed:
             if name == "spawn_agent":
