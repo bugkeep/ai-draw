@@ -69,11 +69,13 @@ Agent 可以通过 `search_references` 使用免费的公共搜索查阅具体�
 | `frontend-app/` | React、Excalidraw、绘图对话和实时事件展示 |
 | `studio/actions.py` | 绘图动作校验与原生 Excalidraw 对象构建 |
 | `studio/pen.py` | 平滑画笔曲线、共享坐标变换和路径修改参数 |
+| `studio/pen_geometry.py` | 保留路径中心线的原生采样、文档恢复及导出的笔画终点 |
 | `studio/eraser.py` | 整条与局部擦除、旋转几何、剩余曲线和对象保护 |
 | `studio/vision.py`、`studio/renderer.py` | 当前全图与局部图片、SQLite 图片记录、原生 Excalidraw 渲染进程 |
 | `studio/research.py` | 免费公共检索、网页正文读取、相关步骤筛选和画布资料缓存 |
 | `studio/reference_images.py` | 参考图片检索与 SQLite 保存、实际图片上下文、区域轮廓提取和原生笔画映射 |
 | `studio/agents.py`、`studio/agent_tools.py` | 主 Agent 工具循环所用上下文、模型请求和工具定义 |
+| `studio/prompts.py` | 主 Agent 与绘图子 Agent 的职责、阶段交付与审图规则 |
 | `studio/agent_manager.py` | 子 Agent 身份、输入排队、并发执行、等待和关闭恢复 |
 | `studio/agent_store.py` | Agent 私有上下文、执行检查点、调用幂等和绘图结果 |
 | `studio/memory.py` | 成功工具摘要、工作记忆、历史检索、精确取回和未读错误补充 |

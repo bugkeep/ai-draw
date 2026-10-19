@@ -3,7 +3,6 @@ import asyncio
 import hashlib
 import json
 import os
-import shutil
 import time
 from pathlib import Path
 
@@ -14,6 +13,7 @@ from server.app import create_app
 from studio.renderer import CanvasRenderer
 from studio.vision import scene_digest
 from studio.quality import review_scene_key
+from .evaluation_artifacts import capture_implementation
 
 
 async def render_final_document(document):
@@ -33,25 +33,13 @@ def main():
     parser.add_argument("--output-dir", type=Path, default=Path("runs/drawing-quality"))
     parser.add_argument("--recheck", action="store_true", help="Recheck saved evaluation tasks without requesting new drawings")
     args = parser.parse_args()
-    root = Path(__file__).resolve().parent.parent
-    implementation_files = [path for package in ('studio', 'server')
-                            for path in sorted((root / package).rglob('*.py'))]
-    implementation_files.extend(root / name for name in ('requirements.txt', 'requirements-dev.txt',
-        'frontend-app/src/renderCanvas.js', 'frontend-app/package.json', 'frontend-app/package-lock.json',
-        'scripts/evaluate_quality.py', 'scripts/verify_browser.py', 'frontend-app/scripts/quality_evaluation.js'))
-    implementation = {path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
-                      for path in implementation_files}
     dataset_hash = hashlib.sha256(args.dataset.read_bytes()).hexdigest()
     cases = json.loads(args.dataset.read_text(encoding="utf-8"))["cases"]
     selected = set(args.cases.split(",")) if args.cases else {case["id"] for case in cases}
     if selected - {case["id"] for case in cases}:
         raise ValueError("Unknown evaluation case")
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    if not args.recheck:
-        for name in implementation:
-            snapshot = args.output_dir / 'implementation' / name
-            snapshot.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(root / name, snapshot)
+    implementation = capture_implementation(args.output_dir, snapshot=not args.recheck)
     results = []
     if args.database:
         if args.database.resolve() == Path('runs/studio.sqlite3').resolve():

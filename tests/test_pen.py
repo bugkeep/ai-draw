@@ -96,6 +96,8 @@ def test_reshape_rotated_stroke_uses_final_canvas_coordinates():
     draft, _, _, _ = prepare_drawing_tool('reshape_path', {
         'element_id': target['id'], 'points': [[100, -50], [100, 50]], 'smooth': False,
     }, scene, scene['elements'], [])
-    assert list(element_geometry(draft[0]).coords) == [(100, -50), (100, 50)]
+    geometry = element_geometry(draft[0])
+    assert tuple(geometry.coords[0]) == (100, -50) and tuple(geometry.coords[-1]) == (100, 50)
+    assert all(point[0] == 100 and -50 <= point[1] <= 50 for point in geometry.coords)
     assert draft[0]['id'] == target['id'] and draft[0]['customData'] == target['customData']
     assert target['angle'] == math.pi / 2

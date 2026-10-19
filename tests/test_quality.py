@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from studio.actions import apply_action, create_native_element
-from studio.quality import DrawingQuality, drawing_change_summary, parse_assessment_response, review_scene_key
+from studio.quality import DrawingQuality, assessment_messages, drawing_change_summary, parse_assessment_response, review_scene_key
 from studio.settings import ModelConfig, ModelSettings
 from studio.runtime import DrawingRuntime
 from studio.store import StudioStore
@@ -74,18 +74,60 @@ def test_baseline_is_task_scoped_durable_and_does_not_follow_later_edits(tmp_pat
     asyncio.run(check())
 
 
-@pytest.mark.parametrize('kind', ['malformed', 'local-edit'])
+@pytest.mark.parametrize('kind', ['malformed', 'local-edit', 'unknown-field'])
 def test_actual_recorded_reviewer_responses_cannot_turn_invalid_json_into_approval(kind):
     fixture = json.loads((Path(__file__).parent / 'fixtures' / f'quality-{kind}-response.json').read_text(encoding='utf-8'))
     raw = fixture['response']['tool_calls'][0]['function']['arguments']
     assert hashlib.sha256(raw.encode()).hexdigest() == fixture['argument_sha256']
     assessment, failure = parse_assessment_response(fixture['response'])
-    if kind == 'malformed':
+    if kind != 'local-edit':
         assert assessment is None and failure['ok'] is False
         assert failure['review_response'] == fixture['response'] and 'invalid assessment' in failure['error']
     else:
         assert failure is None and assessment.goal_satisfied
         assert all(not criterion.applicable or criterion.passed for criterion in assessment.criteria)
+
+
+def test_reviewer_receives_its_own_full_schema_error_only_for_the_same_task_pixels_and_configuration(tmp_path):
+    async def check():
+        store = StudioStore(tmp_path / 'reviewer-feedback.sqlite3')
+        runtime = DrawingRuntime(store, ModelSettings(store))
+        config = ModelConfig(provider='ark', model='ark-code-latest', api_base='https://example.org/model')
+        try:
+            session = store.create_session()
+            task = store.create_task(session['id'])
+            initial = session['document']
+            runtime.quality.begin(task['id'], initial, '画一个圆')
+            key, cached = runtime.quality.current_review(task['id'], config, initial)
+            assert cached is None
+            fixture = json.loads((Path(__file__).parent / 'fixtures/quality-unknown-field-response.json').read_text(encoding='utf-8'))
+            assessment, failure = parse_assessment_response(fixture['response'])
+            assert assessment is None and failure['error_kind'] == 'assessment_format'
+            payload = {'review_key': key, 'scene_key': review_scene_key(initial), 'result': failure,
+                       'blind_description': 'Recorded description for this test transport; not a visual approval.'}
+            store.log_tool(task['id'], 'quality', 0, 'quality_schema_error', payload)
+            feedback = runtime.quality.schema_feedback(task['id'], key)
+            assert feedback == payload
+            messages = assessment_messages([], feedback)
+            assert json.loads(messages[-1]['content'])['assessment_format_repair'] == failure
+            assert failure['review_response'] == fixture['response']
+            assert runtime.quality.current_review(task['id'], config, initial)[1] is None
+            assert runtime.quality.context(task['id'], config, initial) == ([], [])
+            assert len(assessment_messages([])) == 2
+            changed_key, _ = runtime.quality.current_review(task['id'], config.model_copy(update={'model': 'another-model'}), initial)
+            assert runtime.quality.schema_feedback(task['id'], changed_key) is None
+            changed = store.commit_action(initial['id'], {'kind': 'create_element', 'args': {'type': 'ellipse'}}, {})['document']
+            changed_key, _ = runtime.quality.current_review(task['id'], config, changed)
+            assert runtime.quality.schema_feedback(task['id'], changed_key) is None
+            later = store.create_task(session['id'])
+            runtime.quality.begin(later['id'], initial, '画一个圆')
+            assert runtime.quality.schema_feedback(later['id'], key) is None
+            assert store.get_document(initial['id']) == changed
+        finally:
+            await runtime.close()
+            store.close()
+
+    asyncio.run(check())
 
 
 def test_current_review_context_survives_compaction_but_not_scene_config_or_task_changes(tmp_path):

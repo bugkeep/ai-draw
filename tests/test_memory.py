@@ -139,6 +139,12 @@ def test_query_memory_survives_compaction_and_is_invalidated_by_canvas_changes(t
             args = {'ids': [element_id], 'include_geometry': False}
             for index in range(2):
                 await call(runtime, models, session, task, 'inspect_scene', args, f'inspect-{index}')
+            before = store.get_document(session['document']['id'])
+            invalid = await call(runtime, models, session, task, 'compact_context', {
+                'goal': '调整左眼', 'summary': '错误身份必须反馈', 'object_ids': [element_id, 'agent-example'],
+            }, 'invalid-memory-identity')
+            assert invalid['ok'] is False and 'agent-example' in invalid['error'] and 'summary or constraints' in invalid['error']
+            assert store.get_document(before['id']) == before
             await call(runtime, models, session, task, 'compact_context', {
                 'goal': '调整左眼', 'summary': '已查阅左眼位置', 'pending': ['移动左眼'], 'object_ids': [element_id],
             }, 'compact')

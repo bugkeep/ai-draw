@@ -67,11 +67,16 @@ def trace_progress(records):
         if not all(key in summary for key in ('trace_id', 'source_region', 'mapping', 'offset', 'returned_paths', 'total_paths')):
             unknown += 1
             continue
-        key = json.dumps([summary['trace_id'], summary['source_region'], summary['mapping']], sort_keys=True)
+        identity = [summary['trace_id'], summary['source_region'], summary['mapping']]
+        if summary.get('selection_hash'):
+            identity.append(summary['selection_hash'])
+        key = json.dumps(identity, sort_keys=True)
         if key not in families:
             families[key] = {name: summary[name] for name in ('trace_id', 'reference_id', 'source_region', 'source_frame', 'mapping', 'total_paths')
                              if name in summary}
             families[key].update(names=[], trace_plan_ids=[], memory_refs=[], successful_calls=0, ranges=[])
+            if summary.get('selection_hash'):
+                families[key]['selection_hash'] = summary['selection_hash']
         family = families[key]
         family['successful_calls'] += 1
         family['ranges'].append([summary['offset'], summary['offset'] + summary['returned_paths']])
@@ -291,8 +296,11 @@ class AgentMemory:
 
     def compact(self, task_id, actor_id, arguments, document):
         session_id = self._session(task_id)
-        if set(arguments.get('object_ids', [])) - {item['id'] for item in document['elements']}:
-            raise ValueError('Working memory refers to objects outside this canvas/draft')
+        unknown_ids = set(arguments.get('object_ids', [])) - {item['id'] for item in document['elements']}
+        if unknown_ids:
+            raise ValueError(f'Working memory refers to objects outside this canvas/draft: {sorted(unknown_ids)}. '
+                             'object_ids accepts native drawing objects only; keep Agent, result and reference IDs '
+                             'in summary or constraints instead.')
         for memory_ref in arguments.get('evidence_refs', []):
             self._record(task_id, actor_id, memory_ref)
         with self.store.lock, self.store.connection:

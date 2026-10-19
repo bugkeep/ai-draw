@@ -1,0 +1,22 @@
+{
+  "source": "actual Ark reference-polygon native-sampling check; rejected unknown review field, not a drawing acceptance",
+  "provider": "ark",
+  "model": "ark-code-latest",
+  "source_database": "runs/reference-polygon-native-samples-20261020.sqlite3",
+  "task_id": "d82dc9a252dc45559b345f3a46843f28",
+  "argument_sha256": "c3e6ec2874e184c2c298cf48ef44c2b49fb959bbd7ff5d0741a7ee8044112b66",
+  "response": {
+    "content": "",
+    "role": "assistant",
+    "tool_calls": [
+      {
+        "id": "call_6jffh6medb2wiwrm35beuzun",
+        "function": {
+          "arguments": "{\"visible_subject\": \"画布中新增了一个完整闭合的深色圆角三角轮廓，右上角保留一个带深色描边的蓝色实心圆；无文字、无独立短横线。\", \"goal_satisfied\": true, \"criteria\": [{\"dimension\": \"request_match\", \"applicable\": true, \"passed\": true, \"evidence\": \"AFTER 中仅新增中间三角轮廓这一条 freedraw 形状，轮廓位于画布偏左中部；三角形左上方没有可见的独立短横线，且右上角蓝色圆仍存在。\"}, {\"dimension\": \"proportions_and_connections\", \"applicable\": true, \"passed\": true, \"evidence\": \"三角轮廓为完整闭合形状，顶点、两侧斜边和底边连续相接；圆角和轻微内凹过渡自然，没有断开、错误连接或与蓝色圆相连。\"}, {\"dimension\": \"essential_details\", \"applicable\": true, \"passed\": true, \"evidence\": \"按要求只保留参考图中的三角轮廓：顶部、左右边、底部均清楚可辨，没有额外文字标签或装饰，也未遗漏成开放线段。\"}, {\"dimension\": \"line_clarity\", \"applicable\": true, \"passed\": true, \"evidence\": \"深灰描边粗细均匀，轮廓连续干净；未见重复描线、杂乱交叉、碎片或遮挡，蓝色圆边缘也保持清晰。\"}, {\"dimension\": \"composition\", \"applicable\": true, \"passed\": true, \"passed_note\": \"\", \"evidence\": \"新增三角轮廓和原有蓝色圆相互分离、层级清楚；三角完整处于画布内，未覆盖或修改蓝色圆。\", \"repair\": \"可选：若需更充分利用 512×512 目标区域，可在不触碰蓝色圆的前提下将三角整体放大并居中，但当前不构成完成障碍。\"}], \"summary\": \"实际渲染结果符合请求：三角轮廓已干净提取，排除了左上方独立短横线，没有文字标签，原有蓝色圆保持不变；整体线条闭合清晰，可提交。\"}",
+          "name": "report_drawing_quality"
+        },
+        "type": "function"
+      }
+    ]
+  }
+}

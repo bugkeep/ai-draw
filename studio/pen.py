@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .actions import COLOR_PATTERN, Point
 from .eraser import fill_color_visible
+from .pen_geometry import native_pen_samples
 
 
 class PenPath(BaseModel):
@@ -100,7 +101,7 @@ def path_elements(arguments: dict) -> list[dict]:
         if not all(math.isfinite(value) and abs(value) <= 100000 for point in points for value in point):
             raise ValueError("Transformed path coordinates exceed the canvas limit")
         items.append({"type": "freedraw", "name": path.name,
-                      "points": interpolate_path(points, path.smooth, path.closed), "pointSpace": "absolute",
+                      "points": native_pen_samples(interpolate_path(points, path.smooth, path.closed)), "pointSpace": "absolute",
                       "strokeColor": path.strokeColor or drawing.strokeColor,
                       'backgroundColor': path.backgroundColor if path.backgroundColor is not None else drawing.backgroundColor,
                       "strokeWidth": path.strokeWidth if path.strokeWidth is not None else drawing.strokeWidth,

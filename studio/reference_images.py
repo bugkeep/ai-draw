@@ -19,12 +19,13 @@ from ddgs.exceptions import DDGSException
 from lxml import html
 from lxml.etree import ParserError
 from PIL import Image, ImageDraw, ImageFont, ImageOps
-from shapely import LineString, box, get_parts
+from shapely import LineString, Polygon, box, get_parts
 from skan import Skeleton
 from skimage import exposure, feature, filters, morphology
 
 from .agent_store import stable_id
 from .agent_tools import ContinueReferenceTrace, TraceReference
+from .pen_geometry import native_pen_samples
 from .research import COLLECTION_HOSTS, canonical_url, public_url
 
 
@@ -646,11 +647,15 @@ class ReferenceImages:
             ).fetchone()
         if row is None:
             raise KeyError('Trace plan belongs to another canvas or a later task, or does not exist')
-        args = TraceReference.model_validate_json(row['arguments']).model_dump()
+        stored = json.loads(row['arguments'])
+        native_format_version = stored.pop('native_format_version', 0)
+        args = TraceReference.model_validate(stored).model_dump()
         args.update(offset=request['offset'], limit=request['limit'])
-        return await self._trace(task_id, caller_id, args, row['id'])
+        return await self._trace(task_id, caller_id, args, row['id'], native_format_version=native_format_version)
 
-    async def _trace(self, task_id, caller_id, args, trace_plan_id=None):
+    async def _trace(self, task_id, caller_id, args, trace_plan_id=None, *, native_format_version=1):
+        if native_format_version not in (0, 1):
+            raise ValueError('Unsupported native trace-plan representation')
         row = self._record(task_id, args['reference_id'])
         source = json.loads(row['metadata'])
         with self.store.lock:
@@ -667,6 +672,20 @@ class ReferenceImages:
                 or area['x'] + area['width'] > frame['x'] + frame['width']
                 or area['y'] + area['height'] > frame['y'] + frame['height']):
             raise ValueError('Reference region must stay within the common source_frame')
+        crop = box(area['x'], area['y'], area['x'] + area['width'], area['y'] + area['height'])
+        polygon = args.get('source_polygon')
+        selection = {}
+        if polygon is not None:
+            mask = Polygon(polygon)
+            if not mask.is_valid or mask.area <= 0:
+                raise ValueError('source_polygon must be a valid non-self-intersecting source-pixel polygon')
+            if not box(frame['x'], frame['y'], frame['x'] + frame['width'], frame['y'] + frame['height']).covers(mask):
+                raise ValueError('source_polygon must stay within the common source_frame')
+            crop = crop.intersection(mask)
+            if crop.is_empty or crop.area <= 0:
+                raise ValueError('source_polygon and the source region have no overlapping area')
+            selection = {'source_polygon': polygon, 'selection_hash': hashlib.sha256(
+                json.dumps([area, polygon], sort_keys=True, separators=(',', ':')).encode()).hexdigest()}
         parameters = {key: args[key] for key in ('mode', 'sigma', 'low_threshold', 'high_threshold',
                                                 'ink_threshold', 'min_length', 'simplify', 'contrast')}
         parameters.update(source_frame=frame, algorithm_version=2)
@@ -681,7 +700,6 @@ class ReferenceImages:
             with self.store.lock, self.store.connection:
                 self.store.connection.execute('INSERT OR IGNORE INTO reference_traces VALUES(?,?,?,?,?)',
                     (trace_id, row['id'], encoded, json.dumps(paths, separators=(',', ':')), time.time()))
-        crop = box(area['x'], area['y'], area['x'] + area['width'], area['y'] + area['height'])
         selected = []
         for path in paths:
             for part in get_parts(LineString(path).intersection(crop)):
@@ -692,8 +710,13 @@ class ReferenceImages:
         if args['offset'] >= len(selected):
             raise ValueError(f'Trace offset exceeds {len(selected)} available paths')
         if trace_plan_id is None:
-            plan = {**args, 'source_frame': frame, 'region': area, 'offset': 0}
+            plan = {**args, 'source_frame': frame, 'region': area, 'offset': 0,
+                    'native_format_version': native_format_version}
             plan.pop('limit')
+            # Older plans omit both mask and native-format fields; continuation
+            # retains their sparse representation rather than changing pages.
+            if polygon is None:
+                plan.pop('source_polygon', None)
             encoded_plan = json.dumps(plan, sort_keys=True)
             trace_plan_id = stable_id('traceplan', f'{task_id}/{encoded_plan}')
             with self.store.lock, self.store.connection:
@@ -704,16 +727,20 @@ class ReferenceImages:
         origin = (target['x'] + (target['width'] - frame['width'] * scale) / 2 - frame['x'] * scale,
                   target['y'] + (target['height'] - frame['height'] * scale) / 2 - frame['y'] * scale)
         page = selected[args['offset']:args['offset'] + args['limit']]
-        items = [{'type': 'freedraw', 'name': f'{args["name"]}/轮廓-{args["offset"] + index + 1:04d}',
-                  'points': [[round(origin[0] + x * scale, 3), round(origin[1] + y * scale, 3)] for x, y in path],
-                  'pointSpace': 'absolute', 'strokeColor': args['strokeColor'], 'strokeWidth': args['strokeWidth'],
-                  'opacity': args['opacity']} for index, path in enumerate(page)]
+        items = []
+        for index, path in enumerate(page):
+            points = [[round(origin[0] + x * scale, 3), round(origin[1] + y * scale, 3)] for x, y in path]
+            if native_format_version == 1:
+                points = [list(point) for point in native_pen_samples(points)]
+            items.append({'type': 'freedraw', 'name': f'{args["name"]}/轮廓-{args["offset"] + index + 1:04d}',
+                          'points': points, 'pointSpace': 'absolute', 'strokeColor': args['strokeColor'],
+                          'strokeWidth': args['strokeWidth'], 'opacity': args['opacity']})
         if any(not math.isfinite(value) or abs(value) > 100000 for item in items for point in item['points'] for value in point):
             raise ValueError('Mapped reference contours exceed the canvas coordinate range')
         next_offset = args['offset'] + len(page)
         return items, {'reference_id': row['id'], 'title': source['title'], 'url': source['url'],
                        'trace_id': trace_id, 'trace_plan_id': trace_plan_id,
-                       'source_region': area, 'source_frame': frame, 'target': target,
+                       'source_region': area, 'source_frame': frame, 'target': target, **selection,
                        'mapping': {'origin': list(origin), 'scale': scale}, 'name': args['name'],
                        'total_paths': len(selected), 'offset': args['offset'], 'returned_paths': len(page),
                        'next_offset': next_offset if next_offset < len(selected) else None,

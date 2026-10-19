@@ -12,9 +12,15 @@ if (!process.env.DRAW_AGENT_URL || !process.env.DRAW_AGENT_PYTHON) {
 await mkdir(output, { recursive: true })
 await writeFile(resolve(output, 'server.json'), JSON.stringify({ url: process.env.DRAW_AGENT_URL,
   database: process.env.DRAW_AGENT_DB, source: 'owned_isolated_production_http_server' }, null, 2))
-const args = ['-m', 'scripts.evaluate_quality', '--url', process.env.DRAW_AGENT_URL, '--output-dir', output]
-if (process.env.DRAW_AGENT_QUALITY_CASES) args.push('--cases', process.env.DRAW_AGENT_QUALITY_CASES)
-if (process.env.DRAW_AGENT_QUALITY_DATASET) args.push('--dataset', process.env.DRAW_AGENT_QUALITY_DATASET)
+const runner = process.env.DRAW_AGENT_EVALUATOR || 'drawing-quality'
+if (!['drawing-quality', 'reference-polygon'].includes(runner)) throw new Error('Unknown evaluation runner')
+const args = ['-m', runner === 'reference-polygon' ? 'scripts.evaluate_reference_polygon' : 'scripts.evaluate_quality',
+  '--url', process.env.DRAW_AGENT_URL, '--output-dir', output]
+if (runner === 'reference-polygon') args.push('--database', process.env.DRAW_AGENT_DB)
+else {
+  if (process.env.DRAW_AGENT_QUALITY_CASES) args.push('--cases', process.env.DRAW_AGENT_QUALITY_CASES)
+  if (process.env.DRAW_AGENT_QUALITY_DATASET) args.push('--dataset', process.env.DRAW_AGENT_QUALITY_DATASET)
+}
 const browser = await chromium.launch({ headless: true,
   ...(process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } :
     process.platform === 'win32' ? { channel: 'chrome' } : {}),

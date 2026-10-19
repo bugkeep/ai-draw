@@ -295,6 +295,26 @@ API 5 的人物质量验证仍未通过。一次生成的图片评价指出颈�
 
 ## 数据与结果解释
 
+多边形选区、原生笔画采样和提示词压缩后的完整后端检查为 157/157。新增的 Chromium 检查先用稀疏闭合点列复现实际导出缺线，再检查补充采样后的同一中心线、边缘像素、SQLite 重新打开和撤销重做。参考提取检查还覆盖旧计划继续使用旧点列、选区不改变共同映射，以及不同选区在压缩后仍保持独立进度。
+
+真实 Ark 只读请求对照使用同一组当前工具约束，对比旧角色说明及带展示标题的 schema 与压缩版本。主 Agent 请求输入从 12,237 token 降至 9,617，子 Agent 从 10,529 降至 8,778；四次请求均实际调用对象查询，原生画布和历史未变。记录为 `runs/prompt-context-final-20261020.json`。这只是请求前缀测量：该次主 Agent 请求用时 5.25/2.57 秒，子 Agent 2.68/4.61 秒，缓存命中也不同，不能据此宣称整幅作画更快。
+
+```powershell
+python -m scripts.evaluate_prompt_context --baseline-revision b309052 --database runs/prompt-context-check.sqlite3 --output runs/prompt-context-check.json
+$env:DRAW_AGENT_EVALUATOR='reference-polygon'
+$env:DRAW_AGENT_EVAL_DIR='runs/reference-polygon-check'
+python -m scripts.verify_browser --database runs/reference-polygon-check.sqlite3 --scripts quality_evaluation.js
+Remove-Item Env:DRAW_AGENT_EVALUATOR
+```
+
+多边形真实模型检查使用独立数据库和生成的三角轮廓参考图，检查子 Agent 分页提取、排除边角背景、主 Agent 审阅并提交、共同映射、其他对象保护和撤销重做，同时录制实际编辑器。它验证选区及执行能力，不作为人物或山水的整幅作品验收。首次运行发现原生画笔末段缩短后被取消，失败记录仍保留在 `runs/reference-polygon-model-20261020/report.json`；修复后的结果单独记录，不覆盖失败样本。
+
+原生采样修复后的首次真实执行检查为 11/11，通过并保留 4 次画布增量、20 次笔画过程事件以及无浏览器错误的录像。记录为 `runs/reference-polygon-native-samples-20261020/report.json`。但其独立审图报告连续加入未定义字段，6 次错误全部进入主 Agent 上下文，总耗时 225.21 秒，不能视为低延迟达标。该次原始错误已保存为 parser 回归样本；新增恢复逻辑将错误反馈给审图模型，严格校验条件保持不变，复测使用新的独立数据库。
+
+加入格式恢复后的真实执行复测同样为 11/11，记录为 `runs/reference-polygon-reviewer-recovery-20261020/report.json`，录像包含 6 次画布增量和 60 次笔画过程事件，无浏览器错误，用时 176.35 秒。该次发生了一次把 Agent ID 放进对象记忆列表的工具错误，已完整返回后续上下文；审图格式错误没有再次出现，因此该样本不证明格式恢复曾被真实触发。格式恢复的校验、完整错误传递及任务/画面/配置隔离由实际历史响应的回归检查覆盖。评测期间本机出现内存压力，不能由两次耗时推算优化比例。后续增加了对象编号字段说明和包含具体错误编号的修正指引。
+
+相同版本的六组浏览器检查全部通过，覆盖删除与恢复、手工画图和历史、七种导出组合、设置与任务隔离、重命名及滚动布局、丢失/乱序事件恢复和取消笔画。日志为 `runs/browser-polygon-native-20261020.stdout.log`；设置组未进行真实模型连接测试，真实 Ark 请求由前述独立模型检查覆盖。
+
 密集曲线读取加入了可选的几何误差参数。真实 Ark 检查为 17/17 项通过：子 Agent 使用 `point_tolerance=1` 将一条 601 采样点的曲线作为 4 点序列读取，原对象精确移动、其他对象保护、阶段审图和撤销重做均通过，用时 83.52 秒，工具错误为零。记录为 `runs/compact-curve-scene-paging-20261020.json`。对两份实际暂停草稿的只读测量中，84 条路径的读取采样点从 2,854 降至 550，最大偏差为 0.997 个画布单位以内；记录为 `runs/compact-path-real-drafts-20261020.json`。这些是几何读取与编辑检查，不能据此推算完整绘画提速比例。本地完整后端检查为 145/145。
 
 Commons 原图恢复的网络检查故意使用不存在的公开缩略图地址，实际取得 HTTP 404 后，通过同条真实目录记录的原图地址取得并解码了 1,455 × 2,048 的来源。记录为 `runs/commons-original-fallback-network-20261020.json`，明确标记为网络故障注入，不伪装成自然发生的故障或完整作画成功。
