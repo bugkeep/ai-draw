@@ -34,6 +34,7 @@
 | `POST /api/studio/settings/test` | 实际调用模型验证文本与工具调用能力 |
 | `GET/POST /api/studio/sessions` | 列出与创建会话 |
 | `GET /api/studio/sessions/{id}` | 读取会话、对话、画布和任务 |
+| `PATCH /api/studio/sessions/{id}` | 修改会话与关联画布名称，保留图形、对话、任务和撤销历史 |
 | `POST /api/studio/sessions/{id}/messages` | 排队执行一条绘图指令 |
 | `PUT /api/studio/documents/{id}/scene` | 保存手动编辑，检查版本 |
 | `POST /api/studio/documents/{id}/history` | 撤销或重做 |
@@ -43,3 +44,5 @@
 | `WS /api/studio/documents/{id}/events?after=N` | 接收画布、任务、对话和画笔事件 |
 
 `runs/studio.sqlite3` 包含用户对话及完整工具记录，应按应用数据保护。运行评测时 `runs/` 也保存结果文件。
+
+名称修改通过独立的 `session` 事件通知当前画布的窗口，不增加绘图版本或撤销记录。会话列表与对话区域各自限制高度并处理滚动，编辑器使用窗口剩余空间。

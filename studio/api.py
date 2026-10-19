@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .runtime import DrawingRuntime
 from .llm import ModelGatewayError, test_connection as probe_model_connection
@@ -17,6 +17,11 @@ router = APIRouter(prefix="/api/studio", tags=["studio"])
 
 class NewSession(BaseModel):
     title: str = Field(default="未命名画布", max_length=120)
+
+
+class RenameSession(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    title: str = Field(min_length=1, max_length=120)
 
 
 class SendMessage(BaseModel):
@@ -102,6 +107,16 @@ async def send_message(request: Request, session_id: str, body: SendMessage):
         return request.app.state.drawing_runtime.submit(session_id, body.message.strip())
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+@router.patch("/sessions/{session_id}")
+async def rename_session(request: Request, session_id: str, body: RenameSession):
+    try:
+        return studio_store(request).rename_session(session_id, body.title)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @router.put("/documents/{document_id}/scene")

@@ -11,7 +11,7 @@ button, textarea, input, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .48; }
 
-.studio { height: 100%; min-height: 500px; display: flex; flex-direction: column; }
+.studio { height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .topbar { height: 58px; flex: none; display: flex; align-items: center; justify-content: space-between; padding: 0 18px 0 22px; background: #fff; border-bottom: 1px solid #e4e8ee; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 760; letter-spacing: -.03em; font-size: 18px; white-space: nowrap; }
 .brand-mark { color: #7967e8; font-size: 26px; line-height: 1; }
@@ -23,21 +23,32 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .connection::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #bac0ca; }
 .connection.online { color: #459570; }
 .connection.online::before { background: #45bf84; box-shadow: 0 0 0 3px #e0f8ec; }
-.workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: 210px minmax(400px, 1fr) 350px; }
+.workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: 210px minmax(0, 1fr) 350px; grid-template-rows: minmax(0, 1fr); overflow: hidden; }
 
-.sessions { background: #fafbfc; border-right: 1px solid #e3e7ee; display: flex; flex-direction: column; min-width: 0; }
-.section-heading { display: flex; align-items: center; justify-content: space-between; padding: 20px 13px 12px 19px; color: #7e899a; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.sessions { background: #fafbfc; border-right: 1px solid #e3e7ee; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.section-heading { flex: none; display: flex; align-items: center; justify-content: space-between; padding: 20px 13px 12px 19px; color: #7e899a; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .section-heading button { font-size: 11px; padding: 0 8px; min-height: 28px; letter-spacing: 0; }
-.session-list { flex: 1; overflow-y: auto; padding: 0 8px; }
-.session-item { width: 100%; display: flex; align-items: center; gap: 9px; border: 0; text-align: left; background: transparent; border-radius: 9px; padding: 11px 10px; color: #526076; font-size: 13px; font-weight: 560; }
-.session-item:hover { background: #f0effa; }
-.session-item.selected { color: #6049c9; background: #ece9fc; font-weight: 700; }
-.session-icon { color: #8b7de1; font-size: 18px; line-height: 1; }
-.session-hint { margin: 12px; border: 1px solid #e8e8f3; background: #f7f6fc; color: #8b90a0; border-radius: 10px; padding: 12px; font-size: 11px; line-height: 1.6; }
+.session-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; overscroll-behavior: contain; padding: 0 8px; }
+.session-row { display: flex; align-items: center; border-radius: 9px; }
+.session-row:hover { background: #f0effa; }
+.session-row.selected { background: #ece9fc; }
+.session-item { flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; border: 0; text-align: left; background: transparent; border-radius: 9px; padding: 11px 10px; color: #526076; font-size: 13px; font-weight: 560; }
+.session-item.selected { color: #6049c9; font-weight: 700; }
+.session-title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.session-rename-button { flex: none; border: 0; background: transparent; color: #8b80b6; width: 27px; height: 30px; margin-right: 3px; border-radius: 6px; font-size: 17px; }
+.session-rename-button:hover { background: #e4def8; color: #6049c9; }
+.session-rename-form { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 3px; padding: 2px 4px 8px; }
+.session-rename-form input { min-width: 0; width: 100%; padding: 7px 6px; border: 1px solid #a599ec; border-radius: 6px; outline: none; color: #354359; font-size: 12px; }
+.session-rename-form button { width: 24px; height: 28px; border: 0; background: transparent; color: #705bd3; border-radius: 5px; }
+.session-rename-form button:hover { background: #eae5fb; }
+.session-rename-error { color: #b94c4c; font-size: 11px; line-height: 1.5; padding: 0 7px 8px; }
+.session-icon { flex: none; color: #8b7de1; font-size: 18px; line-height: 1; }
+.session-hint { flex: none; margin: 12px; border: 1px solid #e8e8f3; background: #f7f6fc; color: #8b90a0; border-radius: 10px; padding: 12px; font-size: 11px; line-height: 1.6; }
 
 .canvas-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #f4f5f8; }
-.canvas-heading { height: 47px; flex: none; padding: 0 18px; display: flex; align-items: center; justify-content: space-between; color: #38465b; font-size: 13px; font-weight: 700; }
-.revision { color: #a0a8b7; font-size: 11px; font-weight: 500; }
+.canvas-heading { height: 47px; flex: none; padding: 0 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #38465b; font-size: 13px; font-weight: 700; }
+.canvas-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.revision { flex: none; color: #a0a8b7; font-size: 11px; font-weight: 500; }
 .editor-host { flex: 1; min-height: 0; margin: 0 12px; border: 1px solid #dce0e8; border-radius: 13px; background: #fff; overflow: hidden; box-shadow: 0 6px 26px rgba(46, 59, 79, .05); }
 .editor-host .excalidraw { width: 100%; height: 100%; }
 .canvas-footnote { height: 32px; flex: none; display: flex; align-items: center; justify-content: center; color: #9aa4b2; font-size: 11px; }
@@ -49,13 +60,13 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .chat-heading span { color: #a0a8b5; font-size: 11px; }
 .agent-status { flex: none; border-radius: 20px; padding: 5px 8px; background: #f2f4f8; color: #8590a0 !important; }
 .agent-status.active { background: #eeeaff; color: #705bd3 !important; }
-.conversation { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 14px 10px; display: flex; flex-direction: column; gap: 14px; }
+.conversation { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; overscroll-behavior: contain; padding: 18px 14px 10px; display: flex; flex-direction: column; gap: 14px; }
 .welcome { margin: auto 4px; text-align: center; padding: 0 16px 38px; color: #8a94a3; }
 .welcome-icon { width: 58px; height: 58px; display: grid; place-items: center; margin: 0 auto 15px; border-radius: 18px; background: #eeeafb; color: #7866dd; font-size: 30px; }
 .welcome h2 { margin: 0 0 8px; color: #333e52; font-size: 17px; }
 .welcome p { margin: 0 0 20px; line-height: 1.65; font-size: 12px; }
 .welcome button { border: 1px solid #ddd8f7; background: #f8f6ff; border-radius: 9px; color: #705bd3; padding: 8px 10px; font-size: 12px; font-weight: 650; }
-.bubble { max-width: 92%; display: flex; flex-direction: column; gap: 5px; }
+.bubble { flex: none; max-width: 92%; display: flex; flex-direction: column; gap: 5px; }
 .bubble.user { align-self: flex-end; }
 .bubble.assistant { align-self: flex-start; }
 .bubble-role { font-size: 10px; color: #a3acba; font-weight: 700; padding-left: 3px; }
@@ -125,6 +136,6 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 @media (max-width: 850px) { .settings-layout { grid-template-columns: minmax(0, 760px); gap: 22px; max-width: 800px; } .settings-nav { display: none; } }
 @media (max-width: 520px) { .settings-layout { padding: 26px 15px; } .settings-fields { grid-template-columns: 1fr; } .settings-card { padding: 20px 16px; } .settings-footer { align-items: stretch; flex-direction: column; } .settings-footer > div { justify-content: flex-end; } .settings-heading h1 { font-size: 22px; } }
 
-@media (max-width: 1050px) { .workspace { grid-template-columns: 170px minmax(340px, 1fr) 310px; } .sessions { font-size: 12px; } }
+@media (max-width: 1050px) { .workspace { grid-template-columns: 170px minmax(0, 1fr) 310px; } .sessions { font-size: 12px; } }
 @media (max-width: 800px) { .workspace { grid-template-columns: minmax(0, 1fr) 310px; } .sessions { display: none; } }
 @media (max-width: 620px) { .workspace { display: flex; flex-direction: column; } .canvas-panel { height: 57%; flex: none; } .chat { flex: 1; min-height: 0; border-left: 0; border-top: 1px solid #e3e7ee; } .topbar { padding: 0 10px; } .brand { font-size: 14px; } .brand small, .connection, .top-actions button:nth-of-type(3) { display: none; } }

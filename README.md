@@ -33,6 +33,8 @@ python -m uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8000
 
 每个会话有独立画布、消息、任务、实时事件和撤销历史。切换画布或打开多个窗口时，各自显示所属会话的内容；同一会话内的指令按顺序执行，当前 Agent 上下文不包含后续排队任务的指令。服务重启后，数据仍保存在 `runs/studio.sqlite3`，该路径可通过 `DRAW_AGENT_DB` 配置。
 
+点击“新建”后可直接输入画布名称，按 Enter 或点击勾号保存，按 Escape 或点击取消关闭名称编辑。已有画布条目右侧的铅笔按钮可修改名称，名称会同步更新到画布标题并保存到数据库。左侧画布列表与右侧对话分别滚动，画布和输入框保留在窗口内。
+
 ## 结构
 
 | 目录 | 职责 |
@@ -97,9 +99,12 @@ node scripts/record_demo.js
 cd frontend-app
 node scripts/browser_smoke.js
 node scripts/settings_smoke.js
+node scripts/sessions_smoke.js
 ```
 
 检查覆盖真实 Excalidraw 手绘、撤销、重做、刷新恢复、PNG 导出，以及设置导航、配置保存、密钥不回传、任务期间禁止保存、画布切换和双窗口隔离。`settings_smoke.js` 会保留已有模型连接并保存一次配置；未配置模型的测试环境会保存本地服务预设，全部绘图检查使用应用内的明确指令。已配置真实模型时，可设置环境变量 `DRAW_AGENT_TEST_MODEL=1`，同时点击设置页“测试连接”并验证实际模型响应。
+
+`sessions_smoke.js` 检查长列表、长对话、独立滚动、名称编辑、刷新恢复、多窗口名称更新和移动窗口尺寸。此脚本会创建至少 36 个会话及 25 个绘图任务，应在使用独立 `DRAW_AGENT_DB` 的测试服务执行；通过 `DRAW_AGENT_URL` 指定测试服务地址。
 
 ## 当前边界
 

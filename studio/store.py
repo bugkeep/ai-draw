@@ -122,6 +122,21 @@ class StudioStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def rename_session(self, session_id: str, title: str) -> dict[str, str]:
+        title = title.strip()
+        if not title or len(title) > 120:
+            raise ValueError("画布名称应为 1 至 120 个字符。")
+        with self.lock, self.connection:
+            session = self.connection.execute("SELECT document_id FROM sessions WHERE id=?", (session_id,)).fetchone()
+            if session is None:
+                raise KeyError(f"Session not found: {session_id}")
+            document_id = session["document_id"]
+            self.connection.execute("UPDATE sessions SET title=? WHERE id=?", (title, session_id))
+            self.connection.execute("UPDATE documents SET title=?,updated_at=? WHERE id=?", (title, time.time(), document_id))
+        result = {"id": session_id, "document_id": document_id, "title": title}
+        self.publish(document_id, "session", result)
+        return result
+
     def get_document(self, document_id: str) -> dict[str, Any]:
         with self.lock:
             row = self.connection.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()

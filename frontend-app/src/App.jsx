@@ -3,6 +3,7 @@ import { CaptureUpdateAction, Excalidraw, exportToBlob } from '@excalidraw/excal
 import { useNavigate } from 'react-router-dom'
 import '@excalidraw/excalidraw/index.css'
 import { eventsUrl, studioApi } from './studioApi.js'
+import SessionListItem from './SessionListItem.jsx'
 
 const CLIENT_ID = crypto.randomUUID()
 
@@ -38,6 +39,7 @@ export default function App() {
   const [providerReady, setProviderReady] = useState(false)
   const [connected, setConnected] = useState(false)
   const [changingSession, setChangingSession] = useState(false)
+  const [renamingSessionId, setRenamingSessionId] = useState('')
   const [sending, setSending] = useState(false)
   const [canvasKey, setCanvasKey] = useState('')
   const apiRef = useRef(null)
@@ -67,6 +69,21 @@ export default function App() {
     taskRef.current = next
     setTasks(next)
   }, [])
+
+  const updateSessionTitle = useCallback((session) => {
+    setSessions((current) => current.map((item) => item.id === session.id ? { ...item, title: session.title } : item))
+    if (docRef.current?.id === session.document_id) {
+      docRef.current = { ...docRef.current, title: session.title }
+      setDocument(docRef.current)
+    }
+  }, [])
+
+  const renameSession = useCallback(async (id, title) => {
+    const renamed = await studioApi.renameSession(id, title)
+    if (!mountedRef.current) return
+    updateSessionTitle(renamed)
+    setRenamingSessionId((current) => current === id ? '' : current)
+  }, [updateSessionTitle])
 
   const applyDocument = useCallback((nextDocument, { showScene = true, focus = false } = {}) => {
     docRef.current = nextDocument
@@ -120,6 +137,7 @@ export default function App() {
     setTaskList(data.tasks)
     lastSeqRef.current = data.event_seq || 0
     setDraft('')
+    setRenamingSessionId('')
     if (replaceCanvas) {
       apiRef.current = null
       setCanvasKey(id)
@@ -234,6 +252,8 @@ export default function App() {
       applyDocument(value.document, { focus: value.source === 'agent' })
     } else if (event.type === 'stroke_progress') {
       showStroke(value.element)
+    } else if (event.type === 'session') {
+      updateSessionTitle(value)
     } else if (event.type === 'message') {
       setMessages((current) => current.some((item) => item.id === value.id) ? current : [...current, value])
     } else if (event.type === 'task') {
@@ -255,7 +275,7 @@ export default function App() {
       if (value.phase === 'drawing') text = `正在绘制 ${value.completed}/${value.total}`
       if (text) setPhase({ taskId: value.task_id, text })
     }
-  }, [applyDocument, setTaskList, showStroke])
+  }, [applyDocument, setTaskList, showStroke, updateSessionTitle])
 
   useEffect(() => {
     if (!document?.id) return
@@ -338,6 +358,7 @@ export default function App() {
       const created = await studioApi.createSession('新的画布')
       setSessions((current) => [{ id: created.id, document_id: created.document.id, title: created.title }, ...current])
       await loadSession(created.id, true)
+      setRenamingSessionId(created.id)
       setPhase(null)
       setError('')
     } catch (cause) {
@@ -453,17 +474,15 @@ export default function App() {
         <nav className="sessions" aria-label="画布会话">
           <div className="section-heading"><span>画布</span><button type="button" onClick={createSession} disabled={!document || changingSession}>＋ 新建</button></div>
           <div className="session-list">
-            {sessions.map((item) => (
-              <button key={item.id} type="button" className={`session-item ${sessionId === item.id ? 'selected' : ''}`}
-                onClick={() => switchSession(item.id)} disabled={changingSession} data-session-id={item.id}>
-                <span className="session-icon">◇</span><span>{item.title}</span>
-              </button>
-            ))}
+            {sessions.map((item) => <SessionListItem key={item.id} session={item} selected={sessionId === item.id}
+              editing={renamingSessionId === item.id} disabled={changingSession}
+              onSelect={() => switchSession(item.id)} onEdit={() => setRenamingSessionId(item.id)}
+              onCancel={() => setRenamingSessionId('')} onRename={renameSession} />)}
           </div>
           <div className="session-hint">每段对话保留同一张画布。可在画布上直接选择和修改图形。</div>
         </nav>
         <section className="canvas-panel" aria-label="Excalidraw 画布">
-          <div className="canvas-heading"><span>{sessions.find((item) => item.id === sessionId)?.title || '画布'}</span>
+          <div className="canvas-heading"><span className="canvas-title" title={document?.title}>{document?.title || '画布'}</span>
             <span className="revision">版本 {document?.version ?? 0} · {document?.elements.filter((item) => !item.isDeleted).length ?? 0} 个对象</span></div>
           <div className="editor-host">
             {document && <Excalidraw key={canvasKey} excalidrawAPI={onExcalidrawApi}

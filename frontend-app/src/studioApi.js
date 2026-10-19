@@ -22,6 +22,7 @@ export const studioApi = {
   listSessions: () => request('/sessions'),
   createSession: (title) => request('/sessions', { method: 'POST', body: JSON.stringify({ title }) }),
   getSession: (id) => request(`/sessions/${id}`),
+  renameSession: (id, title) => request(`/sessions/${id}`, { method: 'PATCH', body: JSON.stringify({ title }) }),
   sendMessage: (id, message) => request(`/sessions/${id}/messages`, {
     method: 'POST', body: JSON.stringify({ message }),
   }),

@@ -44,3 +44,4 @@ jobs:
           done
           node frontend-app/scripts/browser_smoke.js
           node frontend-app/scripts/settings_smoke.js
+          node frontend-app/scripts/sessions_smoke.js
