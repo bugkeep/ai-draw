@@ -258,3 +258,33 @@ def test_delete_session_cascades_agent_context_and_preserves_other_canvas(tmp_pa
             assert store.connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
         assert store.connection.execute("PRAGMA foreign_key_check").fetchall() == []
         assert client.get(f"/api/studio/sessions/{other['id']}").json() == other
+
+
+def test_completion_validates_child_work_and_preserves_tool_errors(tmp_path):
+    async def check():
+        store, runtime, session, task = workspace(tmp_path)
+        models = DrawingAgents(store, ModelConfig(provider="local", model="drawing-model", api_base="http://localhost:1234/v1"))
+
+        async def call(call_id, name, arguments, **kwargs):
+            return await runtime.call_main_tool(models, task["id"], session["id"], session["document"]["id"], {
+                "id": call_id, "function": {"name": name, "arguments": json.dumps(arguments)},
+            }, **kwargs)
+
+        invalid = await call("invalid", "move_elements", {"ids": ["missing"], "dx": 10, "dy": 0})
+        assert invalid["ok"] is False and "not found" in invalid["error"].lower()
+        refused = await call("finish-with-error", "finish_drawing", {"summary": "完成"},
+                             completion_error="Read and handle every tool error before completing.")
+        assert refused["ok"] is False and "error" in refused["error"]
+        child = store.agents.create_agent(session["id"], task["id"], "spawn", "绘制房屋", "House", [])
+        assert not (await call("finish-running", "finish_drawing", {"summary": "完成"}))["ok"]
+        run = start_run(store, runtime, session, task, child)
+        native_tool(store, run, "create", "create_element", {"type": "rectangle"})
+        result = store.agents.complete_run(session["id"], run["id"], "房屋已准备")
+        assert not (await call("finish-pending", "finish_drawing", {"summary": "完成"}))["ok"]
+        await runtime.apply_result(task["id"], session["id"], session["document"]["id"], result["result_id"])
+        assert (await call("finish", "finish_drawing", {"summary": "完成"}))["ok"]
+        errors = [json.loads(item["payload"]["output"]) for item in store.tool_logs(task["id"])
+                  if item["kind"] == "function_call_output" and item["payload"]["call_id"] == "invalid"]
+        assert errors == [invalid]
+        store.close()
+    asyncio.run(check())

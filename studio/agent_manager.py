@@ -2,10 +2,12 @@ import asyncio
 import copy
 import json
 
-from .actions import apply_action, element_fingerprint
+from .actions import apply_action, matches_fingerprint
+from .agent_tools import validate_tool
 from .agents import DrawingAgents, prepare_drawing_tool, recent_tool_messages, validate_child_tool
 from .errors import AgentOutputError, validation_summary
 from .settings import ModelConfig, ModelSettings
+from .research import DrawingResearch, RESEARCH_TOOLS
 from .store import StudioStore, VersionConflict
 
 
@@ -132,7 +134,7 @@ class AgentManager:
             for item in result["actions"][result["committed_count"]:]:
                 by_id = {element["id"]: element for element in draft}
                 for element_id, expected in item["expected_elements"].items():
-                    if element_id not in by_id or element_fingerprint(by_id[element_id]) != expected["fingerprint"]:
+                    if element_id not in by_id or not matches_fingerprint(by_id[element_id], expected["fingerprint"]):
                         raise VersionConflict("A previous unsubmitted result conflicts with the current canvas")
                 draft, selection, _ = apply_action(draft, selection, item["action"])
         document["depends_on"] = [result["id"] for result in dependencies]
@@ -199,7 +201,9 @@ class AgentManager:
                 await self._notify(session_id, run["agent_id"], result)
                 return
             exchange = [message]
-            for call in calls:
+            errors = False
+            completed_summary = None
+            for index, call in enumerate(calls):
                 name, raw_args = call["function"]["name"], call["function"]["arguments"]
                 self.store.log_tool(run["owner_task_id"], run["agent_id"], round_number, "function_call", {
                     "type": "function_call", "call_id": call["id"], "name": name,
@@ -211,13 +215,25 @@ class AgentManager:
                     try:
                         validate_child_tool(name)
                         args = json.loads(raw_args)
-                        draft, selection, actions, output = prepare_drawing_tool(
-                            name, args, run["document"], run["draft"], run["selection"],
-                        )
-                        run["draft"], run["selection"] = draft, selection
-                        run["prepared"].extend(actions)
+                        if name == "finish_drawing":
+                            args = validate_tool(name, args, child=True)
+                            if errors or index != len(calls) - 1:
+                                raise ValueError("Read all tool errors before completing; finish_drawing must be last.")
+                            output = {"ok": True, "summary": args["summary"]}
+                        elif name in RESEARCH_TOOLS:
+                            args = validate_tool(name, args, child=True)
+                            output = await DrawingResearch(self.store).call(run["owner_task_id"], run["agent_id"], name, args)
+                        else:
+                            draft, selection, actions, output = prepare_drawing_tool(
+                                name, args, run["document"], run["draft"], run["selection"],
+                            )
+                            run["draft"], run["selection"] = draft, selection
+                            run["prepared"].extend(actions)
                     except (ValueError, KeyError, TypeError) as exc:
                         output = {"ok": False, "error": validation_summary(exc)}
+                errors = errors or output.get("ok") is False
+                if name == "finish_drawing" and output.get("ok"):
+                    completed_summary = output["summary"]
                 exchange.append({"role": "tool", "tool_call_id": call["id"],
                                  "content": json.dumps(output, ensure_ascii=False)})
                 if not cached:
@@ -228,3 +244,8 @@ class AgentManager:
                 })
                 await asyncio.sleep(0)
             self.records.finish_response(run["id"], recent_tool_messages(history + exchange))
+            if completed_summary is not None and not errors:
+                result = self.records.complete_run(session_id, run["id"], completed_summary)
+                self.store.log_tool(run["owner_task_id"], run["agent_id"], round_number, "agent_result", result)
+                await self._notify(session_id, run["agent_id"], result)
+                return

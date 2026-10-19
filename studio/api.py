@@ -46,7 +46,7 @@ def studio_store(request: Request) -> StudioStore:
 @router.get("/health")
 async def health(request: Request):
     config = request.app.state.model_settings.load()
-    return {"status": "ok", "api_revision": 3, "provider_configured": config.configured,
+    return {"status": "ok", "api_revision": 4, "provider_configured": config.configured,
             "model": config.model, "provider": config.provider}
 
 

@@ -4,7 +4,7 @@ Draw Agent Studio 是一个通过连续对话编辑同一张画布的开源绘�
 
 目前支持矩形、椭圆、菱形、文字、线条、箭头和画笔对象，以及选择、移动、修改、删除、撤销和重做。常见的明确指令由本地绘图命令处理；复杂场景由主 Agent 调用工具创建子 Agent，并行准备动作。子 Agent 可以复用、继续接收输入、关闭和恢复，每条输入具有独立编号。主 Agent 审阅结构化摘要，再接受结果并逐步提交。子 Agent 的完整工具记录和上下文保存在 SQLite。
 
-绘图动作数量与模型请求持续时间由任务需要决定。用户可主动停止任务；子 Agent 只执行绘图工具，不能创建其他 Agent。
+绘图动作数量与模型请求持续时间由任务需要决定。用户可主动停止任务；子 Agent 可以执行绘图和资料检索，不能创建或控制其他 Agent。
 
 ## 运行
 
@@ -33,6 +33,14 @@ python -m uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8000
 4. 输入“用画笔画一张笑脸，展示作画过程”，观察轮廓、眼睛和嘴巴逐步出现。
 5. 在 Excalidraw 中直接选择、拖动或修改对象，再继续对话。
 
+人像和有机轮廓使用批量平滑画笔工具 `draw_paths`，Agent 提供关键点，执行器生成逐笔显示的原生曲线。`reshape_path` 可以修改已有轮廓并保留对象编号、名称和样式。复杂作品按统一构图分配给子 Agent，主 Agent 审核并依次提交；也可以直接输入“画一幅蒙娜丽莎素描图”检查完整人物、五官、双手、衣褶和背景的生成过程。
+
+Agent 可以通过 `search_references` 使用免费的公共搜索查阅具体画法，使用 `read_reference` 阅读相关步骤。服务读取网页正文，检查主题与绘画步骤，过滤重复和无关内容，只返回少量来源及相关片段。较多的检索工作可以交给子 Agent；完整检索和网页记录保存在 SQLite，同一画布可以使用缓存。公共搜索可能遇到限流或连接失败，工具会返回实际错误，Agent 根据反馈继续处理。筛选方法与配置见[绘图工具及资料检索](docs/drawing-tools.md)。
+
+点击“导出作品”可以选择 PNG、JPG、WebP、SVG 或 Excalidraw 文件。图片支持 1、2、4 倍清晰度；PNG、WebP 和 SVG 可使用透明背景，JPG 使用画布背景颜色。Excalidraw 文件保留原生图形与画笔，便于继续编辑。
+
+执行期间显示已经用时、当前模型或画笔状态。连接收到 HTTP 429 后，主 Agent 与子 Agent 共用恢复队列，按照厂商等待时间错开后续请求；等待可以停止。工具错误始终返回对应 Agent 的上下文，完成信号需要全部本轮工具成功，且本任务的子 Agent 和结果均已处理。
+
 每个会话有独立画布、消息、任务、实时事件和撤销历史。切换画布或打开多个窗口时，各自显示所属会话的内容；同一会话内的指令按顺序执行，当前 Agent 上下文不包含后续排队任务的指令。服务重启后，数据仍保存在 `runs/studio.sqlite3`，该路径可通过 `DRAW_AGENT_DB` 配置。
 
 点击“新建”后可直接输入画布名称，按 Enter 或点击勾号保存，按 Escape 或点击取消关闭名称编辑。已有画布条目右侧的铅笔按钮可修改名称，名称会同步更新到画布标题并保存到数据库。左侧画布列表与右侧对话分别滚动，画布和输入框保留在窗口内。
@@ -45,6 +53,8 @@ python -m uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8000
 | --- | --- |
 | `frontend-app/` | React、Excalidraw、绘图对话和实时事件展示 |
 | `studio/actions.py` | 绘图动作校验与原生 Excalidraw 对象构建 |
+| `studio/pen.py` | 平滑画笔曲线、共享坐标变换和路径修改参数 |
+| `studio/research.py` | 免费公共检索、网页正文读取、相关步骤筛选和画布资料缓存 |
 | `studio/agents.py`、`studio/agent_tools.py` | 主 Agent 工具循环所用上下文、模型请求和工具定义 |
 | `studio/agent_manager.py` | 子 Agent 身份、输入排队、并发执行、等待和关闭恢复 |
 | `studio/agent_store.py` | Agent 私有上下文、执行检查点、调用幂等和绘图结果 |
@@ -84,6 +94,9 @@ python -m scripts.probe_model
 python -m scripts.evaluate_agent_edit
 python -m scripts.evaluate_multiagent
 python -m scripts.evaluate_transformer
+python -m scripts.evaluate_portrait
+python -m scripts.evaluate_quality
+python -m scripts.evaluate_research_agent
 ```
 
 生命周期评测从 `.env` 或 `DRAW_AGENT_*` 环境变量读取模型连接，在独立 SQLite 数据库中检查排队、关闭恢复、提交幂等和同一对象的后续编辑：
@@ -102,6 +115,12 @@ python -m scripts.evaluate_agent_reuse --session-id SESSION_ID
 
 本次真实运行的场景、成功率及耗时见[评测记录](docs/evaluation.md)。
 
+`evaluate_portrait` 默认只发送“画一幅蒙娜丽莎素描图”，记录首次画布更新、总耗时、工具错误反馈及人物部位的结构检查，并导出 `.excalidraw` 文件。结构检查与画面相似程度分别记录；相似程度需要查看实际绘图结果。
+
+`evaluate_quality` 使用 `evaluations/drawing-quality.json` 中的山水、人物、动物、建筑和流程图指令，逐项记录必要对象、首次更新、总耗时、重试与工具错误，并保存原生作品。`--cases` 可选择题目，`--recheck --output-dir runs/drawing-quality` 可重新检查已保存的执行，无需请求模型重新作画。对象结构检查不能代替构图、比例和表达效果的人工评价。
+
+`python -m scripts.evaluate_research` 直接验证实际公共检索、正文读取、缓存和资料归属。`evaluate_research_agent` 验证实际主 Agent 派发检索、子 Agent 阅读来源、返回方案与来源引用，以及按方案绘图。公共搜索的连接情况会影响结果。
+
 服务运行时可以录制浏览器中的真实操作过程：
 
 ```bash
@@ -117,16 +136,19 @@ node scripts/record_demo.js
 ```bash
 cd frontend-app
 node scripts/browser_smoke.js
+node scripts/export_smoke.js
 node scripts/settings_smoke.js
 node scripts/sessions_smoke.js
 node scripts/deletion_smoke.js
 ```
 
-检查覆盖真实 Excalidraw 手绘、撤销、重做、刷新恢复、PNG 导出，以及设置导航、配置保存、密钥不回传、任务期间禁止保存、画布切换和双窗口隔离。`settings_smoke.js` 会保留已有模型连接并保存一次配置；未配置模型的测试环境会保存本地服务预设，全部绘图检查使用应用内的明确指令。已配置真实模型时，可设置环境变量 `DRAW_AGENT_TEST_MODEL=1`，同时点击设置页“测试连接”并验证实际模型响应。
+检查覆盖真实 Excalidraw 手绘、撤销、重做、刷新恢复、多种格式导出，以及设置导航、配置保存、密钥不回传、任务期间禁止保存、画布切换和双窗口隔离。`settings_smoke.js` 会保留已有模型连接并保存一次配置；未配置模型的测试环境会保存本地服务预设，全部绘图检查使用应用内的明确指令。已配置真实模型时，可设置环境变量 `DRAW_AGENT_TEST_MODEL=1`，同时点击设置页“测试连接”并验证实际模型响应。
 
 `sessions_smoke.js` 检查长列表、长对话、独立滚动、名称编辑、刷新恢复、多窗口名称更新和移动窗口尺寸。此脚本会创建至少 36 个会话及 25 个绘图任务，应在使用独立 `DRAW_AGENT_DB` 的测试服务执行；通过 `DRAW_AGENT_URL` 指定测试服务地址。
 
 `deletion_smoke.js` 检查确认与取消、删除当前或其他画布、双窗口通知、运行任务保护、停止后删除和刷新恢复。在空白测试数据库中运行时，也会检查删除最后一个画布后的空白画布创建。`evaluate_transformer` 使用真实模型绘制 Transformer 流程图，再修改选中标题并检查其他对象、撤销和重做。
+
+也可以在仓库根目录运行 `python -m scripts.verify_browser --database runs/browser-verification.sqlite3`，自动使用空闲端口和独立数据库完成浏览器检查，结束后正常关闭测试服务。
 
 ## 当前边界
 

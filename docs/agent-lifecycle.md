@@ -28,9 +28,13 @@
 | `apply_agent_result` | `result_id` | 主 Agent 接受结果，执行器依次提交尚未提交的动作 |
 | `reject_agent_result` | `result_id`、`reason` | 主 Agent 拒绝未提交部分，并保存原因；已提交内容保留在画布 |
 
-子 Agent 只具有 `create_elements`、`create_element`、`select_elements`、`move_elements`、`update_elements`、`delete_elements` 和 `inspect_scene`。工具名称与参数在每次执行前校验，子 Agent 无法创建或控制其他 Agent。
+子 Agent 具有 `draw_paths`、`reshape_path`、`create_elements`、`create_element`、`select_elements`、`move_elements`、`update_elements`、`delete_elements`、`inspect_scene` 与本轮完成信号 `finish_drawing`。工具名称与参数在每次执行前校验，子 Agent 无法创建或控制其他 Agent。
 
-画布概况保留近期对象和选择状态。`inspect_scene` 支持按 `ids` 读取指定对象，也支持 `query` 搜索全部对象的名称和文字，因此较早的图形可以继续被定位和修改。
+主 Agent 与子 Agent 均可使用 `search_references` 和 `read_reference` 读取免费的公共绘图资料。研究子 Agent 可以只返回方案和来源，不准备画布动作；主 Agent 审核方案后安排绘图。检索结果和网页正文保存在所属任务的 SQLite 工具记录中，只有短片段和编号进入当前 Agent 上下文，其他画布不能读取这些来源。工具参数与筛选方法见[绘图工具与资料检索](drawing-tools.md)。
+
+画布概况保留近期对象和选择状态。`inspect_scene` 支持按 `ids` 读取指定对象，也支持 `query` 搜索全部对象的名称和文字，因此较早的图形可以继续被定位和修改。`include_geometry=true` 返回已有线条的完整相对点列，配合对象原点可以计算绝对位置并交给 `reshape_path`。
+
+`finish_drawing` 的 `summary` 是完成后的简短说明。该工具应位于本轮全部绘图工具之后；前面的任何工具失败，都会返回对应的 `function_call_output` 并要求 Agent 读取错误后继续处理。主 Agent 仍有运行工作或待处理结果时，完成信号也会返回错误。成功的完成信号允许省去一轮仅返回文本的模型调用。
 
 调用与返回记录示例：
 

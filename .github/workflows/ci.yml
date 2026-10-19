@@ -34,15 +34,4 @@ jobs:
         working-directory: frontend-app
         run: npx playwright install --with-deps chromium
       - name: Test editor in browser
-        run: |
-          python -m uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8000 &
-          server_pid=$!
-          trap 'kill "$server_pid"' EXIT
-          for attempt in {1..30}; do
-            if curl --fail --silent http://127.0.0.1:8000/api/studio/health > /dev/null; then break; fi
-            sleep 1
-          done
-          node frontend-app/scripts/deletion_smoke.js
-          node frontend-app/scripts/browser_smoke.js
-          node frontend-app/scripts/settings_smoke.js
-          node frontend-app/scripts/sessions_smoke.js
+        run: python -m scripts.verify_browser --database runs/ci-browser.sqlite3

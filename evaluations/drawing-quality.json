@@ -1,0 +1,66 @@
+{
+  "cases": [
+    {
+      "id": "ink-landscape",
+      "prompt": "画一幅中国水墨山水线描，有远山、近处松树、溪流和一座小桥。",
+      "components": {
+        "mountains": ["山", "mountain", "peak"],
+        "pine": ["松", "树", "pine", "tree"],
+        "stream": ["溪", "河", "流水", "stream", "river", "water"],
+        "bridge": ["桥", "bridge"]
+      },
+      "visual_rubric": ["远近层次清楚", "山形与溪流形成完整构图", "松树结构可以辨认", "桥连接溪流两岸", "笔画疏密与留白协调"]
+    },
+    {
+      "id": "portrait-with-prop",
+      "prompt": "画一幅戴圆框眼镜的年轻女性半身素描，头发扎成低马尾，双手捧着一杯热茶。",
+      "components": {
+        "head": ["脸", "面部", "头部", "face", "head", "jaw"],
+        "glasses": ["眼镜", "镜框", "glasses", "eyeglass", "spectacle"],
+        "hair": ["头发", "马尾", "发丝", "hair", "ponytail"],
+        "hands": ["手", "指", "hand", "finger"],
+        "tea": ["杯", "茶", "cup", "tea", "mug"]
+      },
+      "visual_rubric": ["人物比例自然", "眼镜与眼睛位置相符", "低马尾符合指令", "双手自然握住茶杯", "笔画层次清楚"]
+    },
+    {
+      "id": "cat-on-window",
+      "prompt": "用黑白线稿画一只蜷在窗台上睡觉的猫，尾巴环住身体，窗外有树枝。",
+      "components": {
+        "cat": ["猫", "cat", "body", "躯干", "身体"],
+        "ears": ["耳", "ear"],
+        "tail": ["尾", "tail"],
+        "window": ["窗", "window", "sill"],
+        "branches": ["树", "枝", "branch", "tree"]
+      },
+      "visual_rubric": ["可以辨认出蜷卧的猫", "头部与身体衔接自然", "尾巴环绕身体", "窗台与猫有承托关系", "树枝处于窗外"]
+    },
+    {
+      "id": "street-cafe",
+      "prompt": "画一幅街角咖啡馆的透视线描，包含遮阳篷、门窗、店招和门口的两张桌子。",
+      "components": {
+        "building": ["建筑", "墙", "外立面", "building", "wall", "facade"],
+        "awning": ["篷", "awning", "canopy"],
+        "door": ["门", "door"],
+        "windows": ["窗", "window"],
+        "sign": ["招", "标牌", "sign", "咖啡馆", "cafe"],
+        "tables": ["桌", "table"]
+      },
+      "visual_rubric": ["建筑透视方向一致", "遮阳篷与立面连接自然", "门窗尺度协调", "店招可读", "两张桌子位于门口且比例合理"]
+    },
+    {
+      "id": "registration-flow",
+      "prompt": "画一张用户注册流程图：输入邮箱和密码，校验格式；格式错误则提示并返回输入，格式正确则发送验证码，验证通过后创建账户并结束。",
+      "components": {
+        "input": ["输入", "邮箱", "密码", "input", "email"],
+        "validation": ["校验", "格式", "validate", "format"],
+        "error": ["错误", "提示", "error", "invalid"],
+        "code": ["验证码", "verification", "code"],
+        "account": ["账户", "账号", "account"],
+        "finish": ["结束", "完成", "end", "finish"]
+      },
+      "min_arrows": 5,
+      "visual_rubric": ["流程与指令一致", "分支与返回路径清楚", "箭头连接正确节点", "文字位于节点内且可读", "节点与连线没有无意义交叠"]
+    }
+  ]
+}

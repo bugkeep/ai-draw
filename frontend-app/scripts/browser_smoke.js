@@ -50,7 +50,8 @@ try {
   await waitForCount(1)
 
   const downloadPromise = page.waitForEvent('download')
-  await page.getByRole('button', { name: '导出 PNG' }).click()
+  await page.getByRole('button', { name: '导出作品' }).click()
+  await page.getByRole('button', { name: '下载文件' }).click()
   const download = await downloadPromise
   if (!download.suggestedFilename().endsWith('.png')) throw new Error('PNG export failed')
   console.log(JSON.stringify({ manual_draw: true, undo: true, redo: true,

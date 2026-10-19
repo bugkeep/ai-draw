@@ -158,6 +158,50 @@ def test_agent_edit_survives_editor_metadata_normalization(tmp_path):
     assert moved["elements"][0]["x"] == element["x"] + 25
 
 
+def test_content_checks_allow_equivalent_browser_numbers_and_reject_changed_geometry(tmp_path):
+    store = StudioStore(tmp_path / "content.sqlite3")
+    document_id = store.create_session()["document"]["id"]
+    document = store.commit_action(document_id, {"kind": "create_element", "args": {
+        "type": "rectangle", "x": 300.0, "y": 120.0, "width": 80.0, "height": 60.0,
+    }}, {})["document"]
+    element = document["elements"][0]
+    expected = {element["id"]: {"fingerprint": element_fingerprint(element)}}
+    normalized = {**element, **{key: int(element[key]) for key in ("x", "y", "width", "height", "strokeWidth")},
+                  "boundElements": []}
+    assert element_fingerprint(normalized) == element_fingerprint(element)
+    normalized_document = store.save_snapshot(document_id, document["version"], [normalized], document["selection"])
+    assert normalized_document["version"] == document["version"]
+    moved = store.commit_action(document_id, {"kind": "move_elements", "args": {
+        "ids": [element["id"]], "dx": 20, "dy": 0,
+    }}, expected)["document"]
+    assert moved["elements"][0]["x"] == 320
+    with pytest.raises(VersionConflict):
+        store.commit_action(document_id, {"kind": "move_elements", "args": {
+            "ids": [element["id"]], "dx": 20, "dy": 0,
+        }}, expected)
+    legacy = {element["id"]: {"fingerprint": element_fingerprint(moved["elements"][0], legacy=True)}}
+    updated = store.commit_action(document_id, {"kind": "move_elements", "args": {
+        "ids": [element["id"]], "dx": 5, "dy": 0,
+    }}, legacy)["document"]
+    assert updated["elements"][0]["x"] == 325
+    store.close()
+
+
+def test_large_canvas_can_continue_editing(tmp_path):
+    store = StudioStore(tmp_path / "large.sqlite3")
+    document_id = store.create_session()["document"]["id"]
+    elements = [create_native_element({"type": "rectangle", "x": (index % 80) * 20,
+                                      "y": (index // 80) * 20, "width": 16, "height": 16})
+                for index in range(3100)]
+    document = store.save_snapshot(document_id, 0, elements, [])
+    updated = store.commit_action(document_id, {"kind": "move_elements", "args": {
+        "ids": [elements[-1]["id"]], "dx": 5, "dy": 0,
+    }}, {})["document"]
+    assert len(updated["elements"]) == 3100 and updated["elements"][-1]["x"] == elements[-1]["x"] + 5
+    assert store.history_step(document_id, "undo")["elements"] == document["elements"]
+    store.close()
+
+
 def test_websocket_replays_more_than_one_event_page(tmp_path, monkeypatch):
     monkeypatch.setenv("DRAW_AGENT_DB", str(tmp_path / "events.sqlite3"))
     with TestClient(create_app()) as client:

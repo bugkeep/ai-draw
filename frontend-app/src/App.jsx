@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CaptureUpdateAction, DefaultSidebar, Excalidraw, exportToBlob } from '@excalidraw/excalidraw'
+import { CaptureUpdateAction, DefaultSidebar, Excalidraw } from '@excalidraw/excalidraw'
 import { useNavigate } from 'react-router-dom'
 import '@excalidraw/excalidraw/index.css'
 import { eventsUrl, STUDIO_API_REVISION, studioApi } from './studioApi.js'
 import SessionListItem from './SessionListItem.jsx'
 import DeleteSessionDialog from './DeleteSessionDialog.jsx'
+import TaskActivity, { activityPhase } from './TaskActivity.jsx'
+import ExportDialog from './ExportDialog.jsx'
 
 const CLIENT_ID = crypto.randomUUID()
 
@@ -46,6 +48,7 @@ export default function App() {
   const [pendingDeletion, setPendingDeletion] = useState('')
   const [sending, setSending] = useState(false)
   const [canvasKey, setCanvasKey] = useState('')
+  const [exportSnapshot, setExportSnapshot] = useState(null)
   const apiRef = useRef(null)
   const docRef = useRef(null)
   const sessionRef = useRef('')
@@ -139,6 +142,7 @@ export default function App() {
     setSessionId(id)
     setMessages(data.messages)
     setTaskList(data.tasks)
+    setPhase(data.activity ? activityPhase(data.activity) : null)
     lastSeqRef.current = data.event_seq || 0
     setDraft('')
     setRenamingSessionId('')
@@ -340,6 +344,7 @@ export default function App() {
       const current = taskRef.current
       const prior = current.find((item) => item.id === value.task_id)
       const next = [{ ...prior, id: value.task_id, status: value.status,
+        created_at: value.created_at ?? prior?.created_at, updated_at: value.updated_at ?? prior?.updated_at,
         summary: value.summary || prior?.summary || '', error: value.error || '' },
       ...current.filter((item) => item.id !== value.task_id)].slice(0, 20)
       setTaskList(next)
@@ -348,18 +353,8 @@ export default function App() {
         setPhase((current) => current?.taskId === value.task_id ? null : current)
       }
     } else if (event.type === 'phase') {
-      let text = ''
-      if (value.phase === 'thinking') text = '正在安排绘图'
-      if (value.phase === 'agent_state') {
-        const name = value.nickname || '子 Agent'
-        if (value.result?.status === 'failed') text = `${name} 未完成，正在等待主 Agent 处理`
-        else if (value.state === 'Shutdown') text = `${name} 已暂停，进度已保存`
-        else if (value.result?.result_id) text = `${name} 已准备绘图，正在等待提交`
-        else if (value.state === 'Running') text = `${name} 正在准备绘图${value.queued_inputs > 1 ? `，还有 ${value.queued_inputs - 1} 条输入排队` : ''}`
-        else text = `${name} 已完成`
-      }
-      if (value.phase === 'drawing') text = `正在绘制 ${value.completed}/${value.total}`
-      if (text) setPhase({ taskId: value.task_id, text })
+      const next = activityPhase(value)
+      if (next) setPhase(next)
     }
   }, [applyDocument, setTaskList, showStroke, updateSessionTitle])
 
@@ -512,6 +507,7 @@ export default function App() {
       await studioApi.cancelTask(activeTask.id)
     } catch (cause) {
       if (mountedRef.current && generation === generationRef.current) setError(cause.message)
+      throw cause
     }
   }, [activeTask])
 
@@ -519,7 +515,7 @@ export default function App() {
     function onKeyDown(event) {
       if (!(event.ctrlKey || event.metaKey) || !['z', 'y'].includes(event.key.toLowerCase())) return
       const target = event.target
-      if (target instanceof HTMLElement && (target.closest('input, textarea') || target.isContentEditable)) return
+      if (target instanceof HTMLElement && (target.closest('input, textarea, dialog') || target.isContentEditable)) return
       event.preventDefault()
       event.stopPropagation()
       void history(event.key.toLowerCase() === 'y' || event.shiftKey ? 'redo' : 'undo')
@@ -528,24 +524,12 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown, true)
   }, [history])
 
-  const exportPng = useCallback(async () => {
+  const openExport = useCallback(() => {
     if (!apiRef.current) return
-    try {
-      const blob = await exportToBlob({
-        elements: apiRef.current.getSceneElements(),
-        appState: apiRef.current.getAppState(),
-        files: apiRef.current.getFiles(),
-        mimeType: 'image/png',
-      })
-      const url = URL.createObjectURL(blob)
-      const link = window.document.createElement('a')
-      link.href = url
-      link.download = 'draw-agent-canvas.png'
-      link.click()
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
-    } catch (cause) {
-      setError(cause.message)
-    }
+    const api = apiRef.current
+    setExportSnapshot({ title: docRef.current?.title,
+      elements: structuredClone(api.getSceneElements()), files: structuredClone(api.getFiles()),
+      appState: { viewBackgroundColor: api.getAppState().viewBackgroundColor } })
   }, [])
 
   return (
@@ -556,7 +540,7 @@ export default function App() {
           <span className={`connection ${connected ? 'online' : ''}`}>{connected ? '已连接' : '连接中'}</span>
           <button type="button" onClick={() => history('undo')} disabled={!document || busy} title="撤销 Ctrl+Z">↶ 撤销</button>
           <button type="button" onClick={() => history('redo')} disabled={!document || busy} title="重做 Ctrl+Y">↷ 重做</button>
-          <button type="button" onClick={exportPng} disabled={!document}>导出 PNG</button>
+          <button type="button" onClick={openExport} disabled={!document || changingSession}>导出作品</button>
           <button type="button" onClick={openSettings} disabled={changingSession} aria-label="模型设置">⚙ 设置</button>
         </div>
       </header>
@@ -611,9 +595,12 @@ export default function App() {
             {messages.map((item) => <div key={item.id} className={`bubble ${item.role}`}>
               <span className="bubble-role">{item.role === 'user' ? '你' : 'Agent'}</span>
               <p>{item.content}</p>
+              {item.references?.length > 0 && <div className="message-references" aria-label="绘图参考资料">
+                <span>参考资料</span>
+                {item.references.map((source) => <a key={source.reference_id} href={source.url} target="_blank" rel="noreferrer">{source.title}</a>)}
+              </div>}
             </div>)}
-            {busy && <div className="activity"><span className="pulse" />{phase?.taskId === activeTask.id ? phase.text : taskLabel(activeTask)}
-              <button type="button" onClick={cancelActiveTask}>停止</button></div>}
+            {busy && <TaskActivity key={activeTask.id} task={activeTask} phase={phase} onStop={cancelActiveTask} />}
             {error && <div className="error-message" role="alert">{error}</div>}
             <div ref={messageEndRef} />
           </div>
@@ -628,6 +615,7 @@ export default function App() {
       </main>
       {deleteTarget && <DeleteSessionDialog key={deleteTarget.id} session={deleteTarget}
         blocked={deleteTarget.id === sessionId && busy} onCancel={() => setDeleteTarget(null)} onDelete={deleteSession} />}
+      {exportSnapshot && <ExportDialog snapshot={exportSnapshot} onClose={() => setExportSnapshot(null)} />}
     </div>
   )
 }

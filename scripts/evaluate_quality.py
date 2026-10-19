@@ -1,0 +1,94 @@
+import argparse
+import json
+import time
+from pathlib import Path
+
+import httpx
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--url", default="http://127.0.0.1:8000")
+    parser.add_argument("--cases", default="")
+    parser.add_argument("--dataset", type=Path, default=Path("evaluations/drawing-quality.json"))
+    parser.add_argument("--output-dir", type=Path, default=Path("runs/drawing-quality"))
+    parser.add_argument("--recheck", action="store_true", help="Recheck saved evaluation tasks without requesting new drawings")
+    args = parser.parse_args()
+    cases = json.loads(args.dataset.read_text(encoding="utf-8"))["cases"]
+    selected = set(args.cases.split(",")) if args.cases else {case["id"] for case in cases}
+    if selected - {case["id"] for case in cases}:
+        raise ValueError("Unknown evaluation case")
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    results = []
+    with httpx.Client(base_url=args.url, timeout=30) as client:
+        for case in cases:
+            if case["id"] not in selected:
+                continue
+            if args.recheck:
+                existing = json.loads((args.output_dir / f"{case['id']}.json").read_text(encoding="utf-8"))
+                session_id, task_id = existing["session_id"], existing["task_id"]
+            else:
+                response = client.post("/api/studio/sessions", json={"title": f"绘图质量 · {case['id']}"})
+                response.raise_for_status()
+                session_id = response.json()["id"]
+                response = client.post(f"/api/studio/sessions/{session_id}/messages", json={"message": case["prompt"]})
+                response.raise_for_status()
+                task_id = response.json()["id"]
+            print(json.dumps({"case": case["id"], "session_id": session_id, "task_id": task_id}, ensure_ascii=False), flush=True)
+            try:
+                while True:
+                    response = client.get(f"/api/studio/tasks/{task_id}")
+                    response.raise_for_status()
+                    task = response.json()
+                    if task["status"] in {"completed", "partial", "failed", "cancelled"}:
+                        break
+                    time.sleep(0.5)
+            except KeyboardInterrupt:
+                client.post(f"/api/studio/tasks/{task_id}/cancel").raise_for_status()
+                raise
+            response = client.get(f"/api/studio/sessions/{session_id}")
+            response.raise_for_status()
+            scene = response.json()["document"]
+            elements = [item for item in scene["elements"] if not item.get("isDeleted")]
+            response = client.get(f"/api/studio/tasks/{task_id}/logs")
+            response.raise_for_status()
+            logs = response.json()
+            checks = {key: any(any(word in (item.get("customData", {}).get("name", "") + " " + item.get("text", "")).casefold()
+                                           for word in words) for item in elements
+                               if item["type"] != "text" or case.get("min_arrows") or key == "sign")
+                      for key, words in case["components"].items()}
+            if case.get("min_arrows"):
+                nodes = [item for item in elements if item["type"] in {"rectangle", "ellipse", "diamond"}]
+                checks["labels_inside_nodes"] = all(any(
+                    any(word in label.get("text", "").casefold() for word in words)
+                    and any(node["x"] <= label["x"] and node["y"] <= label["y"]
+                            and label["x"] + label["width"] <= node["x"] + node["width"] + 3
+                            and label["y"] + label["height"] <= node["y"] + node["height"] + 3 for node in nodes)
+                    for label in elements if label["type"] == "text") for words in case["components"].values())
+            checks["native_geometry"] = bool(elements) and all(item["type"] in {
+                "freedraw", "line", "arrow", "ellipse", "rectangle", "diamond", "text"} for item in elements)
+            checks["arrows"] = sum(item["type"] == "arrow" for item in elements) >= case.get("min_arrows", 0)
+            commits = [item for item in logs if item["kind"] == "commit"]
+            result = {"case": case["id"], "prompt": case["prompt"], "session_id": session_id, "task_id": task_id,
+                      "status": task["status"], "error": task["error"], "element_count": len(elements),
+                      "latency_ms": task["latency_ms"], "structural_checks": checks,
+                      "first_canvas_update_ms": round((commits[0]["created_at"] - task["created_at"]) * 1000, 1) if commits else None,
+                      "model_retry_count": sum(item["kind"] == "model_retry" for item in logs),
+                      "tool_error_count": sum(item["kind"] == "function_call_output" and
+                                              json.loads(item["payload"]["output"]).get("ok") is False for item in logs),
+                      "structural_checks_passed": task["status"] == "completed" and all(checks.values()),
+                      "visual_rubric": case["visual_rubric"], "visual_acceptance": "pending_user_review"}
+            (args.output_dir / f"{case['id']}.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+            (args.output_dir / f"{case['id']}.excalidraw").write_text(json.dumps({
+                "type": "excalidraw", "version": 2, "source": "draw-agent-studio", "elements": elements,
+                "appState": {"viewBackgroundColor": "#ffffff"}, "files": {},
+            }, ensure_ascii=False), encoding="utf-8")
+            results.append(result)
+            print(json.dumps(result, ensure_ascii=False), flush=True)
+            (args.output_dir / "report.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+    if not all(result["structural_checks_passed"] for result in results):
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()

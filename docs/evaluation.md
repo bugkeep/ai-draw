@@ -1,95 +1,118 @@
 # 真实操作评测
 
-评测日期：2026 年 10 月 19 日。环境：Windows、Python 3.13、Node.js 24、Chrome、Ark Agent Plan `ark-code-latest`。服务和浏览器均在本机运行。下列结果是本次测试记录，样本数量见各项说明。
+评测日期：2026 年 10 月 19 日。环境为 Windows、Python 3.13、Node.js 24、Chrome，实际模型为 Ark Agent Plan `ark-code-latest`。服务、SQLite 和浏览器均在本机运行。本页记录 API 4 的检查结果，完整工具过程及作品保存在本机 Git 忽略的 `runs/`。
 
-## Agent 生命周期版本（API 3）
+## 自动化与浏览器检查
 
-代码版本为 `21de1e2`，测试使用独立数据库和实际模型连接。
-
-| 场景 | 结果 | 耗时与记录 |
+| 检查 | 结果 | 范围 |
 | --- | --- | --- |
-| 后端自动化检查 | 36/36 通过 | 实际 SQLite 与原生绘图动作；包含输入排队、编号、观察、保存恢复、提交幂等、工作记录及画布隔离 |
-| 浏览器检查 | 32/32 通过 | 编辑器 5 项、设置与隔离 8 项、滚动与名称 9 项、删除 10 项 |
-| 实际模型生命周期检查 | 15/15 项通过 | 138.31 秒；两名子 Agent 并发请求、运行期间关闭、保留动作后恢复、连续输入及重复提交 |
-| 主 Agent 自主完成公园场景 | 1/1 次通过 | 三名子 Agent，48 个提交动作，最终 46 个对象，451.34 秒；六次 HTTP 429 |
-| 主 Agent 复用原子 Agent 继续编辑 | 12/12 项通过 | 编辑 151.95 秒；随后关闭和恢复检查 14.91 秒 |
+| 后端检查 | 51/51 通过，16.51 秒 | 实际 SQLite、原生曲线、路径修改、输入顺序、保存恢复、提交幂等、工具错误反馈、共享恢复队列、画布归属 |
+| 浏览器完整检查 | 45/45 通过 | 编辑器 5 项、导出 13 项、设置 8 项、滚动与名称 9 项、删除 10 项 |
+| 运行状态与停止 | 6/6 通过 | 实际模型请求、用时更新、刷新恢复、停止及重复停止 |
+| 已读取来源展示 | 4/4 通过 | 实际研究任务的来源链接、刷新恢复及其他画布的资料归属 |
+| 前端构建与依赖审计 | 通过 | `npm run build`；生产依赖审计未报告漏洞 |
 
-组合绘图中，主 Agent 调用三次 `spawn_agent`、三次 `wait_agent` 和三次 `apply_agent_result`，工具错误为零。首次画布更新为 175.10 秒。房屋、两棵树、太阳、云朵和光芒的几何位置检查通过。每名子 Agent 的工具过程保存在自己的记录中，主 Agent 使用摘要和结果编号进行审核。
+浏览器导出检查实际下载 PNG、JPG、WebP、SVG 和 Excalidraw 文件，解析文件内容，并检查图片尺寸、透明背景、名称和小尺寸窗口。PNG 另外检查 2 倍与 4 倍分辨率。设置检查不包含额外模型连接探测；真实模型调用由下列评测覆盖。
 
-后续编辑由实际主 Agent 调用 `send_input`，复用原子 Agent，将同一个对象向右移动 17 个单位。其他对象保持不变，撤销与重做检查通过。主 Agent 随后调用 `close_agent` 和 `resume_agent`；恢复后保持原执行编号和 Final 状态，已完成工作没有重跑。
-
-结果文件为 `runs/agent-lifecycle-real-2.json`、`runs/agent-main-multiagent-real-3-metrics.json` 和 `runs/agent-reuse-real-1.json`。组合绘图的执行编号为 `3ed06cf799a94466b267ffa04da14241`，会话编号为 `7e0c908372354c45892adae0d02d7996`。可以在相同数据库的测试服务上重新检查指定执行：
+后端检查仍有一条 Starlette/AnyIO 的弃用提示。前端构建仍有打包体积提示。两者均保留在检查输出中。
 
 ```bash
-python -m scripts.evaluate_multiagent --url http://127.0.0.1:8001 --session-id 7e0c908372354c45892adae0d02d7996 --task-id 3ed06cf799a94466b267ffa04da14241
+python -m pytest -q
+python -m scripts.verify_browser --database runs/browser-verification.sqlite3
+python -m scripts.verify_browser --database runs/activity-verification.sqlite3 --scripts activity_smoke.js
 ```
 
-当前 Ark 连接实际返回了突发请求保护，完整绘图耗时包含等待及重试。并发请求、上下文隔离和逐步提交已通过上述场景检查，低延迟目标仍需要继续验证和优化。
+浏览器脚本使用生产应用、独立数据库和系统分配的本地端口，检查结束后正常关闭测试服务。`activity_smoke.js` 需要环境变量中配置的真实模型连接。
 
-在运行期间关闭子 Agent 的评测中，LiteLLM 1.103.0 两次输出 `OpenAIChatCompletion.acompletion` 未等待协程提示；关闭、恢复和绘图状态检查通过。依赖取消处理问题在 [Issue #42](https://github.com/bugkeep/ai-draw/issues/42) 跟踪。
+## 人物素描与连续编辑
 
-## 初始版本评测
+浏览器只发送“画一幅蒙娜丽莎素描图”，录制完整操作并通过导出窗口下载作品。最近一次得到 130 个原生 Excalidraw 对象，脸部、双眼、鼻子、嘴唇、头发、双手、衣服和背景的 11 项结构检查全部通过；图形中没有图片对象。
 
-| 场景 | 结果 | 耗时 |
-| --- | --- | --- |
-| 同一画布连续创建、移动、选择、撤销、重做、画笔笑脸 | 6/6 通过 | 中位数 15 毫秒；95 百分位 1.76 秒 |
-| Agent 根据上一轮指代移动原对象并改变填充 | 3/3 次通过 | 4.26、5.35、6.24 秒；中位数 5.35 秒 |
-| 房子、两棵树、太阳与云朵并行绘制 | 4/4 次通过；每次有 3 个子 Agent | 43.21、38.25、39.05、50.38 秒；中位数 41.13 秒 |
-| 浏览器手工绘制矩形、撤销、重做、刷新恢复、PNG 导出 | 5/5 项通过 | 浏览器脚本完成一次完整检查 |
+| 指标 | 本次记录 |
+| --- | --- |
+| 首次正式画布更新 | 34.29 秒 |
+| 完整任务 | 453.14 秒，即 7 分 33 秒 |
+| 模型响应 | 16 次 |
+| HTTP 429 恢复 | 3 次 |
+| 工具错误 | 0 次 |
+| 原生对象 | 130 个 |
 
-连续编辑评测使用明确指令的本地动作路径，画笔笑脸会分帧显示。多轮指代评测使用真实 Ark 模型，并检查对象 ID 保持不变、向右移动 70 像素和绿色填充。并行绘制也使用真实 Ark 模型调用及工具校验，四次分别提交 41、35、34、38 个原生 Excalidraw 对象；除任务状态外，还检查房子、两棵树、太阳、云朵和光芒的位置。主 Agent 只读取每个子 Agent 的 JSON 摘要和动作概览，完整工具响应写入 SQLite。录制脚本在真实浏览器中依次创建、移动与画笔绘制，视频位于本机 `runs/draw-agent-demo.webm`。
+记录位于 `runs/portrait-current-evaluation.json`、`runs/portrait-current-evaluation.excalidraw`、`runs/portrait-current.png` 和 `runs/portrait-current.webm`。会话编号为 `5caca9db3d0e4580a7c0a54cba3101c1`，任务编号为 `8629262c7900418ebac24511c5a7d926`，数据库为 `runs/portrait-current-real-1.sqlite3`。
 
-复现命令：
+结构检查主要核对原生对象及部位名称，不能判定人物相似程度、比例、线条表现和整体画面质量。评测明确将 `visual_acceptance` 保持为 `pending_user_review`。同日另一次 135 个对象的生成未包含背景，没有通过完整结构检查；模型结果仍存在变化，不能据单次通过承诺任意提示词的成图质量。
+
+连续编辑使用另一份实际模型生成作品：选择嘴部路径后，让 Agent 调整微笑。17.39 秒完成修改，7 项检查通过，包括使用 `reshape_path`、保留对象编号、其他路径保持一致，以及撤销和重做。记录为 `runs/portrait-edit-real-2.json`。
+
+生成与复查命令：
 
 ```bash
-python -m scripts.evaluate_studio
-python -m uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8000
-python -m scripts.evaluate_agent_edit
-python -m scripts.evaluate_multiagent
-cd frontend-app
-node scripts/browser_smoke.js
-node scripts/record_demo.js
+python -m scripts.evaluate_portrait --url http://127.0.0.1:8001 --output runs/portrait-evaluation.json
+python -m scripts.evaluate_portrait --database runs/portrait-current-real-1.sqlite3 --session-id 5caca9db3d0e4580a7c0a54cba3101c1 --task-id 8629262c7900418ebac24511c5a7d926 --output runs/portrait-recheck.json
+python -m scripts.verify_browser --database runs/portrait-recording.sqlite3 --scripts record_portrait.js
 ```
 
-两项模型评测需要运行中的服务和设置页保存的真实模型连接。重复运行评测时可用 `--output` 指定不同的 JSON 文件；`evaluate_multiagent` 用 `--session-id` 可重新检查已有画布。画布和评测数据保存在 Git 忽略的 `runs/`。这些样本只说明指定场景的运行结果，还不能代表其他题材或长期服务的成功率。
+录制命令会使用真实模型新建作品，需要模型配置。`DRAW_AGENT_RECORDING_NAME` 可以指定录像和导出文件的名称前缀。
 
-## 模型设置与会话隔离检查
+## 多题材绘图
 
-同日使用独立 Python 环境和新版模型适配器运行以下检查，模型仍为 Ark Agent Plan `ark-code-latest`：
+题目及人工画面标准保存在 `evaluations/drawing-quality.json`。五个题目均使用真实模型，分别生成独立画布，工具错误及模型重试均为零。
 
-| 场景 | 结果 | 说明 |
-| --- | --- | --- |
-| 后端自动化检查 | 20/20 通过 | 包含配置加密、重启读取、配置版本、全局运行限制、任务上下文、会话事件、名称保存与历史隔离 |
-| 模型连接验证 | 通过 | 实际调用工具并消费工具结果后返回文本；两次检查分别为 5.62 秒、4.15 秒 |
-| Agent 多轮指代编辑 | 1/1 通过 | 保留对象 ID，向右移动 70 像素并改为绿色，3.73 秒 |
-| 三个子 Agent 并行绘图 | 1/1 通过 | 41 个对象，房子、两棵树、太阳与云朵位置检查全部通过，41.38 秒 |
-| 设置页、画布切换与双窗口检查 | 7/7 通过 | 保存设置、密钥不回传、运行期间阻止保存、消息与图形归属、双窗口隔离；额外通过设置页真实模型连接测试 |
-| 长列表、长对话与名称编辑 | 9/9 通过 | 独立滚动、刷新恢复、名称校验、取消、新建命名、移动窗口尺寸、设置页滚动及双窗口名称同步 |
+| 题材 | 原生对象 | 首次正式更新 | 完整任务 | 结构检查 |
+| --- | --- | --- | --- | --- |
+| 水墨山水 | 227 | 60.65 秒 | 353.68 秒 | 通过 |
+| 戴眼镜、手持杯子的人物 | 145 | 41.67 秒 | 280.84 秒 | 通过 |
+| 窗边猫咪 | 35 | 54.92 秒 | 71.59 秒 | 通过 |
+| 街边咖啡馆 | 69 | 48.82 秒 | 128.92 秒 | 通过 |
+| 注册流程图 | 32 | 18.11 秒 | 43.34 秒 | 通过 |
 
-结果文件位于 `runs/settings-agent-edit-evaluation.json` 与 `runs/settings-multiagent-evaluation.json`。设置及窗口检查运行 `node frontend-app/scripts/settings_smoke.js`，覆盖真实会话切换、双窗口独立画布、消息归属、其他画布运行时禁止保存、保存后刷新恢复及密钥不回传。该脚本不需要模型凭据；配置真实模型后设置 `DRAW_AGENT_TEST_MODEL=1` 可额外验证设置页的实际连接测试。
-
-## 持续绘图与会话管理检查
-
-同日检查应用的动作处理、模型请求和会话删除：
-
-| 场景 | 结果 | 说明 |
-| --- | --- | --- |
-| 后端自动化检查 | 27/27 通过 | 包含完整动作列表、批量创建、批量移动、子 Agent 权限、请求等待设置、HTTP 429 等待、会话删除和数据归属 |
-| 创建与继续编辑 | 121 个对象完整提交 | 随后批量移动，撤销和重做；检查全部对象 ID 与内容 |
-| 原始绘图方案回放 | 32/32 个动作提交 | 使用 SQLite 中保存的实际模型输出，逐项校验并创建原生对象 |
-| 浏览器检查 | 32/32 项通过 | 编辑器 5 项、设置与隔离 8 项、滚动与名称 9 项、删除 10 项 |
-| 模型请求进行中停止 | 通过，45.5 毫秒 | 使用真实 Ark 请求；取消后任务状态为 cancelled，队列恢复空闲 |
-| 三个子 Agent 完成公园场景 | 1/1 通过，50 个对象 | 三次 HTTP 429 后恢复，完整绘图耗时 288.64 秒；房子、两棵树、太阳、云朵与光芒位置检查通过 |
-
-删除检查覆盖确认、取消、当前与其他画布、双窗口通知、刷新恢复、运行任务保护、停止后删除，以及删除最后一个画布后创建空白画布。测试使用独立数据库，模型请求不使用预设响应。
-
-复现模型请求停止与复杂流程图连续编辑：
+每个题目检查用户要求的部位及原生几何信息；流程图额外检查文字位于节点内部，以及箭头数量。五份原生文档、报告及 PNG 导出保存在 `runs/quality-real-1/`。这些结果证明指定样本可以执行并形成相应对象，画面质量仍需要根据每题的人工标准评价。
 
 ```bash
-python -m scripts.evaluate_cancellation
-python -m scripts.evaluate_transformer
+python -m scripts.evaluate_quality --url http://127.0.0.1:8001 --output-dir runs/drawing-quality
 ```
 
-模型厂商返回 HTTP 429 时，真实绘图的耗时会包含等待和重试，完整记录保存在对应任务的 SQLite 工具日志中。
+## 逐步作画耗时
 
-树木检查使用右侧棕色竖直树干及其上方绿色树冠的几何关系和颜色。对同一批实际模型生成对象执行原生树干删除后，判定数量从两棵变为一棵。本次公园场景在厂商频率保护下用时较长，尚未达到低延迟目标。
+回放使用已经保存的真实模型动作，经过当前生产绘图执行器逐项提交，不发送模型请求。相同的 113 个对象及几何信息保持一致，112 条画笔轨迹全部具有有序的过程事件，撤销和重做检查通过。
+
+| 指标 | 原始记录 | 当前回放 |
+| --- | --- | --- |
+| 画笔过程累计用时 | 97.52 秒 | 42.61 秒 |
+| 画笔过程事件 | 1,238 次 | 789 次 |
+
+当前整份动作回放用时 44.33 秒。画笔按路径长度安排展示时长，短笔画不再使用统一的较长等待。该测量只比较同一作品的绘图过程，不能代表模型生成总耗时的改善。记录为 `runs/playback-real-3.json`。
+
+```bash
+python -m scripts.evaluate_playback --source-database runs/portrait-optimization-20261019.sqlite3 --task-id cf26f4c02bef4b1b8c8d35c53a85114c --database runs/playback-check.sqlite3 --output runs/playback-check.json
+```
+
+## 免费公共检索
+
+检索使用 DDGS 公共后端和实际网页正文。一次两题检查中，山水方法检索用时 10.28 秒，返回三个来源；手持杯子的方法检索用时 11.98 秒，返回两个来源。相关正文、同画布缓存、资料归属和私有地址拒绝检查通过，记录为 `runs/research-real-4.json`。
+
+其他实际运行也出现过空结果、超时和 TLS 错误。公共搜索的可用性不能由上述两题的成功记录推算；工具会返回实际错误，Agent 据此调整查询或说明资料不足。
+
+完整研究绘图检查让主 Agent 创建研究子 Agent，搜索并阅读鸟翼、鸟足的具体画法，然后使用原生画笔完成作品。最近一次产生 51 个对象，用时 325.31 秒；完成状态、子 Agent 搜索、正文阅读、真实来源、原生图形、消息来源链接、工具错误返回所属上下文等 7 项检查全部通过。过程中两次工具错误均保留并返回，没有省略。记录为 `runs/research-agent-real-2.json`，完整日志保存在同名 SQLite 数据库。
+
+```bash
+python -m scripts.evaluate_research --database runs/research-check.sqlite3 --output runs/research-check.json
+python -m scripts.evaluate_research_agent --database runs/research-agent-check.sqlite3 --output runs/research-agent-check.json
+```
+
+## 子 Agent 生命周期与请求恢复
+
+真实 Ark 生命周期检查 15/15 项通过，用时 23.08 秒，包含两名子 Agent 的并发请求、工具检查点后的关闭和恢复、连续输入、编号保留、重复提交和画布隔离。模型请求没有执行期限，用户仍可以停止。
+
+OpenAI 兼容 Chat Completions 路由使用官方异步 SDK。该次检查未出现未等待协程提示。记录为 `runs/agent-lifecycle-optimized-1.json`，对应 [Issue #42](https://github.com/bugkeep/ai-draw/issues/42)。其他厂商路由仍需要分别进行真实连接检查。
+
+同一模型连接发生 HTTP 429 时，主 Agent 与子 Agent 共用恢复队列。最近的蒙娜丽莎样本在三次重试后完成，说明该次请求可以恢复；7 分 33 秒的整体耗时仍未达到低延迟目标。
+
+```bash
+python -m scripts.evaluate_agent_lifecycle --output runs/agent-lifecycle-check.json
+```
+
+## 数据与结果解释
+
+所有模型评测都需要实际可用的模型连接；自动化检查使用实际 SQLite 与原生对象，不预设模型返回。作品、录像和完整网页日志可能包含用户内容，默认不加入 Git。命令中的历史数据库及任务编号用于复查本机已有记录，新环境应运行生成命令建立自己的记录。
+
+工具执行成功、对象结构完整、延迟和画面质量分别评价。目前可复现检查覆盖执行流程和指定样本，稳定的低延迟及高质量成图仍需要更多实际样本验证。

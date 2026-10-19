@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from .actions import apply_action, element_fingerprint
+from .actions import apply_action, matches_fingerprint
 from .agent_store import AgentStore
 
 
@@ -195,11 +195,18 @@ class StudioStore:
             event_seq = self.connection.execute(
                 "SELECT COALESCE(MAX(seq),0) FROM events WHERE document_id=?", (session["document_id"],),
             ).fetchone()[0]
+            activity = self.connection.execute(
+                "SELECT payload FROM events WHERE document_id=? AND type='phase' "
+                "AND json_extract(payload,'$.task_id') IN "
+                "(SELECT id FROM tasks WHERE session_id=? AND status IN ('running','queued')) "
+                "ORDER BY seq DESC LIMIT 1", (session["document_id"], session_id),
+            ).fetchone()
         return {
             "id": session_id, "title": session["title"],
             "document": document, "event_seq": event_seq,
-            "messages": [dict(row) for row in messages],
+            "messages": [self.message_view(dict(row)) for row in messages],
             "tasks": [dict(row) for row in tasks],
+            "activity": json.loads(activity["payload"]) if activity else None,
         }
 
     def add_message(self, session_id: str, role: str, content: str, task_id: str | None = None) -> dict[str, Any]:
@@ -212,6 +219,30 @@ class StudioStore:
                 "INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?)",
                 (message["id"], session_id, role, content, task_id, message["created_at"]),
             )
+        return self.message_view(message)
+
+    def research_references(self, task_id: str) -> list[dict]:
+        with self.lock:
+            rows = self.connection.execute(
+                "SELECT json_extract(payload,'$.output') AS output FROM tool_logs "
+                "WHERE task_id=? AND kind='function_call_output' "
+                "AND json_extract(json_extract(payload,'$.output'),'$.reference_id') IS NOT NULL ORDER BY id",
+                (task_id,),
+            ).fetchall()
+        references = {}
+        for row in rows:
+            output = json.loads(row["output"])
+            if output.get("ok"):
+                references[output["reference_id"]] = {
+                    key: output[key] for key in ("reference_id", "title", "url")
+                }
+        return list(references.values())[-3:]
+
+    def message_view(self, message: dict) -> dict:
+        if message["role"] == "assistant" and message.get("task_id"):
+            references = self.research_references(message["task_id"])
+            if references:
+                return {**message, "references": references}
         return message
 
     def context_messages(self, session_id: str, task_id: str) -> list[dict[str, Any]]:
@@ -306,14 +337,14 @@ class StudioStore:
         prior_selection = json.loads(row["selection"])
         if prior_elements == elements and prior_selection == selection:
             return self._document(row)
-        if len(elements) > 3000 or len(self._json(elements)) > 8_000_000:
-            raise ValueError("Canvas size limit exceeded")
         undo = json.loads(row["undo_history"])
         redo = json.loads(row["redo_history"])
         ignored_metadata = {"version", "versionNonce", "updated", "index"}
-        prior_content = [{key: value for key, value in element.items() if key not in ignored_metadata}
+        prior_content = [{**{key: value for key, value in element.items() if key not in ignored_metadata},
+                          "boundElements": element.get("boundElements") or []}
                          for element in prior_elements]
-        next_content = [{key: value for key, value in element.items() if key not in ignored_metadata}
+        next_content = [{**{key: value for key, value in element.items() if key not in ignored_metadata},
+                         "boundElements": element.get("boundElements") or []}
                         for element in elements]
         if prior_content == next_content and prior_selection == selection:
             now = time.time()
@@ -374,7 +405,7 @@ class StudioStore:
                 if element is None:
                     raise VersionConflict(f"Element {element_id} changed while the Agent was drawing")
                 if isinstance(expected, dict):
-                    matches = element_fingerprint(element) == expected["fingerprint"]
+                    matches = matches_fingerprint(element, expected["fingerprint"])
                 else:
                     matches = int(element.get("version", 1)) == expected
                 if not matches:

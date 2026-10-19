@@ -5,9 +5,11 @@ import re
 import secrets
 import time
 import uuid
+import unicodedata
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
+import rfc8785
 
 
 Number = float
@@ -42,8 +44,6 @@ class CreateElement(BaseModel):
             raise ValueError("Line and pen elements require at least two points")
         if self.type not in {"freedraw", "line", "arrow"} and self.pointSpace is not None:
             raise ValueError("Point coordinates are only supported for line and pen elements")
-        if self.points and len(self.points) > 500:
-            raise ValueError("A single element supports at most 500 points")
         if self.type == "text" and not self.text:
             raise ValueError("Text elements require text")
         if self.text and len(self.text) > 3000:
@@ -94,15 +94,23 @@ ACTION_MODELS = {
 PATCH_FIELDS = {
     "x", "y", "width", "height", "angle", "strokeColor", "backgroundColor",
     "strokeWidth", "opacity", "roughness", "text", "fontSize", "name",
+    "points",
 }
 FINGERPRINT_IGNORED_FIELDS = {"version", "versionNonce", "updated", "index", "seed"}
-COLOR_PATTERN = re.compile(r"(?:#[0-9a-fA-F]{3,8}|transparent)\Z")
+COLOR_PATTERN = re.compile(r"(?:#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)\Z")
 
 
-def element_fingerprint(element: dict[str, Any]) -> str:
+def element_fingerprint(element: dict[str, Any], *, legacy: bool = False) -> str:
     content = {key: value for key, value in element.items() if key not in FINGERPRINT_IGNORED_FIELDS}
-    encoded = json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
+    if legacy:
+        encoded = json.dumps(content, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+    content["boundElements"] = content.get("boundElements") or []
+    return "jcs:" + hashlib.sha256(rfc8785.dumps(content)).hexdigest()
+
+
+def matches_fingerprint(element: dict[str, Any], expected: str) -> bool:
+    return element_fingerprint(element, legacy=not expected.startswith("jcs:")) == expected
 
 
 def validate_action(action: dict[str, Any]) -> dict[str, Any]:
@@ -118,9 +126,14 @@ def validate_action(action: dict[str, Any]) -> dict[str, Any]:
                 value = args["patch"][field]
                 if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or abs(value) > 100000:
                     raise ValueError(f"Invalid {field}")
-        for field in ("width", "height", "strokeWidth", "fontSize"):
+        for field in ("strokeWidth", "fontSize"):
             if field in args["patch"] and args["patch"][field] <= 0:
                 raise ValueError(f"{field} must be positive")
+        for field in ("width", "height"):
+            if field in args["patch"] and args["patch"][field] < 0:
+                raise ValueError(f"{field} cannot be negative")
+        if "points" in args["patch"]:
+            CreateElement(type="freedraw", points=args["patch"]["points"])
         if args["patch"].get("strokeWidth", 0) > 32 or args["patch"].get("fontSize", 0) > 200:
             raise ValueError("Stroke or font size is too large")
         if "opacity" in args["patch"]:
@@ -214,7 +227,9 @@ def create_native_element(spec: dict[str, Any], element_id: str | None = None) -
     if data.type == "text":
         text = data.text or ""
         element.update({
-            "width": max(12, min(1600, len(max(text.splitlines(), key=len)) * data.fontSize * 0.62)),
+            "width": max(12, min(1600, max(sum(1 if unicodedata.east_asian_width(character) in {"W", "F"}
+                                                   else 0.62 for character in line)
+                                           for line in text.splitlines()) * data.fontSize)),
             "height": max(data.fontSize * 1.25, len(text.splitlines()) * data.fontSize * 1.25),
             "fontSize": data.fontSize,
             "fontFamily": 1,
@@ -262,6 +277,14 @@ def apply_action(elements: list[dict[str, Any]], selection: list[str], action: d
                         element["y"] = args["y"]
                 elif kind == "update_elements":
                     patch = dict(args["patch"])
+                    if "points" in patch and element["type"] not in {"line", "arrow", "freedraw"}:
+                        raise ValueError("Only native path elements support points")
+                    if element["type"] not in {"line", "arrow", "freedraw"} and any(
+                        patch.get(field, element[field]) <= 0 for field in ("width", "height")
+                    ):
+                        raise ValueError("Shape width and height must be positive")
+                    if "points" in patch and element["type"] == "freedraw":
+                        element["pressures"] = [0.5] * len(patch["points"])
                     if "name" in patch:
                         element["customData"] = {**element.get("customData", {}), "name": patch.pop("name")}
                     if "text" in patch:

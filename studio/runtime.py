@@ -13,6 +13,7 @@ from .agents import DrawingAgents, prepare_drawing_tool, recent_tool_exchanges
 from .errors import validation_summary
 from .fast_path import fast_actions
 from .settings import ModelSettings
+from .research import DrawingResearch, RESEARCH_TOOLS
 from .store import StudioStore, VersionConflict
 
 
@@ -37,20 +38,30 @@ class DrawingRuntime:
         document_id = self.store.session_document_id(session_id)
         task = self.store.create_task(session_id)
         self.store.add_message(session_id, "user", message, task["id"])
-        self.store.publish(document_id, "task", {"task_id": task["id"], "status": "queued"})
+        self.store.publish(document_id, "task", {"task_id": task["id"], **task})
         self.running[task["id"]] = asyncio.create_task(
             self._run(task["id"], session_id, document_id, message)
         )
+        self.running[task["id"]].add_done_callback(lambda worker: self._task_done(task["id"], worker))
         return task
+
+    def _task_done(self, task_id: str, worker: asyncio.Task) -> None:
+        if self.running.get(task_id) is worker:
+            self.running.pop(task_id, None)
+        self.cancel_requested.discard(task_id)
 
     def cancel(self, task_id: str) -> None:
         task = self.running.get(task_id)
         if task is None:
+            if self.store.get_task(task_id)["status"] in {"completed", "partial", "failed", "cancelled"}:
+                return
             raise KeyError(f"Running task not found: {task_id}")
         if self.store.get_task(task_id)["status"] == "queued":
             self.cancel_requested.add(task_id)
-        else:
-            task.cancel()
+            record = self.store.get_task(task_id)
+            self._status(task_id, self.store.session_document_id(record["session_id"]), "cancelled", "绘图已停止。",
+                         latency_ms=(time.time() - record["created_at"]) * 1000)
+        task.cancel()
 
     async def close(self) -> None:
         for task in self.running.values():
@@ -63,6 +74,7 @@ class DrawingRuntime:
                 summary: str = "", error: str = "", latency_ms: float = 0) -> None:
         self.store.update_task(task_id, status, summary, error, latency_ms)
         self.store.publish(document_id, "task", {
+            **self.store.get_task(task_id),
             "task_id": task_id, "status": status, "summary": summary,
             "error": error, "latency_ms": round(latency_ms, 1),
         })
@@ -144,14 +156,26 @@ class DrawingRuntime:
                 partial = any(run["status"] in {"failed", "paused", "queued", "running"} for run in runs)
                 return reply, partial
             exchange = [response]
-            for call in calls:
-                output = await self.call_main_tool(agents, task_id, session_id, document_id, call, round_number)
+            errors = False
+            completed = None
+            for index, call in enumerate(calls):
+                completion_error = ("Read and handle every tool error before completing."
+                                    if errors else "finish_drawing must be the last tool call in the response."
+                                    if index != len(calls) - 1 else "")
+                output = await self.call_main_tool(agents, task_id, session_id, document_id, call, round_number,
+                                                   completion_error=completion_error)
                 exchange.append({"role": "tool", "tool_call_id": call["id"],
                                  "content": json.dumps(output, ensure_ascii=False)})
+                errors = errors or output.get("ok") is False
+                if call["function"]["name"] == "finish_drawing" and output.get("ok"):
+                    completed = output
             turns.append(exchange)
+            if completed is not None and not errors:
+                return completed["summary"], completed["partial"]
 
     async def call_main_tool(self, models: DrawingAgents, task_id: str, session_id: str,
-                             document_id: str, call: dict, round_number: int = 0) -> dict:
+                             document_id: str, call: dict, round_number: int = 0,
+                             *, completion_error: str = "") -> dict:
         caller_id = f"main:{task_id}"
         name, raw_args = call["function"]["name"], call["function"]["arguments"]
         self.store.agents.check_task(session_id, task_id)
@@ -165,7 +189,21 @@ class DrawingRuntime:
         if not cached:
             try:
                 args = validate_tool(name, json.loads(raw_args))
-                if name == "spawn_agent":
+                if name == "finish_drawing":
+                    if completion_error:
+                        raise ValueError(completion_error)
+                    active = [agent["agent_id"] for agent in self.store.agents.list_agents(session_id)
+                              if agent["owner_task_id"] == task_id and agent["state"] == "Running"]
+                    pending = self.store.agents.pending_results(session_id, task_id=task_id)
+                    if active or pending:
+                        raise ValueError(f"Settle active Agents and pending results before completing: {active}, "
+                                         f"{[item['id'] for item in pending]}")
+                    runs = self.store.agents.task_runs(session_id, task_id)
+                    output = {"ok": True, "summary": args["summary"], "partial": any(
+                        run["status"] in {"failed", "paused", "queued", "running"} for run in runs)}
+                elif name in RESEARCH_TOOLS:
+                    output = await DrawingResearch(self.store).call(task_id, "main", name, args)
+                elif name == "spawn_agent":
                     output = await self.children.spawn_agent(session_id, task_id, call["id"], args, models.settings)
                 elif name == "send_input":
                     output = await self.children.send_input(session_id, task_id, call["id"], args, models.settings)
@@ -221,7 +259,8 @@ class DrawingRuntime:
                 _, duplicate = self.store.agents.validate_commit(document_id, result_id, index)
             if duplicate:
                 continue
-            if action["kind"] == "create_element" and action["args"]["type"] == "freedraw":
+            pen_stroke = action["kind"] == "create_element" and action["args"]["type"] == "freedraw"
+            if pen_stroke:
                 await self._animate_stroke(task_id, document_id, action)
             try:
                 outcome = self.store.commit_action(document_id, action, item["expected_elements"], (result_id, index))
@@ -236,8 +275,8 @@ class DrawingRuntime:
                 })
                 self.store.publish(document_id, "phase", {"task_id": task_id, "phase": "drawing",
                                                            "completed": index + 1, "total": len(result["actions"])})
-                if len(result["actions"]) > 1:
-                    await asyncio.sleep(0.09)
+                if len(result["actions"]) > 1 and not pen_stroke:
+                    await asyncio.sleep(0.035)
         saved = self.store.agents.get_result(session_id, result_id)
         document = self.store.get_document(document_id)
         return {"ok": True, **self.store.agents.result_summary(saved), "changed_ids": changed_ids,
@@ -257,7 +296,8 @@ class DrawingRuntime:
                             for element_id in action["args"].get("ids", []) if element_id in current_by_id}
             else:
                 expected = item["expected_elements"]
-            if action["kind"] == "create_element" and action["args"]["type"] == "freedraw":
+            pen_stroke = action["kind"] == "create_element" and action["args"]["type"] == "freedraw"
+            if pen_stroke:
                 await self._animate_stroke(task_id, document_id, action)
             outcome = self.store.commit_action(document_id, action, expected)
             self.store.log_tool(task_id, "main", index, "commit", {
@@ -266,17 +306,19 @@ class DrawingRuntime:
             })
             self.store.publish(document_id, "phase", {"task_id": task_id, "phase": "drawing",
                                                        "completed": index, "total": total})
-            if total > 1:
-                await asyncio.sleep(0.09)
+            if total > 1 and not pen_stroke:
+                await asyncio.sleep(0.035)
 
     async def _animate_stroke(self, task_id: str, document_id: str, action: dict[str, Any]) -> None:
         element = create_native_element(action["args"], action.get("element_id"))
         points = element["points"]
-        steps = min(16, max(3, math.ceil(len(points) / 3)))
+        length = sum(math.dist(first, second) for first, second in zip(points, points[1:]))
+        duration = max(0.032, min(0.32, length / 1200))
+        steps = min(len(points) - 1, max(2, math.ceil(duration * 60)))
         for frame in range(1, steps + 1):
             count = max(2, math.ceil(len(points) * frame / steps))
             partial = {**element, "points": points[:count], "pressures": element["pressures"][:count],
                        "width": max(point[0] for point in points[:count]),
                        "height": max(point[1] for point in points[:count])}
             self.store.publish(document_id, "stroke_progress", {"task_id": task_id, "element": partial})
-            await asyncio.sleep(0.035)
+            await asyncio.sleep(duration / steps)
