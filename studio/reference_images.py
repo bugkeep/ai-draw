@@ -31,6 +31,49 @@ from .research import COLLECTION_HOSTS, canonical_url, public_url
 IMAGE_QUERY_TOOLS = {'search_reference_images', 'view_reference_image'}
 TRACE_TOOLS = {'trace_reference', 'continue_reference_trace'}
 FORMATS = ('PNG', 'JPEG', 'WEBP', 'GIF', 'BMP', 'TIFF', 'AVIF', 'ICO')
+REFERENCE_USER_AGENT = 'DrawAgentStudio/0.1 reference-image-study (https://github.com/bugkeep/ai-draw)'
+
+
+def commons_image_candidates(payload):
+    if not isinstance(payload, dict):
+        raise ValueError('Commons catalogue returned an unexpected result format')
+    if payload.get('error'):
+        error = payload['error']
+        detail = f"{error.get('code', 'unknown')}: {error.get('info', '')}" if isinstance(error, dict) else str(error)
+        raise ValueError(f'Commons catalogue error: {detail}')
+    query = payload.get('query', {})
+    if not isinstance(query, dict):
+        raise ValueError('Commons catalogue returned an unexpected result format')
+    pages = query.get('pages', [])
+    if not isinstance(pages, list) or any(not isinstance(page, dict) for page in pages):
+        raise ValueError('Commons catalogue returned an unexpected result format')
+    results = []
+    for page in sorted(pages, key=lambda page: int(page.get('index') or 0)):
+        if not page.get('imageinfo'):
+            continue
+        if not isinstance(page['imageinfo'], list) or not isinstance(page.get('title'), str):
+            raise ValueError('Commons catalogue returned invalid image metadata')
+        info = page['imageinfo'][0]
+        if not isinstance(info, dict) or not isinstance(info.get('extmetadata', {}), dict):
+            raise ValueError('Commons catalogue returned invalid image metadata')
+        metadata = info.get('extmetadata', {})
+
+        def text(key):
+            field = metadata.get(key, {})
+            if not isinstance(field, dict):
+                raise ValueError('Commons catalogue returned invalid image metadata')
+            value = field.get('value', '')
+            if not isinstance(value, str):
+                raise ValueError('Commons catalogue returned non-text image metadata')
+            return html.fragment_fromstring(value, create_parent=True).text_content().strip() if value else ''
+
+        if not info.get('descriptionurl') or not (info.get('thumburl') or info.get('url')):
+            continue
+        results.append({'title': page['title'].removeprefix('File:'), 'url': info['descriptionurl'],
+            'image': info.get('thumburl') or info['url'], 'mime': info.get('mime', ''),
+            'description': text('ImageDescription')[:1000], 'license': text('LicenseShortName') or 'unverified',
+            'license_url': text('LicenseUrl'), 'artist': text('Artist')[:500]})
+    return results
 
 
 def png_bytes(image):
@@ -216,6 +259,7 @@ class ReferenceImages:
         metadata = {**metadata, 'reference_id': reference_id, 'title': candidate['title'][:240],
                     'url': candidate['url'], 'image_url': candidate['image'],
                     'license': candidate.get('license', 'unverified'),
+                    **{key: candidate[key] for key in ('license_url', 'artist') if candidate.get(key)},
                     'description': candidate.get('description', '')[:1000], 'content_is_untrusted': True}
         with self.store.lock, self.store.connection:
             row = self.store.connection.execute('SELECT metadata FROM reference_images WHERE id=?',
@@ -287,36 +331,54 @@ class ReferenceImages:
                     page=arguments.get('page', 1), backend=os.getenv('DRAW_AGENT_SEARCH_BACKEND', 'yahoo,duckduckgo,google,startpage'))
             except DDGSException as error:
                 raise ValueError(f'Public illustrated-source search failed: {error}. '
-                                 'source=images can search direct image URLs without reading article pages.') from None
+                                 'Try source=images for an image index or source=commons for a public artwork catalogue.') from None
+        elif source_kind == 'commons':
+            params = {'action': 'query', 'format': 'json', 'formatversion': 2, 'generator': 'search',
+                'gsrsearch': arguments['query'], 'gsrnamespace': 6, 'gsrlimit': 10,
+                'gsroffset': (arguments.get('page', 1) - 1) * 10,
+                'prop': 'imageinfo', 'iiprop': 'url|size|mime|extmetadata', 'iiurlwidth': 1536,
+                'iiextmetadatafilter': 'LicenseShortName|LicenseUrl|Artist|ImageDescription'}
+            url = 'https://commons.wikimedia.org/w/api.php?' + urlencode(params)
+            async with httpx.AsyncClient(timeout=httpx.Timeout(15, connect=8), follow_redirects=False,
+                headers={'User-Agent': REFERENCE_USER_AGENT}) as client:
+                try:
+                    results = commons_image_candidates(json.loads(await self._search_bytes(client, url)))
+                except (httpx.HTTPError, ValueError) as error:
+                    raise ValueError(f'Public Commons catalogue search failed: {error}') from None
         else:
             engine = BingImages(timeout=12)
             payload = engine.build_payload(arguments['query'], 'us-en', 'moderate', None, arguments.get('page', 1))
             payload.update({'mkt': 'en-US', 'setlang': 'en-US', 'cc': 'US'})
             url = engine.search_url + '?' + urlencode(payload)
             async with httpx.AsyncClient(timeout=httpx.Timeout(15, connect=8), follow_redirects=False,
-                headers={'User-Agent': 'DrawAgentStudio/0.1 reference-image-study'}) as client:
+                headers={'User-Agent': REFERENCE_USER_AGENT}) as client:
                 results = await self._search_results(client, engine, url)
         candidates, excluded, seen = [], [], set()
         for result in results:
             try:
                 source = canonical_url(result['href'] if source_kind == 'pages' else result['url'])
-                image = canonical_url(result['image']) if source_kind == 'images' else source
+                image = source if source_kind == 'pages' else canonical_url(result['image'])
                 title = result.get('title', '')
+                if source_kind == 'commons' and not result.get('mime', '').startswith('image/'):
+                    raise ValueError('Catalogue result is a document, audio or video rather than a reference image')
                 if any(domain in (urlsplit(source).hostname or '') for domain in (*COLLECTION_HOSTS, 'huaban.com')):
                     raise ValueError('Image collection or stock marketplace does not identify a useful original study source')
-                matches = sum(term in f'{title} {source}'.casefold() for term in terms)
+                description = result.get('description', '') if source_kind == 'commons' else ''
+                matches = sum(term in f'{title} {source} {description}'.casefold() for term in terms)
                 if not matches:
                     raise ValueError('Image metadata does not match the subject terms')
                 if image not in seen:
                     query_matches = sum(word in f'{title} {source}'.casefold()
                         for word in arguments['query'].casefold().split() if len(word) >= 4)
-                    candidates.append({'title': title, 'url': source, 'image': image, 'rank': matches * 4 + query_matches})
+                    candidates.append({'title': title, 'url': source, 'image': image, 'rank': matches * 4 + query_matches,
+                        **{key: result[key] for key in ('description', 'license', 'license_url', 'artist')
+                           if source_kind == 'commons' and result.get(key)}})
                     seen.add(image)
             except (ValueError, KeyError) as error:
                 excluded.append({'url': result.get('image', ''), 'error': str(error)})
         candidates.sort(key=lambda item: -item['rank'])
         async with httpx.AsyncClient(timeout=httpx.Timeout(15, connect=8), follow_redirects=False,
-            headers={'User-Agent': 'DrawAgentStudio/0.1 reference-image-study'}) as client:
+            headers={'User-Agent': REFERENCE_USER_AGENT}) as client:
             if source_kind == 'pages':
                 pages = await asyncio.gather(*(self._page_candidate(client, candidate, terms) for candidate in candidates[:5]))
                 image_lists = []
@@ -354,7 +416,7 @@ class ReferenceImages:
                     'source_errors': excluded[:3],
                     'guidance': ('Try source=images for direct image URLs when article pages are unavailable. '
                                  if source_kind == 'pages' else 'Try source=pages for illustrated drawing tutorials. ')
-                                + 'Use a compact subject query. '
+                                + 'For public artwork, engravings or natural-history illustrations, try source=commons. Use a compact subject query. '
                                 'Detailed pose requirements belong in goal. Blocked or unrelated sources do not supply reference pixels.'}
         output = {'ok': True, 'query': arguments['query'], 'goal': arguments['goal'], 'sources': sources,
                   'next_page': arguments.get('page', 1) + 1, 'rejected_count': len(excluded),
@@ -416,27 +478,31 @@ class ReferenceImages:
             return await asyncio.to_thread(page_image_candidates, bytes(data), url, candidate, terms)
         raise ValueError('Illustrated source has too many redirects')
 
+    async def _search_bytes(self, client, url):
+        for _ in range(10):
+            url = await public_url(url)
+            async with client.stream('GET', url) as response:
+                if response.is_redirect:
+                    if response.next_request is None:
+                        raise ValueError('Image search redirect has no destination')
+                    url = str(response.next_request.url)
+                    continue
+                response.raise_for_status()
+                data = bytearray()
+                async for chunk in response.aiter_bytes():
+                    data.extend(chunk)
+                    if len(data) > 2_000_000:
+                        raise ValueError('Public image search response exceeds 2 MB')
+            return bytes(data)
+        raise ValueError('Public image search has too many redirects')
+
     async def _search_results(self, client, engine, url):
         try:
-            for _ in range(10):
-                url = await public_url(url)
-                async with client.stream('GET', url) as response:
-                    if response.is_redirect:
-                        if response.next_request is None:
-                            raise ValueError('Image search redirect has no destination')
-                        url = str(response.next_request.url)
-                        continue
-                    response.raise_for_status()
-                    data = bytearray()
-                    async for chunk in response.aiter_bytes():
-                        data.extend(chunk)
-                        if len(data) > 2_000_000:
-                            raise ValueError('Public image search response exceeds 2 MB')
-                results = [asdict(result) for result in engine.extract_results(bytes(data).decode('utf-8'))]
-                if not results:
-                    raise ValueError('Public image search returned no image metadata. Refine the query.')
-                return results
-            raise ValueError('Public image search has too many redirects')
+            data = await self._search_bytes(client, url)
+            results = [asdict(result) for result in engine.extract_results(data.decode('utf-8'))]
+            if not results:
+                raise ValueError('Public image search returned no image metadata. Refine the query.')
+            return results
         except (httpx.HTTPError, ParserError, UnicodeError) as error:
             raise ValueError(f'Public reference image search failed: {error}') from None
 

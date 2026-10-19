@@ -1,0 +1,275 @@
+{
+  "source_url": "https://commons.wikimedia.org/w/api.php?action=query&format=json&formatversion=2&generator=search&gsrsearch=Mona+Lisa+engraving&gsrnamespace=6&gsrlimit=6&prop=imageinfo&iiprop=url%7Csize%7Cmime%7Cextmetadata&iiurlwidth=1280&iiextmetadatafilter=LicenseShortName%7CLicenseUrl%7CArtist%7CImageDescription",
+  "retrieved_on": "2026-10-20",
+  "content_sha256": "0afbafe01a254f5f7dc91db9b8cbfa5ddf8fbbd915a413f4bf40b5fcceb77845",
+  "response": {
+    "batchcomplete": true,
+    "continue": {
+      "gsroffset": 6,
+      "continue": "gsroffset||"
+    },
+    "query": {
+      "pages": [
+        {
+          "pageid": 14548385,
+          "ns": 6,
+          "title": "File:Brooklyn Museum - Mona Lisa - Timothy Cole.jpg",
+          "index": 4,
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "size": 109127,
+              "width": 552,
+              "height": 768,
+              "thumburl": "https://upload.wikimedia.org/wikipedia/commons/3/3a/Brooklyn_Museum_-_Mona_Lisa_-_Timothy_Cole.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+              "thumbwidth": 1280,
+              "thumbheight": 1781,
+              "thumbattribs": {
+                "src": "https://upload.wikimedia.org/wikipedia/commons/3/3a/Brooklyn_Museum_-_Mona_Lisa_-_Timothy_Cole.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+                "decoding": "async",
+                "loading": "lazy",
+                "width": 1280,
+                "height": 1781
+              },
+              "url": "https://upload.wikimedia.org/wikipedia/commons/3/3a/Brooklyn_Museum_-_Mona_Lisa_-_Timothy_Cole.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Brooklyn_Museum_-_Mona_Lisa_-_Timothy_Cole.jpg",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=14548385",
+              "extmetadata": {
+                "Artist": {
+                  "value": "<bdi><a href=\"https://en.wikipedia.org/wiki/en:Timothy_Cole\" class=\"extiw\" title=\"w:en:Timothy Cole\"><span title=\"American wood engraver (1852–1931)\">Timothy Cole</span></a></bdi>",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "Public domain",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                }
+              },
+              "mime": "image/jpeg"
+            }
+          ]
+        },
+        {
+          "pageid": 66976398,
+          "ns": 6,
+          "title": "File:Mona Lisa Nuda - engraving.jpg",
+          "index": 2,
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "size": 59276,
+              "width": 393,
+              "height": 526,
+              "thumburl": "https://upload.wikimedia.org/wikipedia/commons/d/dd/Mona_Lisa_Nuda_-_engraving.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+              "thumbwidth": 1280,
+              "thumbheight": 1713,
+              "thumbattribs": {
+                "src": "https://upload.wikimedia.org/wikipedia/commons/d/dd/Mona_Lisa_Nuda_-_engraving.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+                "decoding": "async",
+                "loading": "lazy",
+                "width": 1280,
+                "height": 1713
+              },
+              "url": "https://upload.wikimedia.org/wikipedia/commons/d/dd/Mona_Lisa_Nuda_-_engraving.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Mona_Lisa_Nuda_-_engraving.jpg",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=66976398",
+              "extmetadata": {
+                "ImageDescription": {
+                  "value": "Nude Mona Lisa.",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "<span lang=\"en\">Anonymous</span><span style=\"display:none\">Unknown author</span>",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "Public domain",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                }
+              },
+              "mime": "image/jpeg"
+            }
+          ]
+        },
+        {
+          "pageid": 90510475,
+          "ns": 6,
+          "title": "File:Mona Lisa (La Joconde) Met DP885496.jpg",
+          "index": 6,
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "size": 4298210,
+              "width": 2750,
+              "height": 3871,
+              "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b5/Mona_Lisa_%28La_Joconde%29_Met_DP885496.jpg/1280px-Mona_Lisa_%28La_Joconde%29_Met_DP885496.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "thumbwidth": 1280,
+              "thumbheight": 1802,
+              "responsiveUrls": {
+                "2": "https://upload.wikimedia.org/wikipedia/commons/b/b5/Mona_Lisa_%28La_Joconde%29_Met_DP885496.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled"
+              },
+              "thumbattribs": {
+                "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b5/Mona_Lisa_%28La_Joconde%29_Met_DP885496.jpg/1280px-Mona_Lisa_%28La_Joconde%29_Met_DP885496.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+                "decoding": "async",
+                "loading": "lazy",
+                "width": 1280,
+                "height": 1802,
+                "srcset": "https://upload.wikimedia.org/wikipedia/commons/b/b5/Mona_Lisa_%28La_Joconde%29_Met_DP885496.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled 2x"
+              },
+              "url": "https://upload.wikimedia.org/wikipedia/commons/b/b5/Mona_Lisa_%28La_Joconde%29_Met_DP885496.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Mona_Lisa_(La_Joconde)_Met_DP885496.jpg",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=90510475",
+              "extmetadata": {
+                "Artist": {
+                  "value": "<div class=\"fn value\">\n<a href=\"//commons.wikimedia.org/w/index.php?title=Creator:Augustine_Fauchery&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"Creator:Augustine Fauchery (page does not exist)\">Creator:Augustine Fauchery</a></div>",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "CC0",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                },
+                "LicenseUrl": {
+                  "value": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+                  "source": "commons-desc-page"
+                }
+              },
+              "mime": "image/jpeg"
+            }
+          ]
+        },
+        {
+          "pageid": 92323132,
+          "ns": 6,
+          "title": "File:Monograph on Leonardo da Vinci's Mona Lisa (1915).pdf",
+          "index": 3,
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "size": 2480490,
+              "width": 1110,
+              "height": 1512,
+              "pagecount": 72,
+              "thumburl": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/25/Monograph_on_Leonardo_da_Vinci%27s_Mona_Lisa_%281915%29.pdf/page1-960px-Monograph_on_Leonardo_da_Vinci%27s_Mona_Lisa_%281915%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+              "thumbwidth": 1280,
+              "thumbheight": 1744,
+              "thumbattribs": {
+                "src": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/25/Monograph_on_Leonardo_da_Vinci%27s_Mona_Lisa_%281915%29.pdf/page1-960px-Monograph_on_Leonardo_da_Vinci%27s_Mona_Lisa_%281915%29.pdf.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+                "decoding": "async",
+                "loading": "lazy",
+                "width": 1280,
+                "height": 1744
+              },
+              "url": "https://upload.wikimedia.org/wikipedia/commons/2/25/Monograph_on_Leonardo_da_Vinci%27s_Mona_Lisa_%281915%29.pdf?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Monograph_on_Leonardo_da_Vinci%27s_Mona_Lisa_(1915).pdf",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=92323132",
+              "extmetadata": {
+                "ImageDescription": {
+                  "value": "Monograph on Leonardo da Vinci's Mona Lisa by John R. Eyre (1915)",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "John R. Eyre",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "Public domain",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                }
+              },
+              "mime": "application/pdf"
+            }
+          ]
+        },
+        {
+          "pageid": 112311275,
+          "ns": 6,
+          "title": "File:Mona Lisa (Dezarrois after Leonardo).jpg",
+          "index": 1,
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "size": 196859,
+              "width": 426,
+              "height": 608,
+              "thumburl": "https://upload.wikimedia.org/wikipedia/commons/8/86/Mona_Lisa_%28Dezarrois_after_Leonardo%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+              "thumbwidth": 1280,
+              "thumbheight": 1827,
+              "thumbattribs": {
+                "src": "https://upload.wikimedia.org/wikipedia/commons/8/86/Mona_Lisa_%28Dezarrois_after_Leonardo%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+                "decoding": "async",
+                "loading": "lazy",
+                "width": 1280,
+                "height": 1827
+              },
+              "url": "https://upload.wikimedia.org/wikipedia/commons/8/86/Mona_Lisa_%28Dezarrois_after_Leonardo%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Mona_Lisa_(Dezarrois_after_Leonardo).jpg",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=112311275",
+              "extmetadata": {
+                "ImageDescription": {
+                  "value": "Mona Lisa (Dezarrois after Leonardo)",
+                  "source": "commons-desc-page"
+                },
+                "Artist": {
+                  "value": "<bdi><a href=\"https://www.wikidata.org/wiki/Q25973184\" class=\"extiw\" title=\"d:Q25973184\"><span title=\"Born 11 September 1864, in Mâcon. French, Engraver (burin/etching)\">Antoine François Dezarrois</span></a></bdi>",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "Public domain",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                }
+              },
+              "mime": "image/jpeg"
+            }
+          ]
+        },
+        {
+          "pageid": 133924201,
+          "ns": 6,
+          "title": "File:Leonardo da Vinci painting Mona Lisa (Lemoine after Aimee Brune-Pages).jpg",
+          "index": 5,
+          "imagerepository": "local",
+          "imageinfo": [
+            {
+              "size": 126059,
+              "width": 1024,
+              "height": 759,
+              "thumburl": "https://upload.wikimedia.org/wikipedia/commons/d/dd/Leonardo_da_Vinci_painting_Mona_Lisa_%28Lemoine_after_Aimee_Brune-Pages%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+              "thumbwidth": 1280,
+              "thumbheight": 949,
+              "thumbattribs": {
+                "src": "https://upload.wikimedia.org/wikipedia/commons/d/dd/Leonardo_da_Vinci_painting_Mona_Lisa_%28Lemoine_after_Aimee_Brune-Pages%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+                "decoding": "async",
+                "loading": "lazy",
+                "width": 1280,
+                "height": 949
+              },
+              "url": "https://upload.wikimedia.org/wikipedia/commons/d/dd/Leonardo_da_Vinci_painting_Mona_Lisa_%28Lemoine_after_Aimee_Brune-Pages%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+              "descriptionurl": "https://commons.wikimedia.org/wiki/File:Leonardo_da_Vinci_painting_Mona_Lisa_(Lemoine_after_Aimee_Brune-Pages).jpg",
+              "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=133924201",
+              "extmetadata": {
+                "Artist": {
+                  "value": "<div class=\"fn value\">\n<p>Charles Lemoine\n</p>\nAimée Brune-Pagès</div>",
+                  "source": "commons-desc-page"
+                },
+                "ImageDescription": {
+                  "value": "<i>Leonardo da Vinci painting Mona Lisa</i>, engraving by Charles Lemoine after a painting by Aimée Brune-Pagès exhibited at the Salon of 1845 (# 233)",
+                  "source": "commons-desc-page"
+                },
+                "LicenseShortName": {
+                  "value": "Public domain",
+                  "source": "commons-desc-page",
+                  "hidden": ""
+                }
+              },
+              "mime": "image/jpeg"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

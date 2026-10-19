@@ -234,6 +234,12 @@ python -m scripts.evaluate_playback --source-database runs/portrait-optimization
 
 ## 免费公共检索
 
+新增 Commons 目录后，真实检查搜索了人物版画、山地绘画和坐姿猫三类资料，并用实际 Ark 图片请求判断每张参考的可用性。三题均找到至少一个可用来源，九张候选中七张通过图像检查，另外两张保留为不合适的候选；实际像素解码、独立存储、缓存与画布隔离检查通过。记录为 `runs/commons-reference-quality-v2-20261020.json`。这是资料检索与参考适用性检查，不是整幅作品成功率。原始图片和完整筛选日志保存在同名 SQLite，公共服务的后续可用性仍取决于实际网络返回。
+
+```bash
+python -m scripts.evaluate_reference_images --source commons --database runs/commons-reference-check.sqlite3 --output runs/commons-reference-check.json
+```
+
 检索使用 DDGS 公共后端和实际网页正文。一次两题检查中，山水方法检索用时 10.28 秒，返回三个来源；手持杯子的方法检索用时 11.98 秒，返回两个来源。相关正文、同画布缓存、资料归属和私有地址拒绝检查通过，记录为 `runs/research-real-4.json`。
 
 其他实际运行也出现过空结果、超时和 TLS 错误。公共搜索的可用性不能由上述两题的成功记录推算；工具会返回实际错误，Agent 据此调整查询或说明资料不足。

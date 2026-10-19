@@ -1,6 +1,7 @@
 import asyncio
 import io
 import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,7 +11,7 @@ from server.app import create_app
 from studio.actions import element_fingerprint
 from studio.agent_tools import validate_tool
 from studio.agents import DrawingAgents, prepare_drawing_tool
-from studio.reference_images import ReferenceImages, decode_reference, page_image_candidates
+from studio.reference_images import ReferenceImages, commons_image_candidates, decode_reference, page_image_candidates
 from studio.runtime import DrawingRuntime
 from studio.settings import ModelConfig, ModelSettings
 from studio.store import StudioStore
@@ -24,6 +25,29 @@ def line_image(format='PNG', *, mode='RGB'):
     buffer = io.BytesIO()
     image.save(buffer, format=format)
     return buffer.getvalue()
+
+
+def test_actual_commons_catalogue_response_preserves_search_rank_image_sources_and_attribution():
+    fixture = json.loads((Path(__file__).parent / 'fixtures/commons-imageinfo.json').read_text(encoding='utf-8'))
+    assert fixture['source_url'].startswith('https://commons.wikimedia.org/w/api.php?')
+    results = commons_image_candidates(fixture['response'])
+    pages = sorted(fixture['response']['query']['pages'], key=lambda item: item.get('index', 0))
+    assert [item['title'] for item in results] == [item['title'].removeprefix('File:') for item in pages]
+    assert any(item['mime'] == 'application/pdf' for item in results)  # filtered by search, not mistaken for a portrait
+    actual_images = [item for item in results if item['mime'].startswith('image/')]
+    assert len(actual_images) == 5
+    assert all(item['url'].startswith('https://commons.wikimedia.org/wiki/') and item['image'].startswith('https://')
+               and item['license'] != 'unverified' and item['artist'] and '<' not in item['artist'] for item in actual_images)
+    args = {'query': 'Mona Lisa engraving', 'subject_terms': ['Mona Lisa'], 'goal': '人物与交叠双手', 'source': 'commons'}
+    assert validate_tool('search_reference_images', args, child=True)['source'] == 'commons'
+
+
+@pytest.mark.parametrize('payload', [[], {'query': None}, {'query': {'pages': [None]}},
+    {'error': {'code': 'ratelimited', 'info': 'Retry later'}},
+    {'query': {'pages': [{'title': 'File:test', 'imageinfo': 'invalid'}]}}])
+def test_invalid_catalogue_data_is_an_explicit_error(payload):
+    with pytest.raises(ValueError, match='Commons catalogue'):
+        commons_image_candidates(payload)
 
 
 def save_source(images, task, agent_id='main'):

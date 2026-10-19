@@ -68,6 +68,8 @@ SQLite 的 `canvas_observations` 保存 PNG、画布内容标识、所属会话�
 
 `source=pages` 使用公共文字搜索定位插图页面，通过 trafilatura 与 lxml 读取页面元信息和与主体相关的图片地址。`source=images` 使用公共图片索引，解析由 DDGS 提供。来源页面、图片和图片索引通过 HTTPX 读取，逐次检查跳转目标，下载后通过 Pillow 解码实际像素，检查分辨率并合并重复来源及相似图片。搜索使用主题与查询相关性排序，最多提供三个不同来源；图片元信息不能证明姿态与用户要求相符，Agent 需要查看实际图片后选择。
 
+`source=commons` 直接查询 Wikimedia Commons 的公开图片目录，无需付费搜索密钥，适合查找公开作品、版画及自然史插图。它通过 [MediaWiki Imageinfo API](https://www.mediawiki.org/wiki/API:Imageinfo) 取得文件页、图片地址、作者和来源声明的许可信息；文档、音频和视频结果被排除。图片仍经过相同的公开地址、下载、像素解码、重复筛选、SQLite 归属及完整图片检查流程。目录中也会出现不同姿态或相近题材，标题匹配不表示图像满足本次作画要求；网页搜索不适合时，Agent 可以切换来源或调整查询。
+
 参考图片只允许公开 HTTP/HTTPS 来源，网络读取具有 20 MB 文件、2,400 万解码像素和跳转保护。支持 Pillow 的 PNG、JPEG、WebP、GIF、BMP、TIFF、AVIF 和 ICO 解码；动画图片使用第一帧，EXIF 方向校正后将透明区域铺成白色。保存的参考图最长边为 2048 像素，查看图片最长边为 1280 像素。工具返回的 `width`、`height` 与区域坐标均使用保存后的参考图尺寸。
 
 `reference_images` 保存原始文件、解码图片、来源及所属会话和任务；`reference_image_views` 保存各调用者的当前图片、区域与实际发送状态；`reference_search_previews` 保存带 A/B/C 标签的候选对比图及调用者归属；`reference_traces` 保存提取参数与完整源像素路径；`reference_trace_plans` 保存固定的区域、映射和样式，供主 Agent 与子 Agent 使用同一计划继续分页。搜索成功后，候选预览直接进入对应 Agent 的下一轮图片上下文。主 Agent 首次使用已有资料时也会收到候选对比图，可直接选择已保存的参考图。

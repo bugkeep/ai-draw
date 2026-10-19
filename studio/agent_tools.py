@@ -128,7 +128,7 @@ class ReadReference(ToolInput):
 
 
 class SearchReferenceImages(SearchReferences):
-    source: Literal['pages', 'images'] = Field(default='pages', description='pages finds relevant illustrated source articles; images searches a public image index directly.')
+    source: Literal['pages', 'images', 'commons'] = Field(default='pages', description='pages finds illustrated articles; images searches a public image index; commons searches the free Wikimedia Commons catalogue, including artwork, engravings and natural-history illustrations. Inspect actual pixels for pose and completeness.')
 
 
 class ReferenceRegion(ToolInput):

@@ -84,11 +84,18 @@ async def evaluate(args):
         {'query': 'how to draw mountains tutorial', 'subject_terms': ['mountain'], 'goal': '山水的远近关系与山体轮廓'},
         {'query': 'how to draw a sitting cat tutorial', 'subject_terms': ['cat'], 'goal': '坐姿猫的完整身体轮廓与四肢关系'},
     ]
+    if args.source == 'commons':
+        for case, query in zip(cases, ['Mona Lisa engraving', 'mountain landscape drawing', 'sitting cat drawing']):
+            case.update(query=query, source='commons')
+    elif args.source == 'images':
+        for case in cases:
+            case['source'] = 'images'
     try:
         for item in previous or [{'case': case} for case in cases]:
             case = item['case']
             session = store.get_session(item['session_id']) if previous else store.create_session(case['goal'])
-            task = store.get_task(item['task_id']) if previous else store.create_task(session['id'])
+            task_id = item['task_id'] if previous else store.create_task(session['id'])['id']
+            task = store.get_task(task_id)
             if task['session_id'] != session['id']:
                 raise ValueError('Reference evaluation task belongs to another canvas')
             if previous:
@@ -151,6 +158,7 @@ def main():
     parser.add_argument('--database', type=Path, default=Path('runs/reference-images-evaluation.sqlite3'))
     parser.add_argument('--output', type=Path, default=Path('runs/reference-images-evaluation.json'))
     parser.add_argument('--recheck', type=Path, help='Assess saved actual reference images from this report without issuing new web searches')
+    parser.add_argument('--source', choices=['pages', 'images', 'commons'], default='pages')
     args = parser.parse_args()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     load_dotenv(Path(__file__).resolve().parent.parent / '.env', override=False)
