@@ -14,12 +14,14 @@ await writeFile(resolve(output, 'server.json'), JSON.stringify({ url: process.en
   database: process.env.DRAW_AGENT_DB, source: 'owned_isolated_production_http_server' }, null, 2))
 const runner = process.env.DRAW_AGENT_EVALUATOR || 'drawing-quality'
 const runners = { 'drawing-quality': 'scripts.evaluate_quality',
-  'reference-polygon': 'scripts.evaluate_reference_polygon', 'observed-coordinates': 'scripts.evaluate_observed_coordinates' }
+  'reference-polygon': 'scripts.evaluate_reference_polygon', 'reference-layout': 'scripts.evaluate_reference_polygon',
+  'observed-coordinates': 'scripts.evaluate_observed_coordinates' }
 if (!Object.hasOwn(runners, runner)) throw new Error('Unknown evaluation runner')
 const args = ['-m', runners[runner],
   '--url', process.env.DRAW_AGENT_URL, '--output-dir', output]
 if (runner !== 'drawing-quality') args.push('--database', process.env.DRAW_AGENT_DB)
-else {
+if (runner === 'reference-layout') args.push('--method', 'layout')
+if (runner === 'drawing-quality') {
   if (process.env.DRAW_AGENT_QUALITY_CASES) args.push('--cases', process.env.DRAW_AGENT_QUALITY_CASES)
   if (process.env.DRAW_AGENT_QUALITY_DATASET) args.push('--dataset', process.env.DRAW_AGENT_QUALITY_DATASET)
 }

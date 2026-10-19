@@ -3,7 +3,7 @@ import math
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .actions import COLOR_PATTERN, Point
-from .coordinates import ObservationCoordinates
+from .coordinates import ReferenceCoordinates
 from .eraser import fill_color_visible
 from .pen_geometry import native_pen_samples
 
@@ -33,7 +33,7 @@ class PenPath(BaseModel):
         return self
 
 
-class DrawPaths(ObservationCoordinates):
+class DrawPaths(ReferenceCoordinates):
     model_config = ConfigDict(extra="forbid")
 
     paths: list[PenPath] = Field(min_length=1)
@@ -46,7 +46,7 @@ class DrawPaths(ObservationCoordinates):
 
     @model_validator(mode="after")
     def check_style(self):
-        if self.observation_id and (self.origin != (0, 0) or self.scale != 1):
+        if (self.observation_id or self.reference_view_id) and (self.origin != (0, 0) or self.scale != 1):
             raise ValueError('Image-pixel points cannot also use draw_paths origin/scale')
         if not COLOR_PATTERN.fullmatch(self.strokeColor):
             raise ValueError("Invalid path color")
@@ -60,7 +60,7 @@ class DrawPaths(ObservationCoordinates):
         return self
 
 
-class ReshapePath(ObservationCoordinates):
+class ReshapePath(ReferenceCoordinates):
     model_config = ConfigDict(extra="forbid")
 
     element_id: str = Field(min_length=1)
@@ -97,7 +97,7 @@ def interpolate_path(points: list[Point], smooth: bool, closed: bool) -> list[Po
 
 def path_elements(arguments: dict) -> list[dict]:
     drawing = DrawPaths.model_validate(arguments)
-    if drawing.observation_id:
+    if drawing.observation_id or drawing.reference_view_id:
         raise ValueError('Resolve observed image coordinates before preparing canvas paths')
     items = []
     for path in drawing.paths:

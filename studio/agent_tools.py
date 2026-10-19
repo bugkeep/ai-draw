@@ -126,7 +126,7 @@ class CompactContext(ToolInput):
     pending: list[str] = Field(default_factory=list)
     object_ids: list[str] = Field(default_factory=list,
         description='Only exact native object IDs present on the current canvas/private draft. '
-                    'Agent, input, run, result and image/reference IDs belong in summary or constraints, not object_ids.')
+                    'Agent, input, run, result, image/reference, view and layout IDs belong in summary or constraints, not object_ids.')
     evidence_refs: list[Annotated[str, Field(pattern=r'^memory_[a-f0-9]{32}$')]] = Field(
         default_factory=list,
         description='Optional exact memory_ref values returned to this Agent by memory or tool results. '
@@ -160,6 +160,15 @@ class ReferenceRegion(ToolInput):
 class ViewReferenceImage(ToolInput):
     reference_id: str = Field(pattern=r'^image_[a-f0-9]{32}$')
     region: ReferenceRegion | None = None
+
+
+class CreateReferenceLayout(ToolInput):
+    reference_id: str = Field(pattern=r'^image_[a-f0-9]{32}$')
+    name: str = Field(min_length=1, max_length=70)
+    source_frame: ReferenceRegion | None = Field(default=None,
+        description='Common crop in ORIGINAL source pixels; contains the complete desired composition, excluding margins/captions.')
+    target: CanvasRegion = Field(description='Canvas frame for the complete source crop; aspect ratio is preserved and centered. '
+        'All children use the returned reference_layout_id instead of inventing separate coordinate conversions.')
 
 
 class TraceReference(ViewReferenceImage):
@@ -246,7 +255,8 @@ CHILD_INPUTS = {**DRAWING_INPUTS, **REFERENCE_INPUTS, **MEMORY_INPUTS}
 CHILD_TOOL_NAMES = frozenset(CHILD_INPUTS)
 CHILD_PEN_TOOLS = frozenset({'draw_paths', 'reshape_path'})
 MAIN_INPUTS = {**{name: model for name, model in CHILD_INPUTS.items() if name not in CHILD_PEN_TOOLS},
-               **LIFECYCLE_INPUTS, 'create_element': MainCreateElement, 'create_elements': MainCreateElements}
+               **LIFECYCLE_INPUTS, 'create_element': MainCreateElement, 'create_elements': MainCreateElements,
+               'create_reference_layout': CreateReferenceLayout}
 MAIN_TOOL_NAMES = frozenset(MAIN_INPUTS)
 
 
@@ -272,6 +282,17 @@ def definition(name: str, description: str, model: type[BaseModel]) -> dict:
     return {"type": "function", "function": {
         "name": name, "description": description, "parameters": tool_parameters(model.model_json_schema()),
     }}
+
+
+MAIN_REFERENCE_TOOLS = [definition('create_reference_layout',
+    'Define an immutable common source-to-canvas composition WITHOUT drawing or tracing. '
+    'First inspect the full reference in your own context, then choose source_frame and target. '
+    'Returns reference_layout_id, source crop and exact aspect-preserving mapping. '
+    'Give the same layout ID to all drawing children. Each child views the source itself and passes its own '
+    'reference_view_id plus this layout ID and coordinate_space=image_normalized to draw_paths/reshape_path. '
+    'Their anchors then follow actual source pixels, including close-ups, without manual coordinate conversion. '
+    'Layout records stay in SQLite; only the main defines composition. Layout creation does not edit the canvas.',
+    CreateReferenceLayout)]
 
 
 REFERENCE_TOOLS = [
@@ -325,7 +346,7 @@ MAIN_TOOLS = [{**item, 'function': {**item['function'],
     **({'description': 'Create simple geometric shapes, labels or diagram connectors. '
         'Pen strokes and organic curve geometry belong to drawing children; use spawn_agent/send_input for them. '
         + item['function']['description']} if item['function']['name'] in {'create_element', 'create_elements'} else {})}}
-    for item in DRAWING_TOOLS + REFERENCE_TOOLS + MEMORY_TOOL_DEFINITIONS + LIFECYCLE_TOOLS
+    for item in DRAWING_TOOLS + REFERENCE_TOOLS + MAIN_REFERENCE_TOOLS + MEMORY_TOOL_DEFINITIONS + LIFECYCLE_TOOLS
     if item['function']['name'] in MAIN_INPUTS]
 
 

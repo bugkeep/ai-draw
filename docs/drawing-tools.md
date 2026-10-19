@@ -73,8 +73,13 @@ SQLite 的 `canvas_observations` 保存 PNG、画布内容标识、所属会话�
 | --- | --- | --- |
 | `search_reference_images` | `query`、`subject_terms`、`goal`、`source`、`page` | 实际读取的图片编号、来源信息与候选对比预览 |
 | `view_reference_image` | `reference_id`、可选像素 `region` | 将完整参考图及最近所需局部图附加到该 Agent 的下一轮上下文 |
+| `create_reference_layout` | `reference_id`、名称、可选 `source_frame`、画布 `target` | 主 Agent 定义不可变的源图到画布布局，返回 `reference_layout_id`；不修改画布或历史 |
 | `trace_reference` | 图片编号、区域名称、共同 `source_frame`、源像素 `region`、画布 `target`、提取与样式参数、第一页数量 | 创建固定计划，准备原生 `freedraw` 对象，返回 `trace_plan_id`、对象编号、映射和 `next_page` |
 | `continue_reference_trace` | `trace_plan_id`、`offset`、`limit`，可直接传入上一页的 `next_page` | 使用已保存计划的原参数、原区域、原映射和样式准备后续路径 |
+
+手工画笔也能直接沿参考图定位。主 Agent 看过完整源图后，用 `create_reference_layout` 确定一次共同裁剪和目标画幅，再把同一个布局编号交给子 Agent。子 Agent 需要在自己的上下文查看完整来源；可再查看面部、双手等局部。调用 `draw_paths` 或 `reshape_path` 时传入自己的 `reference_view_id`、共同的 `reference_layout_id` 和 `coordinate_space=image_normalized`，两轴均按当前参考 PNG 的 `0..1000` 选择关键点。运行时结合该参考图的源像素区域，按统一比例、留白和目标位置换算到画布。局部图不会被单独放大后重新摆放。
+
+参考布局与自动轮廓提取使用同一个比例计算函数。它不会生成笔画，也不会改变绘图版本、选择或撤销历史。布局不能由子 Agent 重新定义；同一画布的后续任务可以复用以前的布局，但较晚任务的布局不能进入较早任务。查看记录仍按任务及调用者隔离，其他 Agent 的参考查看编号、尚未发送的图片、来源不匹配和落在共同裁剪之外的关键点均被拒绝。两种图片坐标来源不能同时传入，`origin`、`scale` 也不能叠加。参考图片不可变，已查看的源图编号可在继续落笔后复用；画布对象移动后应切换到当前 `observation_id` 修改，橡皮擦始终使用当前画布坐标或检查图。
 
 `source=pages` 使用公共文字搜索定位插图页面，通过 trafilatura 与 lxml 读取页面元信息和与主体相关的图片地址。`source=images` 使用公共图片索引，解析由 DDGS 提供。来源页面、图片和图片索引通过 HTTPX 读取，逐次检查跳转目标，下载后通过 Pillow 解码实际像素，检查分辨率并合并重复来源及相似图片。搜索使用主题与查询相关性排序，最多提供三个不同来源；图片元信息不能证明姿态与用户要求相符，Agent 需要查看实际图片后选择。
 

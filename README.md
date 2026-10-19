@@ -8,6 +8,8 @@ Draw Agent Studio 是一个通过连续对话编辑同一张画布的开源绘�
 
 按图片修正时，画笔、改线和橡皮擦可以使用当前图片的 `observation_id` 和 `coordinate_space=image_normalized`，按两轴均为 `0..1000` 的位置输入，由 runtime 转换到画布坐标；原有 PNG 像素输入仍可使用。局部检查图带有对应的归一化坐标刻度，并在画布改变后自动刷新；每个 Agent 的查看区域独立保存在 SQLite。作品与导出文件保留原生图形。
 
+按参考图重现作品时，主 Agent 可以先用 `create_reference_layout` 定义共同的源图裁剪和画布位置。子 Agent 在自己的完整或局部参考图上选择关键点，`draw_paths`、`reshape_path` 根据共同布局生成原生曲线，保持不同部位的比例与位置。布局和参考图片保存在 SQLite；已有对象移动后，继续修改使用当前画布图片定位。
+
 子 Agent 返回结果后，主 Agent 会先收到这些动作叠加到当前画布后的候选图片，再决定提交或退回。`view_agent_result` 可以查看其他候选或局部细节。预览保留用户和其他 Agent 后续增加的图形；画布或提交进度改变后，需要重新查看对应候选。
 
 Agent 使用 `compact_context` 保存目标、约束、重要对象、已完成内容与待办事项。成功的长工具结果提供摘要和 `memory_ref`，完整参数及返回保存在 SQLite；需要修改早期对象时，通过 `search_memory` 找到对象或记录，再由 `recall_memory` 按需取回当前属性、路径点或历史原文。主 Agent 与各子 Agent 的工作记忆独立保存，未读工具错误完整进入下一轮上下文。具体行为见[Agent 记忆与工具压缩](docs/agent-memory.md)。

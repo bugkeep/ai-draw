@@ -303,6 +303,19 @@ API 5 的人物质量验证仍未通过。一次生成的图片评价指出颈�
 
 ## 数据与结果解释
 
+`reference-layout` 验证主 Agent 定义参考布局、子 Agent 直接在局部来源 PNG 上选择归一化关键点、主 Agent 审阅并提交的完整流程。生成的参考图包含三角轮廓及应排除的独立短线；目标使用负画布坐标、非等比例目标画幅和居中留白。原有蓝圆必须保持，最终内容为可编辑原生路径，撤销重做恢复相同对象。它与已有 `reference-polygon` 共用驱动，通过不同方法分别验证手工源图落笔和自动轮廓提取，原有默认行为保留。
+
+```powershell
+$env:DRAW_AGENT_EVALUATOR='reference-layout'
+$env:DRAW_AGENT_EVAL_DIR='runs/reference-layout-check'
+python -m scripts.verify_browser --database runs/reference-layout-check.sqlite3 --scripts quality_evaluation.js
+Remove-Item Env:DRAW_AGENT_EVALUATOR
+```
+
+第一次真实运行因引用汇总读取布局元数据中不存在的 `title` 退出，失败记录为 `runs/reference-layout-model-20261020/report.json`。修复后两次真实运行均为 13/13，用时 102.77 秒和 60.19 秒，分别保存在 `runs/reference-layout-citations-20261020/` 和 `runs/reference-layout-final-20261020/`。后一次包含 10 次实际模型上下文、4 次画布增量、20 次笔画过程事件，工具和浏览器错误均为零；原生折线与理想投影的最大几何距离约 7.00 个画布单位，即 1.75 个源像素，在预先设定的 5 源像素范围内。该指标包含模型选择关键点的误差；数学映射、完整图与局部图一致性、隔离、重新打开和历史由原生几何回归检查覆盖。本轮完整后端检查为 176 项通过。
+
+这两次耗时不是受控的提速对照，局部接口检查也不能代替人物、山水等整幅作品验收。归一化接口版本的蒙娜丽莎测试仍失败：身体子 Agent 在最后一次修改后又执行了至少 100 次只读工具调用，已准备动作保持为 140 条，手部及比例缺陷没有解决。本次独立评测通过正常取消接口停止，保留 `runs/quality-mona-normalized-20261020/diagnostic-stop.json`、只读循环记录、共享画布、两份私有原生草稿与对应 PNG、录像。它不作为完成延迟或成功作品；停止该评测没有为产品增加模型调用数或执行时间限制。
+
 `observed-coordinates` 使用负画布坐标的原生简笔人脸与远处蓝圆，要求真实主 Agent 派发子 Agent，通过图片坐标擦除指定红线、改嘴并补鼻子，再审阅和提交。它保存实际编辑器录像、原生文件、全图和局部图，并检查三个工具、对象保护、几何位置、撤销重做和错误回传。原生初始画布是显式测试夹具，不预设或替换任何模型响应；该检查验证局部看图修正，不作为完整人物作品验收。
 
 当前默认要求三个工具使用 `coordinate_space=image_normalized`；原有模式可用 `evaluate_observed_coordinates --coordinate-space image_pixels` 复查，几何验收范围不随模式改变。下面列出的三个早期结果均为原始像素模式，保留其当时源码、请求和失败记录。

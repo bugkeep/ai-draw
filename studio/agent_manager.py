@@ -267,6 +267,9 @@ class AgentManager:
                                 preparation_name, args = 'create_elements', {'items': items}
                             else:
                                 args = validate_tool(name, args, child=True)
+                            current = {**run['document'], 'elements': run['draft'], 'selection': run['selection']}
+                            args, reference_coordinates = self.references.ground_tool(
+                                run['owner_task_id'], run['id'], current, preparation_name, args)
                             args, coordinates = self.vision.ground_tool(run['owner_task_id'], run['id'], {
                                 **run['document'], 'elements': run['draft'], 'selection': run['selection']},
                                 preparation_name, args)
@@ -275,6 +278,7 @@ class AgentManager:
                             )
                             output.update(trace)
                             output.update(coordinates)
+                            output.update(reference_coordinates)
                             run["draft"], run["selection"] = draft, selection
                             run["prepared"].extend(actions)
                     except (ValueError, KeyError, TypeError) as exc:

@@ -297,7 +297,7 @@ class StudioStore:
         references = {}
         for row in rows:
             output = json.loads(row["output"])
-            if output.get("ok"):
+            if output.get("ok") and all(isinstance(output.get(key), str) for key in ("reference_id", "title", "url")):
                 references[output["reference_id"]] = {
                     key: output[key] for key in ("reference_id", "title", "url")
                 }

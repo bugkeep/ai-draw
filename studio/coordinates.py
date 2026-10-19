@@ -25,8 +25,32 @@ class ObservationCoordinates(BaseModel):
 
     @model_validator(mode='after')
     def check_coordinate_frame(self):
-        if self.coordinate_space and not self.observation_id:
-            raise ValueError('coordinate_space requires the observation_id of your current viewed PNG')
+        if self.coordinate_space and not (self.observation_id or getattr(self, 'reference_view_id', None)):
+            raise ValueError('coordinate_space requires an observation_id or a complete viewed reference mapping')
+        return self
+
+
+class ReferenceCoordinates(ObservationCoordinates):
+    reference_view_id: str | None = Field(default=None, pattern=r'^refview_[a-f0-9]{32}$',
+        description='Optional reference PNG you have actually viewed in your OWN context. '
+                    'Use together with reference_layout_id and coordinate_space=image_normalized to place '
+                    'anchors on the reference itself, including a source close-up. Runtime maps them through '
+                    'the main Agent\'s common layout to canvas. Do not combine with observation_id.')
+    reference_layout_id: str | None = Field(default=None, pattern=r'^layout_[a-f0-9]{32}$',
+        description='Immutable source_frame/target mapping created by the main Agent using create_reference_layout. '
+                    'All children drawing the same source composition use this same layout ID. '
+                    'Reference anchors retain the source proportions; use current canvas observations for edits '
+                    'after an object has been moved away from that layout.')
+
+    @model_validator(mode='after')
+    def check_reference_frame(self):
+        if self.reference_view_id or self.reference_layout_id:
+            if not self.reference_view_id or not self.reference_layout_id:
+                raise ValueError('Reference coordinates require both reference_view_id and reference_layout_id')
+            if self.observation_id:
+                raise ValueError('Choose one coordinate source: current canvas observation or reference layout')
+            if self.coordinate_space != 'image_normalized':
+                raise ValueError('Reference coordinates require coordinate_space=image_normalized')
         return self
 
 
@@ -45,7 +69,8 @@ def map_observed_arguments(name: str, arguments: dict, metadata: dict) -> dict:
                              'Use absolute canvas coordinates to draw outside this image.')
         return [(bounds['x'] + x * scale_x, bounds['y'] + y * scale_y) for x, y in values]
 
-    mapped = {key: value for key, value in arguments.items() if key not in {'observation_id', 'coordinate_space'}}
+    mapped = {key: value for key, value in arguments.items() if key not in {
+        'observation_id', 'coordinate_space', 'reference_view_id', 'reference_layout_id'}}
     if name == 'draw_paths':
         if tuple(arguments.get('origin', (0, 0))) != (0, 0) or arguments.get('scale', 1) != 1:
             raise ValueError('Image-pixel points cannot also use draw_paths origin/scale')
