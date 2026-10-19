@@ -20,6 +20,9 @@ wheels/
 *.egg
 .env
 .env.local
+node_modules/
+frontend-dist/
+.playwright-mcp/
 venv/
 .venv/
 .idea/

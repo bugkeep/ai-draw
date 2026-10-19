@@ -1,89 +1,45 @@
-import os
-import asyncio
-import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from events import EventBus, EventBroadcaster
-from agent.daemon import TCPServer
-from core.app import JsonlRecorder, TraceHandler, AgentRunHandler, SessionHandler
-from traces import DaemonTracer
-from .routes import router
-from .asset_routes import router as asset_router
-from .daemon_client import DaemonClient
 
-FRONTEND_DIR = Path(__file__).parent.parent / "frontend-dist"
-DAEMON_PORT = 8765
+from dotenv import load_dotenv
+from fastapi import FastAPI
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+
+from studio.api import create_runtime, create_store, router as studio_router
+
+
+ROOT = Path(__file__).resolve().parent.parent
+FRONTEND_DIR = ROOT / "frontend-dist"
 
 
 def create_app() -> FastAPI:
-    # Load .env at startup so env vars are available to providers
-    env_path = Path(__file__).parent.parent / ".env"
-    if env_path.exists():
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                os.environ[k.strip()] = v.strip()
-
-    event_bus = EventBus()
-    tracer = DaemonTracer()
-    _trace_handler = TraceHandler(event_bus, tracer)
-    broadcaster = EventBroadcaster(event_bus, tracer=tracer)
-    _recorder = JsonlRecorder(event_bus)
-    daemon = TCPServer(port=DAEMON_PORT, broadcaster=broadcaster, event_bus=event_bus, tracer=tracer)
-    agent_handler = AgentRunHandler(daemon)
-    daemon.register_handler("run", agent_handler.handle_run)
-    session_handler = SessionHandler(daemon)
-    daemon.register_handler("session.create", session_handler.handle_create)
-    daemon.register_handler("session.send_message", session_handler.handle_send_message)
+    load_dotenv(ROOT / ".env", override=False)
+    store = create_store()
+    runtime = create_runtime(store)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        tracer.start()
-        asyncio.create_task(daemon.start())
         yield
-        await agent_handler.cancel_all_runs()
-        await session_handler.cancel_all_runs()
-        await tracer.stop()
-        daemon.stop()
+        await runtime.close()
+        store.close()
 
-    app = FastAPI(title="AI Voice Draw", version="0.1.0", lifespan=lifespan)
-    app.state.event_bus = event_bus
-    app.state.broadcaster = broadcaster
-    app.state.daemon = daemon
-    app.state.daemon_client = DaemonClient(port=DAEMON_PORT)
+    app = FastAPI(title="Draw Agent Studio", version="0.1.0", lifespan=lifespan)
+    app.state.studio_store = store
+    app.state.drawing_runtime = runtime
+    app.include_router(studio_router)
 
-    app.include_router(router, prefix="/api")
-    app.include_router(asset_router)
-
-    @app.websocket("/ws")
-    async def websocket_endpoint(ws: WebSocket):
-        client_id = str(uuid.uuid4())[:8]
-        await broadcaster.connect(ws, client_id)
-        try:
-            while True:
-                await ws.receive_text()
-        except WebSocketDisconnect:
-            pass
-        finally:
-            broadcaster.disconnect(client_id)
-
-    if FRONTEND_DIR.exists():
-        app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")
+    if FRONTEND_DIR.is_dir():
+        app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="assets")
 
         @app.get("/{full_path:path}")
-        async def serve_spa(full_path: str):
-            file_path = FRONTEND_DIR / full_path
-            if file_path.is_file():
-                return FileResponse(str(file_path))
-            return FileResponse(str(FRONTEND_DIR / "index.html"))
+        async def serve_frontend(full_path: str):
+            if full_path.startswith("api/"):
+                return JSONResponse({"detail": "Not Found"}, status_code=404)
+            return FileResponse(FRONTEND_DIR / "index.html")
     else:
-
         @app.get("/")
-        async def index():
-            return {"error": "Frontend not built. Run: cd frontend-app && npm run build"}
+        async def missing_frontend():
+            return JSONResponse({"error": "Build the frontend with npm run build"}, status_code=503)
 
     return app
