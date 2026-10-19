@@ -31,6 +31,12 @@
 
 `inspect_scene`、`view_canvas`、`search_memory` 与 `recall_memory` 的查询条件及次数按当前内容标识保存。会话压缩后仍会提供最近已查询范围；图形发生变化后，查询属于新的内容状态。重复调用仍有完整记录。
 
+每轮默认对象概览保留最多 12 个已选中或最近使用的对象，并提供全部对象的类型数量和继续检索入口。概览明确标注是否还有其他内容；不在概览中的对象仍然保存在画布上。
+
+`inspect_scene` 返回结构化对象分页，可以组合对象编号、名称文字和画布区域进行过滤。默认每页 12 个对象，可通过 `limit` 选择至多 50 个；`matching_count` 表示全部符合条件的对象数量，沿 `summary.scene.next_page` 可以取回全部匹配对象。每页的准确编号和下一页参数完整保留在上下文中，较长的路径点继续通过 `recall_memory` 按对象检索。分页只控制单次返回大小，不限制对象数量和绘图动作数量。
+
+续页参数携带 `expected_scene_state`。它根据当前画布或子 Agent 私有草稿的实际内容及过滤条件计算；内容或过滤条件发生变化后，旧分页返回明确错误，Agent 需要从 `offset=0` 重新定位。子 Agent 草稿尚未提交时也会检查内容变化。缺失对象错误包含具体编号及重新定位提示。
+
 上下文还提供本次执行的工具累计次数，以及最近修改过的路径编号、名称和修改次数。这些统计在压缩对话和图形变化后保留，供 Agent 检查此前已经尝试的操作，按需取回旧参数，结合当前图片判断剩余问题。统计用于说明历史，不限制绘图次数；它与原始记录使用相同的 Agent 和任务顺序检查。
 
 ## 错误与恢复
@@ -44,10 +50,13 @@
 ## 可复现检查
 
 ```bash
-python -m pytest -q tests/test_memory.py --basetemp runs/pytest-memory
+python -m pytest -q tests/test_memory.py tests/test_scene_inspection.py --basetemp runs/pytest-memory
 python -m scripts.evaluate_memory --database runs/memory-evaluation.sqlite3 --output runs/memory-evaluation.json
+python -m scripts.evaluate_scene_paging --database runs/scene-paging.sqlite3 --output runs/scene-paging.json
 ```
 
 单元检查使用实际 SQLite 与原生对象，覆盖完整原文和点列取回、超出摘要条目的对象检索、未读错误、重复查询、工作记忆版本、任务顺序与子 Agent 私有上下文恢复。
 
 真实模型检查创建 80 轮对象，要求找到第一轮的“纪念点”、修改颜色与位置、保存工作记忆，再重新打开生产应用继续移动同一对象。报告分别记录模型任务用时、工具使用、原编号及其他 79 个对象的保护、工作记忆持久化和错误反馈。该评测验证长期会话记忆，画面质量仍需根据实际作品单独评价。
+
+分页评测使用实际模型创建子 Agent，在多页同名笔画中定位唯一红色笔画，由主 Agent 提交对原对象的移动；同时检查其他对象、草稿图片反馈、错误反馈、撤销和重做。

@@ -10,6 +10,8 @@ Agent 使用 `compact_context` 保存目标、约束、重要对象、已完成�
 
 绘图动作数量与模型请求持续时间由任务需要决定。用户可主动停止任务；子 Agent 可以执行绘图和资料检索，不能创建或控制其他 Agent。
 
+每轮只附带少量当前对象的概览。`inspect_scene` 按对象编号、名称和区域返回完整的结构化分页；画布或私有草稿改变后，旧分页会失效并提示重新定位。完整工具日志和几何信息继续保存在 SQLite，需要时按页取回。
+
 ## 运行
 
 需要 Python 3.11+、Node.js 20.19+，以及支持图片输入和工具调用的模型。服务端使用原生 Excalidraw 导出器生成检查图片；Windows 默认使用本机 Chrome，其他系统需要安装 Playwright Chromium，也可以通过 `CHROME_PATH` 指定 Chromium 可执行文件。建议创建独立 Python 环境后安装依赖：

@@ -13,7 +13,7 @@ def brief(value, *, depth=0):
     if isinstance(value, dict):
         if value.get('id') and value.get('type') in {'rectangle', 'ellipse', 'diamond', 'text', 'line', 'arrow', 'freedraw'}:
             fields = ('id', 'type', 'name', 'x', 'y', 'width', 'height', 'angle', 'strokeColor',
-                      'backgroundColor', 'strokeWidth', 'opacity', 'text', 'version')
+                      'backgroundColor', 'strokeWidth', 'opacity', 'text', 'version', 'point_count')
             result = {key: value[key] for key in fields if key in value}
             result['name'] = value.get('name') or value.get('customData', {}).get('name', '')
             if 'points' in value:
@@ -38,6 +38,13 @@ def bounded_summary(value):
     if len(encoded) > 6000:
         return {'preview': encoded[:4000], 'more_in_memory': True}
     return summary
+
+
+def tool_summary(name, output):
+    if name == 'inspect_scene' and output.get('ok') and 'scene_state' in output.get('scene', {}):
+        scene = output['scene']
+        return {**output, 'scene': {**scene, 'elements': [brief(item) for item in scene['elements']]}}
+    return bounded_summary(output)
 
 
 def search_terms(value):
@@ -139,7 +146,7 @@ class AgentMemory:
 
     def register(self, task_id, actor_id, caller_id, call_id, name, arguments, output, state_key):
         memory_ref = stable_id('memory', f'{caller_id}/{call_id}')
-        summary = bounded_summary(output)
+        summary = tool_summary(name, output)
         summary_json = json.dumps(summary, ensure_ascii=False)
         request = json.loads(arguments) if output.get('ok') is True else arguments
         query_key = hashlib.sha256(json.dumps([name, request], sort_keys=True).encode()).hexdigest()
@@ -164,9 +171,11 @@ class AgentMemory:
                 (self._session(task_id), actor_id, state_key, memory_ref),
             ).fetchone()[0]
         if len(json.dumps(output, ensure_ascii=False)) > 5000 or name == 'inspect_scene':
-            return {'ok': True, 'memory_ref': memory_ref, 'compressed': True, 'summary': bounded_summary(output),
+            return {'ok': True, 'memory_ref': memory_ref, 'compressed': True, 'summary': tool_summary(name, output),
                     'same_state_query_count': repeated,
-                    'retrieval': 'Use recall_memory with this memory_ref for saved output/arguments, or element_id for current geometry. '
+                    'retrieval': ('Follow summary.scene.next_page to inspect additional current objects; restart at offset 0 after edits. '
+                                  if name == 'inspect_scene' else '') +
+                                 'Use recall_memory with this memory_ref for saved output/arguments, or element_id for current geometry. '
                                  'Use search_memory for object names and older records. Delegate extensive geometry work to a child. '
                                  'Repeated queries of unchanged content provide no new evidence.'}
         return {**output, 'memory_ref': memory_ref, **({'same_state_query_count': repeated} if repeated > 1 else {})}

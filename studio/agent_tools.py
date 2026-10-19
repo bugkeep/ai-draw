@@ -57,6 +57,10 @@ class InspectScene(ToolInput):
     region: CanvasRegion | None = None
     include_geometry: bool = Field(default=False, description='Save full geometry in the raw SQLite result. '
         'The Agent receives a summary; use recall_memory with element_id to obtain current path points.')
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=12, ge=1, le=50, description='Objects per page; follow next_page to inspect all matches.')
+    expected_scene_state: str = Field(default='', pattern=r'^(?:[0-9a-f]{64})?$',
+        description='Use the scene_state returned by a previous page. If the canvas or private draft changed, restart at offset 0.')
 
 
 class FinishDrawing(ToolInput):
@@ -226,7 +230,7 @@ DRAWING_TOOLS = [
     definition("move_elements", "Move objects by ids and dx/dy, or move one object to absolute x/y.", MoveElements),
     definition("update_elements", "Update existing ids using patch, including text, position, size and colors.", UpdateElements),
     definition("delete_elements", "Delete existing objects by ids.", DeleteElements),
-    definition("inspect_scene", "Read current object metadata, selection and canvas revision as a compact summary with memory_ref. Optional ids requests specific objects outside the overview. query is a literal case-insensitive name/text substring; use search_memory for multiple search words. Optional region x/y/width/height finds objects intersecting the same coordinates as view_canvas. Filters combine. include_geometry=true saves full points in the raw SQLite record while context remains summarized. For precise current points, call recall_memory with element_id and follow its point pages.", InspectScene),
+    definition("inspect_scene", "Read a structured page of CURRENT object IDs and metadata with memory_ref. Optional ids requests specific objects; query is a literal case-insensitive name/text substring, so use search_memory for multiple search words. Optional region x/y/width/height finds objects intersecting the same coordinates as view_canvas. Filters combine. Follow scene.next_page unchanged to retrieve every match; the page carries a scene_state which detects intervening canvas or private-draft edits. Restart from offset 0 after such edits. Pages limit response size, not the number of drawing objects or actions. include_geometry=true saves full points in the raw SQLite record while context contains object metadata. For precise current points, call recall_memory with element_id and follow its point pages.", InspectScene),
     definition("finish_drawing", "Finish after inspecting the latest actual canvas image, with a brief summary in the user's language. Any drawing changes since the last image require another visual inspection before completion. Put this last; preceding tools must succeed. Main Agents must settle child work and results. Tool errors always return to your context. Do not claim visual quality from object names or counts.", FinishDrawing),
 ]
 LIFECYCLE_TOOLS = [

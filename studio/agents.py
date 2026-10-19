@@ -1,6 +1,8 @@
 import copy
+import hashlib
 import json
 import time
+from collections import Counter
 from typing import Any
 
 from shapely import box
@@ -75,29 +77,52 @@ def validate_child_tool(name: str) -> None:
 
 
 def scene_context(document: dict[str, Any], ids: list[str] | None = None, query: str = "",
-                  include_geometry: bool = False, region: dict | None = None) -> dict[str, Any]:
+                  include_geometry: bool = False, region: dict | None = None,
+                  offset: int = 0, limit: int | None = None, expected_scene_state: str = '') -> dict[str, Any]:
     elements = [element for element in document["elements"] if not element.get("isDeleted")]
+    page = {}
+    if limit is not None:
+        state = hashlib.sha256(json.dumps([document['id'], elements, document['selection'], ids or [], query, region],
+            ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')).hexdigest()
+        if expected_scene_state and expected_scene_state != state:
+            raise ValueError('Scene changed or inspection filters differ; inspect again from offset 0 to obtain current object IDs')
     if ids:
         by_id = {element["id"]: element for element in elements}
         if set(ids) - set(by_id):
-            raise ValueError("Requested scene objects do not exist")
+            missing = sorted(set(ids) - set(by_id))
+            raise ValueError(f"Requested scene objects do not exist: {missing}; inspect the current region or name to refresh object IDs")
         chosen = [by_id[element_id] for element_id in ids]
-    elif query or region:
+    elif query or region or limit is not None:
         chosen = elements
     else:
-        chosen = elements[-70:]
-        for element in elements:
-            if element["id"] in document["selection"] and element not in chosen:
-                chosen.insert(0, element)
+        selected = set(document['selection'])
+        chosen = [element for element in elements if element['id'] in selected][:12]
+        if len(chosen) < 12:
+            chosen.extend([element for element in elements if element['id'] not in selected][-(12 - len(chosen)):])
+        page = {'overview_only': True, 'shown_count': len(chosen), 'has_more': len(chosen) < len(elements),
+                'first_page': {'offset': 0, 'limit': 12},
+                'instruction': 'This overview contains selected and recent objects. Use inspect_scene pages, a region, '
+                    'or a name query to locate other current objects. Missing from the overview does not mean missing from the drawing.'}
     if query:
         chosen = [element for element in chosen if query.casefold() in
                   f"{element.get('customData', {}).get('name', '')} {element.get('text', '')}".casefold()]
     if region:
         area = box(region['x'], region['y'], region['x'] + region['width'], region['y'] + region['height'])
         chosen = [element for element in chosen if element_geometry(element).intersects(area)]
+    if limit is not None:
+        total = len(chosen)
+        next_offset = offset + limit if offset + limit < total else None
+        page = {'scene_state': state, 'matching_count': total, 'offset': offset,
+                'returned_count': len(chosen[offset:offset + limit]), 'next_offset': next_offset,
+                'next_page': {'ids': ids or [], 'query': query, 'region': region,
+                    'include_geometry': include_geometry, 'offset': next_offset, 'limit': limit,
+                    'expected_scene_state': state} if next_offset is not None else None}
+        chosen = chosen[offset:offset + limit]
     return {
         "document_id": document["id"], "version": document["version"],
         "element_count": len(elements), "selected_ids": document["selection"],
+        'type_counts': dict(Counter(element['type'] for element in elements)),
+        **page,
         "elements": [
             {"id": element["id"], "name": element.get("customData", {}).get("name", ""),
              "type": element["type"], "x": element["x"], "y": element["y"],
@@ -106,6 +131,7 @@ def scene_context(document: dict[str, Any], ids: list[str] | None = None, query:
              "strokeColor": element.get("strokeColor"), "backgroundColor": element.get("backgroundColor"),
              "strokeWidth": element.get("strokeWidth"), "opacity": element.get("opacity"),
              "text": str(element.get("text", ""))[:120], "version": element.get("version", 1),
+             **({"point_count": len(element["points"])} if "points" in element else {}),
              **({"points": element["points"]} if include_geometry and "points" in element else {})}
             for element in chosen
         ],
@@ -131,7 +157,8 @@ def prepare_drawing_tool(name: str, arguments: dict, document: dict,
     if name == "inspect_scene":
         return draft, selection, [], {"ok": True, "scene": scene_context(
             {**document, "elements": draft, "selection": selection}, args.get("ids"), args.get("query", ""),
-            args.get("include_geometry", False), args.get("region"))}
+            args.get("include_geometry", False), args.get("region"), args.get('offset', 0), args.get('limit', 12),
+            args.get('expected_scene_state', ''))}
     if name == "reshape_path":
         existing = next((element for element in draft if element["id"] == args["element_id"]
                          and not element.get("isDeleted")), None)
@@ -225,6 +252,7 @@ MAIN_SYSTEM = (
     "Do not repeatedly request unchanged views; either correct a concrete visible defect or finish when the requested composition is complete. "
     "Before finish_drawing, the latest changed canvas must have been presented to you as an image. "
     "Use view_canvas with a region for a close-up, and inspect_scene with that same region to identify the corresponding object IDs. "
+    "Scene inspection returns structured pages; follow next_page instead of repeating the first page or guessing IDs. "
     "Correct visibly misplaced or repeated contours using reshape_path, erase_strokes or delete_elements. "
     "When the user explicitly requests an eraser, perform that edit with erase_strokes. "
     "Do not keep adding strokes over an incorrect structure. Finish only after inspecting the corrected image. "
@@ -308,6 +336,7 @@ CHILD_SYSTEM = (
     "The attached images already count as visual inspection; do not request the same unchanged full view again. "
     "Use a close-up for a specific unresolved defect, correct that defect, then finish when the assigned work is complete. "
     "Use view_canvas for close-ups and inspect_scene with the same region to find the corresponding object IDs. "
+    "Follow inspect_scene next_page for additional matches. Its scene_state detects changes in this private draft; restart at offset 0 after edits. "
     "Use erase_strokes/reshape_path to fix the existing structure before adding more detail. "
     "Excalidraw pen size is strokeWidth*4.25; for pencil work usually use native strokeWidth=0.2..0.5 and restrained opacity. "
     "Refine assigned provisional outlines by their existing IDs and remove redundant construction marks; preserve unrelated regions. "
