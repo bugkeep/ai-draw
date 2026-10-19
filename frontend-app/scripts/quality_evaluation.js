@@ -13,10 +13,12 @@ await mkdir(output, { recursive: true })
 await writeFile(resolve(output, 'server.json'), JSON.stringify({ url: process.env.DRAW_AGENT_URL,
   database: process.env.DRAW_AGENT_DB, source: 'owned_isolated_production_http_server' }, null, 2))
 const runner = process.env.DRAW_AGENT_EVALUATOR || 'drawing-quality'
-if (!['drawing-quality', 'reference-polygon'].includes(runner)) throw new Error('Unknown evaluation runner')
-const args = ['-m', runner === 'reference-polygon' ? 'scripts.evaluate_reference_polygon' : 'scripts.evaluate_quality',
+const runners = { 'drawing-quality': 'scripts.evaluate_quality',
+  'reference-polygon': 'scripts.evaluate_reference_polygon', 'observed-coordinates': 'scripts.evaluate_observed_coordinates' }
+if (!Object.hasOwn(runners, runner)) throw new Error('Unknown evaluation runner')
+const args = ['-m', runners[runner],
   '--url', process.env.DRAW_AGENT_URL, '--output-dir', output]
-if (runner === 'reference-polygon') args.push('--database', process.env.DRAW_AGENT_DB)
+if (runner !== 'drawing-quality') args.push('--database', process.env.DRAW_AGENT_DB)
 else {
   if (process.env.DRAW_AGENT_QUALITY_CASES) args.push('--cases', process.env.DRAW_AGENT_QUALITY_CASES)
   if (process.env.DRAW_AGENT_QUALITY_DATASET) args.push('--dataset', process.env.DRAW_AGENT_QUALITY_DATASET)

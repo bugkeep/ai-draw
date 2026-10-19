@@ -155,6 +155,8 @@ def prepare_creation_batch(items: list[dict], draft: list[dict], selection: list
 def prepare_drawing_tool(name: str, arguments: dict, document: dict,
                          draft: list[dict], selection: list[str]) -> tuple:
     args = validate_tool(name, arguments, child=True)
+    if args.get('observation_id'):
+        raise ValueError('Resolve observed image coordinates before preparing canvas actions')
     if name == "inspect_scene":
         return draft, selection, [], {"ok": True, "scene": scene_context(
             {**document, "elements": draft, "selection": selection}, args.get("ids"), args.get("query", ""),

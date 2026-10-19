@@ -6,6 +6,8 @@ import time
 import uuid
 
 from .actions import create_native_element, element_fingerprint
+from .coordinates import map_observed_arguments
+from .image_guide import coordinate_guide
 from .renderer import CanvasRenderer
 
 
@@ -32,6 +34,11 @@ class CanvasVision:
             );
             CREATE INDEX IF NOT EXISTS idx_observations_owner
                 ON canvas_observations(task_id,caller_id,created_at);
+            CREATE TABLE IF NOT EXISTS canvas_viewports (
+                task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                caller_id TEXT NOT NULL, region TEXT NOT NULL,
+                PRIMARY KEY(task_id,caller_id)
+            );
         ''')
         store.connection.commit()
 
@@ -56,7 +63,8 @@ class CanvasVision:
         return rendered['png'], {'value': 'draw-agent', 'left_shape': shape_name, 'left_color': color_name}
 
     async def observe(self, task_id: str, agent_id: str, caller_id: str, document: dict,
-                      region: dict | None = None, *, result_id: str | None = None) -> dict:
+                      region: dict | None = None, *, result_id: str | None = None,
+                      remember_region: bool = False) -> dict:
         session_id = self._check(task_id, document)
         digest = scene_digest(document)
         region_json = json.dumps(region, sort_keys=True, separators=(',', ':'))
@@ -66,6 +74,8 @@ class CanvasVision:
                 (task_id, caller_id, digest, region_json),
             ).fetchone()
         if cached:
+            if remember_region:
+                self._remember_region(task_id, caller_id, region_json)
             return {**json.loads(cached['metadata']), 'cached': True}
         started = time.perf_counter()
         self.store.publish(document['id'], 'phase', {'task_id': task_id, 'agent_id': agent_id,
@@ -80,13 +90,23 @@ class CanvasVision:
                     'width': rendered['width'], 'height': rendered['height'],
                     'scene_bounds': rendered['scene_bounds'], 'pixels_per_unit': rendered['pixels_per_unit'],
                     'latency_ms': round((time.perf_counter() - started) * 1000, 1),
-                    'instruction': 'The actual PNG is attached to your next model context. Inspect it before completing or correcting the drawing.'}
+                    'instruction': 'The actual PNG is attached to your next model context. Inspect it before completing or correcting the drawing. '
+                        'For draw_paths, reshape_path or erase_strokes, supply this observation_id to use its width/height pixel coordinates directly; '
+                        'the runtime converts them to canvas units. After changes use the fresh current image ID.'}
         with self.store.lock, self.store.connection:
             self.store.connection.execute('INSERT INTO canvas_observations VALUES(?,?,?,?,?,?,?,?,?,?,NULL)',
                 (observation_id, session_id, task_id, caller_id, agent_id, digest, region_json,
                  json.dumps(metadata, ensure_ascii=False), rendered['png'], time.time()))
         self.store.log_tool(task_id, agent_id, 0, 'canvas_observation', metadata)
+        if remember_region:
+            self._remember_region(task_id, caller_id, region_json)
         return metadata
+
+    def _remember_region(self, task_id: str, caller_id: str, region_json: str) -> None:
+        with self.store.lock, self.store.connection:
+            self.store.connection.execute('INSERT INTO canvas_viewports VALUES(?,?,?) '
+                'ON CONFLICT(task_id,caller_id) DO UPDATE SET region=excluded.region',
+                (task_id, caller_id, region_json))
 
     async def context(self, task_id: str, agent_id: str, caller_id: str, document: dict,
                       *, result_id: str | None = None) -> tuple[list[dict], list[str]]:
@@ -100,15 +120,35 @@ class CanvasVision:
             return [], []
         full = await self.observe(task_id, agent_id, caller_id, document, result_id=result_id)
         with self.store.lock:
-            rows = self.store.connection.execute(
-                'SELECT id,metadata,png FROM canvas_observations WHERE task_id=? AND caller_id=? AND scene_hash=? '
-                'AND (id=? OR id=(SELECT id FROM canvas_observations WHERE task_id=? AND caller_id=? '
-                "AND scene_hash=? AND region!='null' ORDER BY created_at DESC LIMIT 1)) ORDER BY created_at",
-                (task_id, caller_id, full['scene_hash'], full['observation_id'], task_id, caller_id, full['scene_hash']),
-            ).fetchall()
+            viewport = self.store.connection.execute(
+                'SELECT region FROM canvas_viewports WHERE task_id=? AND caller_id=?', (task_id, caller_id),
+            ).fetchone()
+        if viewport is not None and not result_id:
+            focused = json.loads(viewport['region'])
+            closeup = await self.observe(task_id, agent_id, caller_id, document, focused) if focused is not None else full
+            with self.store.lock:
+                rows = self.store.connection.execute('SELECT id,metadata,png FROM canvas_observations '
+                    'WHERE task_id=? AND caller_id=? AND scene_hash=? AND id IN (?,?) ORDER BY created_at',
+                    (task_id, caller_id, full['scene_hash'], full['observation_id'], closeup['observation_id']),
+                ).fetchall()
+        else:
+            with self.store.lock:
+                rows = self.store.connection.execute(
+                    'SELECT id,metadata,png FROM canvas_observations WHERE task_id=? AND caller_id=? AND scene_hash=? '
+                    'AND (id=? OR id=(SELECT id FROM canvas_observations WHERE task_id=? AND caller_id=? '
+                    "AND scene_hash=? AND region!='null' ORDER BY created_at DESC LIMIT 1)) ORDER BY created_at",
+                    (task_id, caller_id, full['scene_hash'], full['observation_id'], task_id, caller_id, full['scene_hash']),
+                ).fetchall()
         messages, observations = [], []
         for row in rows:
             metadata = json.loads(row['metadata'])
+            png = row['png']
+            if metadata['region'] is not None and not result_id:
+                png = coordinate_guide(png)
+                metadata['coordinate_guide'] = {
+                    'units': 'original_png_pixels', 'grid_spacing': 100,
+                    'instruction': 'Blue grid and x/y pixel labels are a runtime positioning guide, not drawn objects. '
+                        'Read these labels when choosing image-pixel anchors; they do not change the image dimensions or mapping.'}
             messages.append({'role': 'user', 'content': [
                 {'type': 'text', 'text': json.dumps({'canvas_observation': metadata,
                     'instruction': ('PROPOSED RESULT: this image replays the pending result on the current shared canvas. '
@@ -118,7 +158,7 @@ class CanvasVision:
                         'This is the current rendered drawing, not a reference image. Check the visible structure, overlaps and proportions. '
                         'Canvas coordinates are given by scene_bounds.')}, ensure_ascii=False)},
                 {'type': 'image_url', 'image_url': {
-                    'url': 'data:image/png;base64,' + base64.b64encode(row['png']).decode('ascii'), 'detail': 'high'}},
+                    'url': 'data:image/png;base64,' + base64.b64encode(png).decode('ascii'), 'detail': 'high'}},
             ]})
             observations.append(row['id'])
         return messages, observations
@@ -132,6 +172,36 @@ class CanvasVision:
                 )
                 if changed.rowcount != 1:
                     raise ValueError('Canvas image delivery targets another Agent or task')
+
+    def ground_tool(self, task_id: str, caller_id: str, document: dict,
+                    name: str, arguments: dict) -> tuple[dict, dict]:
+        """Resolve only the caller's delivered, current canvas image; never a proposal."""
+        observation_id = arguments.get('observation_id')
+        if not observation_id:
+            return arguments, {}
+        session_id = self._check(task_id, document)
+        with self.store.lock:
+            row = self.store.connection.execute(
+                'SELECT scene_hash,metadata,delivered_at FROM canvas_observations '
+                'WHERE id=? AND task_id=? AND caller_id=? AND session_id=?',
+                (observation_id, task_id, caller_id, session_id),
+            ).fetchone()
+        if row is None:
+            raise ValueError('The observation belongs to another Agent/task or does not exist. '
+                             'Use the view_ ID attached to your own current canvas image.')
+        metadata = json.loads(row['metadata'])
+        if row['delivered_at'] is None:
+            raise ValueError('The observed PNG has not reached your model context yet. '
+                             'Inspect it in your next context before using its pixel coordinates.')
+        if metadata['scope'] == 'proposed_result':
+            raise ValueError('A proposed result is not the current drawing. Use your current shared/private canvas image.')
+        if row['scene_hash'] != scene_digest(document):
+            raise ValueError('The drawing changed after this observed PNG. Use the fresh view_ ID '
+                             'and pixels attached to your next context, then retry the intended edit.')
+        mapped = map_observed_arguments(name, arguments, metadata)
+        evidence = {key: metadata[key] for key in ('observation_id', 'scene_hash', 'scene_bounds', 'pixels_per_unit')}
+        evidence.update(input_space='image_pixels', output_space='canvas')
+        return mapped, {'coordinate_frame': evidence}
 
     def require_review(self, task_id: str, caller_id: str, document: dict, *, allow_empty: bool = True) -> None:
         self._check(task_id, document)

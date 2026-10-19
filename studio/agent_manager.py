@@ -249,7 +249,8 @@ class AgentManager:
                         elif name == 'view_canvas':
                             args = validate_tool(name, args, child=True)
                             output = await self.vision.observe(run['owner_task_id'], run['agent_id'], run['id'], {
-                                **run['document'], 'elements': run['draft'], 'selection': run['selection']}, args.get('region'))
+                                **run['document'], 'elements': run['draft'], 'selection': run['selection']},
+                                args.get('region'), remember_region=True)
                         elif name in RESEARCH_TOOLS:
                             args = validate_tool(name, args, child=True)
                             output = await DrawingResearch(self.store).call(run["owner_task_id"], run["agent_id"], name, args)
@@ -264,10 +265,16 @@ class AgentManager:
                                 prepare = self.references.trace if name == 'trace_reference' else self.references.continue_trace
                                 items, trace = await prepare(run['owner_task_id'], run['id'], args)
                                 preparation_name, args = 'create_elements', {'items': items}
+                            else:
+                                args = validate_tool(name, args, child=True)
+                            args, coordinates = self.vision.ground_tool(run['owner_task_id'], run['id'], {
+                                **run['document'], 'elements': run['draft'], 'selection': run['selection']},
+                                preparation_name, args)
                             draft, selection, actions, output = prepare_drawing_tool(
                                 preparation_name, args, run["document"], run["draft"], run["selection"],
                             )
                             output.update(trace)
+                            output.update(coordinates)
                             run["draft"], run["selection"] = draft, selection
                             run["prepared"].extend(actions)
                     except (ValueError, KeyError, TypeError) as exc:

@@ -6,10 +6,15 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .actions import COLOR_PATTERN, CreateElement, DeleteElements, MoveElements, Point, ReorderElements, SelectElements, UpdateElements
 from .pen import DrawPaths, ReshapePath
 from .eraser import EraseStrokes
+from .coordinates import ObservationCoordinates
 
 
 class ToolInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+
+class EraseStrokesInput(EraseStrokes, ObservationCoordinates):
+    """The durable eraser action itself accepts only resolved canvas units."""
 
 
 class SpawnAgent(ToolInput):
@@ -205,7 +210,7 @@ class ContinueReferenceTrace(ToolInput):
 DRAWING_INPUTS = {
     "draw_paths": DrawPaths,
     "reshape_path": ReshapePath,
-    "erase_strokes": EraseStrokes,
+    "erase_strokes": EraseStrokesInput,
     "create_elements": CreateElements,
     "create_element": CreateElement,
     "select_elements": SelectElements,
@@ -274,10 +279,10 @@ REFERENCE_TOOLS = [
     definition('continue_reference_trace', 'Prepare a later page from an immutable trace_plan_id. Pass the returned next_page object unchanged, or its trace_plan_id, offset and limit. Source, region, extraction parameters, mapping, name and style come from that saved plan. Never copy an offset after changing a region or extraction parameters. Each child must first view the complete reference in its own context. Returns native strokes through the same private preparation/main submission workflow. Pages continue for the required artwork without a path total or execution deadline.', ContinueReferenceTrace),
 ]
 DRAWING_TOOLS = [
-    definition("view_canvas", "View the actual rendered PNG of your current canvas: the shared submitted drawing for the main Agent, your private draft for a child. Current images are already attached automatically after changes. Use this tool when you need a specific closer region x/y/width/height, with scene_bounds coordinate mapping. Do not repeat unchanged views already supplied. Before completing, inspect the current image and fix visible anatomy, overlaps, misplaced features and excessive strokes. Older images stay in SQLite rather than accumulating in context.", ViewCanvas),
-    definition("erase_strokes", "Erase along absolute canvas points with a brush radius. points must be [[x,y]] even for one dab, or [[x1,y1],[x2,y2]] for a sweep. mode=segment removes touched portions of unfilled pen/line strokes and preserves editable fragments; filled contours are preserved and require mode=stroke for whole-object erasure. mode=stroke deletes whole touched objects like Excalidraw. Optional ids limits targets and intentionally permits editing hidden targets; without ids, opaque solid foreground fills protect the background they cover. Set visible_only=true to preserve that protection with explicit ids. Locked objects are preserved. One gesture is one undo step. Remove incorrect lines before redrawing instead of adding overlapping contours.", EraseStrokes),
+    definition("view_canvas", "View the actual rendered PNG of your current canvas: the shared submitted drawing for the main Agent, your private draft for a child. Current images are already attached automatically after changes. A region x/y/width/height selects and remembers a close-up; runtime refreshes it from the CURRENT scene after each edit, alongside the current full image. Use the new observation_id for image-pixel edits, without requesting the same region again. Omit region to return to full view only. Before completing, inspect the current image and fix visible anatomy, overlaps, misplaced features and excessive strokes. Older images stay in SQLite rather than accumulating in context.", ViewCanvas),
+    definition("erase_strokes", "Erase along canvas points with a brush radius, or supply observation_id for points AND radius in the viewed PNG's pixels. points must be [[x,y]] even for one dab, or [[x1,y1],[x2,y2]] for a sweep. mode=segment removes touched portions of unfilled pen/line strokes and preserves editable fragments; filled contours are preserved and require mode=stroke for whole-object erasure. mode=stroke deletes whole touched objects like Excalidraw. Optional ids limits targets and intentionally permits editing hidden targets; without ids, opaque solid foreground fills protect the background they cover. Set visible_only=true to preserve that protection with explicit ids. Locked objects are preserved. One gesture is one undo step. Remove incorrect lines before redrawing instead of adding overlapping contours.", EraseStrokesInput),
     definition("draw_paths", "Draw a batch of smooth native editable pen strokes through named anchor points. Use for portraits, organic contours, hair, fingers, folds and hatching. Each path is separate; smooth defaults true, closed false. Shared origin/scale transform points. strokeWidth is the native Excalidraw brush unit: rendered base size=strokeWidth*4.25, so pencil strokes usually use 0.2..0.5. Default 0.4. backgroundColor defaults transparent. A closed foreground contour can use backgroundColor=#ffffff to mask background lines behind a face, hand or animal; it remains one editable native pen object, including in monochrome line art. Filled contours must be closed. Per-path style overrides shared style. Use reorder_elements to put background objects behind the foreground. Refine existing outlines with reshape_path or erase_strokes instead of adding duplicate contours.", DrawPaths),
-    definition("reshape_path", "Reshape an existing native pen/line stroke using sparse absolute canvas anchor points, preserving its object ID, name, style and unrelated artwork. Runtime interpolates smooth curves; do not copy hundreds of sampled points from recall_memory. Use move_elements for a translation instead. Smooth defaults true. Filled contours stay closed when closed is omitted; explicitly closed=false opens the contour and removes its fill. Use for precise follow-up edits to a mouth, eyelid or contour. Current geometry from recall_memory has points relative to x/y and rotated by angle around the element center; your replacement anchors always use final absolute canvas coordinates.", ReshapePath),
+    definition("reshape_path", "Reshape an existing native pen/line stroke through sparse anchor points, preserving its object ID, name, style and unrelated artwork. Default points are absolute canvas coordinates; with observation_id they are pixels in your current viewed PNG and runtime maps them to canvas. Runtime interpolates smooth curves; do not copy hundreds of sampled points from recall_memory. Use move_elements for a translation instead. Smooth defaults true. Filled contours stay closed when closed is omitted; explicitly closed=false opens the contour and removes its fill. Use for precise follow-up edits to a mouth, eyelid or contour. Geometry from recall_memory has points relative to x/y and rotated around the element center; those stored samples are not absolute anchors.", ReshapePath),
     definition("create_elements", "Create a batch of native editable Excalidraw elements. Use one call for related shapes. Text only needs type, x, y and text. For line, arrow or freedraw, points are absolute when x and y are omitted; otherwise points are relative to that origin.", CreateElements),
     definition("create_element", "Create one native Excalidraw element. For paths use absolute points without x/y, or relative points with x/y. Give objects readable names.", CreateElement),
     definition("select_elements", "Select existing object IDs for subsequent edits or to show the user.", SelectElements),

@@ -303,6 +303,19 @@ API 5 的人物质量验证仍未通过。一次生成的图片评价指出颈�
 
 ## 数据与结果解释
 
+`observed-coordinates` 使用负画布坐标的原生简笔人脸与远处蓝圆，要求真实主 Agent 派发子 Agent，通过图片像素坐标擦除指定红线、改嘴并补鼻子，再审阅和提交。它保存实际编辑器录像、原生文件、全图和局部图，并检查三个工具、对象保护、几何位置、撤销重做和错误回传。原生初始画布是显式测试夹具，不预设或替换任何模型响应；该检查验证局部看图修正，不作为完整人物作品验收。
+
+```powershell
+$env:DRAW_AGENT_EVALUATOR='observed-coordinates'
+$env:DRAW_AGENT_EVAL_DIR='runs/observed-coordinate-check'
+python -m scripts.verify_browser --database runs/observed-coordinate-check.sqlite3 --scripts quality_evaluation.js
+Remove-Item Env:DRAW_AGENT_EVALUATOR
+```
+
+运行需要真实的图片和工具模型配置，以及尚不存在的独立测试数据库。两次早期实测均完成工具和提交流程，但微笑宽度与鼻子位置未通过预设几何检查，分别用时 95.52 秒和 98.53 秒，记录保留在 `runs/observed-coordinate-repair-20261020/report.json` 与 `runs/observed-coordinate-focused-20261020/report.json`。第二次调整了任务中关于五官比例的说明，因此两次结果不构成受控延迟对照；它们不能记为全部通过或整幅作画成功。
+
+增加局部像素刻度后的同一流程通过 11/12 项，用时 96.85 秒，仍因鼻子位置未满足预设几何范围而失败。模型实际使用三个图片坐标工具，主 Agent 审阅并提交，保护对象和撤销重做正确；模型上下文共 12 次，录像记录 6 次画布增量、2 次笔画过程事件及零浏览器错误。记录为 `runs/observed-coordinate-guided-20261020/report.json`，包含原生文件、全图和 `observed-coordinates.face.png`。这说明精确坐标换算与模型选择正确落点是不同问题，不能将运行完成或无工具报错作为质量通过。该轮后端 171 项、前端状态检查 11 项通过。
+
 多边形选区、原生笔画采样和提示词压缩后的完整后端检查为 157/157。新增的 Chromium 检查先用稀疏闭合点列复现实际导出缺线，再检查补充采样后的同一中心线、边缘像素、SQLite 重新打开和撤销重做。参考提取检查还覆盖旧计划继续使用旧点列、选区不改变共同映射，以及不同选区在压缩后仍保持独立进度。
 
 真实 Ark 只读请求对照使用同一组当前工具约束，对比旧角色说明及带展示标题的 schema 与压缩版本。主 Agent 请求输入从 12,237 token 降至 9,617，子 Agent 从 10,529 降至 8,778；四次请求均实际调用对象查询，原生画布和历史未变。记录为 `runs/prompt-context-final-20261020.json`。这只是请求前缀测量：该次主 Agent 请求用时 5.25/2.57 秒，子 Agent 2.68/4.61 秒，缓存命中也不同，不能据此宣称整幅作画更快。

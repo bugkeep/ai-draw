@@ -273,7 +273,7 @@ class DrawingRuntime:
                     output = self.memory.call(task_id, 'main', name, args, self.store.get_document(document_id))
                 elif name == 'view_canvas':
                     output = await self.vision.observe(task_id, 'main', caller_id,
-                                                       self.store.get_document(document_id), args.get('region'))
+                                                       self.store.get_document(document_id), args.get('region'), remember_region=True)
                 elif name in RESEARCH_TOOLS:
                     output = await DrawingResearch(self.store).call(task_id, "main", name, args)
                 elif name in IMAGE_QUERY_TOOLS:
@@ -330,8 +330,11 @@ class DrawingRuntime:
             if any(element['id'] in targets and element['type'] == 'freedraw' for element in document['elements']):
                 raise ValueError('Fine pen geometry belongs to a drawing child Agent. Use spawn_agent or send_input '
                                  'with these object IDs for curve changes; direct moves and style updates remain available.')
+        preparation_args, coordinates = self.vision.ground_tool(
+            task_id, f'main:{task_id}', document, preparation_name, preparation_args)
         _, _, prepared, output = prepare_drawing_tool(preparation_name, preparation_args, document, document["elements"], document["selection"])
         output.update(trace)
+        output.update(coordinates)
         if prepared:
             result = self.store.agents.create_direct_result(session_id, task_id, call_id, prepared, name)
             output = {**output, **await self.apply_result(task_id, session_id, document_id, result["id"])}
