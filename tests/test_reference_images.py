@@ -150,7 +150,7 @@ def test_reference_pixels_views_and_traces_are_scoped_persistent_and_removed_wit
             reopened.update_task(task['id'], 'completed')
             reopened.update_task(future['id'], 'completed')
             reopened.delete_session(session['id'])
-            for table in ('reference_images', 'reference_image_views', 'reference_traces'):
+            for table in ('reference_images', 'reference_image_views', 'reference_traces', 'reference_search_previews', 'reference_trace_plans'):
                 assert reopened.connection.execute(f'SELECT count(*) FROM {table}').fetchone()[0] == 0
             assert reopened.get_session(other['id']) == other_before
             assert reopened.connection.execute('PRAGMA foreign_key_check').fetchall() == []
@@ -172,8 +172,9 @@ def test_trace_pages_regions_and_native_edits_keep_common_full_source_mapping(tm
             full, metadata = await images.trace(task['id'], caller, trace_args(source))
             assert metadata['mapping'] == {'origin': [228.0, 200.0], 'scale': 1.0}
             first, page = await images.trace(task['id'], caller, trace_args(source, limit=1))
-            second, final = await images.trace(task['id'], caller, trace_args(source, offset=page['next_offset'], limit=1))
+            second, final = await images.continue_trace(task['id'], caller, page['next_page'])
             assert first + second == full and final['next_offset'] is None
+            assert final['next_page'] is None and final['trace_plan_id'] == page['trace_plan_id']
             cropped, crop = await images.trace(task['id'], caller, trace_args(source,
                 region={'x': 64, 'y': 32, 'width': 64, 'height': 64}))
             assert crop['mapping'] == metadata['mapping'] and len(cropped) == 1
@@ -183,6 +184,8 @@ def test_trace_pages_regions_and_native_edits_keep_common_full_source_mapping(tm
                 await images.trace(task['id'], caller, trace_args(source, region={'x': 250, 'y': 0, 'width': 20, 'height': 40}))
             with pytest.raises(ValueError, match='offset'):
                 await images.trace(task['id'], caller, trace_args(source, offset=2))
+            with pytest.raises(ValueError, match='offset'):
+                await images.continue_trace(task['id'], caller, {'trace_plan_id': page['trace_plan_id'], 'offset': 2})
             document = store.get_document(session['document']['id'])
             _, _, prepared, _ = prepare_drawing_tool('create_elements', {'items': full}, document, [], [])
             for item in prepared:
@@ -257,3 +260,189 @@ def test_reference_tools_validate_parameters_and_children_cannot_delegate():
         validate_tool('spawn_agent', {'message': '递归任务'}, child=True)
     with pytest.raises(ValueError, match='low_threshold'):
         validate_tool('trace_reference', trace_args({'reference_id': 'image_' + 'a' * 32}, low_threshold=0.9))
+
+
+def test_trace_common_source_crop_excludes_border_and_preserves_regional_coordinates(tmp_path):
+    async def check():
+        store = StudioStore(tmp_path / 'source-crop.sqlite3')
+        images = ReferenceImages(store)
+        try:
+            session = store.create_session('参考画面裁剪')
+            task = store.create_task(session['id'])
+            caller = f"main:{task['id']}"
+            with Image.open(io.BytesIO(line_image())) as image:
+                ImageDraw.Draw(image).rectangle((4, 4, 251, 251), outline='black', width=3)
+                data = io.BytesIO()
+                image.save(data, format='PNG')
+            source = images.save_image(task['id'], 'main', {
+                'title': '带边框的两条线条', 'url': 'https://example.org/bordered-study',
+                'image': 'https://example.org/bordered-study.png'}, data.getvalue(), decode_reference(data.getvalue()))
+            present(images, task, caller, source)
+            frame = {'x': 16, 'y': 16, 'width': 224, 'height': 224}
+            args = trace_args(source, source_frame=frame,
+                target={'x': 100, 'y': 200, 'width': 448, 'height': 448})
+            full, metadata = await images.trace(task['id'], caller, args)
+            assert len(full) == 2 and metadata['source_frame'] == frame
+            assert metadata['mapping'] == {'origin': [68.0, 168.0], 'scale': 2.0}
+            upper, first = await images.trace(task['id'], caller, {
+                **args, 'region': {'x': 16, 'y': 16, 'width': 224, 'height': 100}})
+            lower, second = await images.trace(task['id'], caller, {
+                **args, 'region': {'x': 16, 'y': 116, 'width': 224, 'height': 124}})
+            assert [item['points'] for item in upper + lower] == [item['points'] for item in full]
+            assert first['mapping'] == second['mapping'] == metadata['mapping']
+            assert first['trace_id'] == second['trace_id'] == metadata['trace_id']
+            assert first['cached_geometry'] and second['cached_geometry']
+            assert all(100 <= x <= 548 and 200 <= y <= 648 for item in full for x, y in item['points'])
+            with pytest.raises(ValueError, match='source_frame'):
+                await images.trace(task['id'], caller, {**args, 'region': {'x': 0, 'y': 32, 'width': 100, 'height': 100}})
+            with pytest.raises(ValueError, match='within'):
+                await images.trace(task['id'], caller, {**args, 'source_frame': {'x': 100, 'y': 0, 'width': 200, 'height': 200}})
+        finally:
+            store.close()
+    asyncio.run(check())
+
+
+def test_local_contrast_recovers_actual_low_contrast_contours_and_uses_separate_cache(tmp_path):
+    async def check():
+        store = StudioStore(tmp_path / 'contrast.sqlite3')
+        images = ReferenceImages(store)
+        try:
+            session = store.create_session('低对比度轮廓')
+            task = store.create_task(session['id'])
+            caller = f"main:{task['id']}"
+            image = Image.new('RGB', (256, 256), (150, 150, 150))
+            ImageDraw.Draw(image).line([(32, 64), (224, 64)], fill=(135, 135, 135), width=5)
+            data = io.BytesIO()
+            image.save(data, format='PNG')
+            source = images.save_image(task['id'], 'main', {
+                'title': '低对比度线条', 'url': 'https://example.org/contrast',
+                'image': 'https://example.org/contrast.png'}, data.getvalue(), decode_reference(data.getvalue()))
+            present(images, task, caller, source)
+            args = trace_args(source, mode='edges', sigma=1.6)
+            with pytest.raises(ValueError, match='No contours'):
+                await images.trace(task['id'], caller, args)
+            paths, first = await images.trace(task['id'], caller, {**args, 'contrast': 'local'})
+            assert paths and first['returned_paths'] == len(paths)
+            repeated, second = await images.trace(task['id'], caller, {**args, 'contrast': 'local'})
+            assert repeated == paths and second['cached_geometry'] and first['trace_id'] == second['trace_id']
+            assert all(250 < y < 275 for item in paths for _, y in item['points'])
+        finally:
+            store.close()
+    asyncio.run(check())
+
+
+def test_candidate_previews_are_owned_and_do_not_replace_full_source_inspection(tmp_path):
+    async def check():
+        path = tmp_path / 'candidate-previews.sqlite3'
+        store = StudioStore(path)
+        images = ReferenceImages(store)
+        session = store.create_session('候选图片对比')
+        task = store.create_task(session['id'])
+        caller = f"main:{task['id']}"
+        source = save_source(images, task)
+        image = Image.new('RGB', (256, 320), 'white')
+        ImageDraw.Draw(image).ellipse((40, 40, 200, 280), outline='black', width=3)
+        data = io.BytesIO()
+        image.save(data, format='PNG')
+        second = images.save_image(task['id'], 'main', {
+            'title': '椭圆结构', 'url': 'https://example.org/oval', 'image': 'https://example.org/oval.png'},
+            data.getvalue(), decode_reference(data.getvalue()))
+        output = {'ok': True, 'query': 'shape study', 'goal': '比较实际形状', 'sources': [source, second]}
+        preview = await images._preview(task['id'], caller, output)
+        messages, view_ids = images.context(task['id'], caller)
+        assert view_ids == [preview['preview_id']]
+        metadata = json.loads(messages[-1]['content'][0]['text'])['reference_candidates']
+        assert [(item['label'], item['reference_id']) for item in metadata['sources']] == [
+            ('A', source['reference_id']), ('B', second['reference_id'])]
+        images.delivered(task['id'], caller, view_ids)
+        with pytest.raises(ValueError, match='own model context'):
+            await images.trace(task['id'], caller, trace_args(source))
+        assert images.context(task['id'], 'other-agent')[1] == []
+        followup = store.create_task(session['id'])
+        followup_caller = f"main:{followup['id']}"
+        prepared, prepared_ids = await images.prepare_context(followup['id'], followup_caller)
+        assert prepared_ids and prepared_ids[0] != preview['preview_id']
+        assert 'reference_candidates' in json.dumps(prepared)
+        images.delivered(followup['id'], followup_caller, prepared_ids)
+        with pytest.raises(ValueError, match='own model context'):
+            await images.trace(followup['id'], followup_caller, trace_args(source))
+        other = store.create_session('其他画布')
+        other_task = store.create_task(other['id'])
+        with pytest.raises(KeyError, match='another canvas'):
+            await images._preview(other_task['id'], 'other-agent', output)
+        repeated = await images._preview(task['id'], caller, {**output, 'cached': True})
+        assert repeated['preview_id'] == preview['preview_id']
+        assert store.connection.execute('SELECT count(*) FROM reference_search_previews').fetchone()[0] == 2
+        full = present(images, task, caller, source)
+        messages, current_ids = images.context(task['id'], caller)
+        assert current_ids == full
+        assert 'reference_candidates' not in json.dumps(messages)
+        assert (await images.trace(task['id'], caller, trace_args(source)))[0]
+        store.close()
+        reopened = StudioStore(path)
+        restored = ReferenceImages(reopened)
+        try:
+            assert restored.context(task['id'], caller)[1] == full
+            again = await restored._preview(task['id'], caller, output)
+            assert again['preview_id'] == preview['preview_id']
+            assert preview['preview_id'] in restored.context(task['id'], caller)[1]
+            store_row = reopened.connection.execute('SELECT png,delivered_at FROM reference_search_previews').fetchone()
+            with Image.open(io.BytesIO(store_row['png'])) as actual:
+                assert actual.size == (800, 560)
+            assert store_row['delivered_at'] is not None
+            reopened.update_task(task['id'], 'completed')
+            reopened.update_task(followup['id'], 'completed')
+            reopened.delete_session(session['id'])
+            assert reopened.connection.execute('SELECT count(*) FROM reference_search_previews').fetchone()[0] == 0
+        finally:
+            reopened.close()
+    asyncio.run(check())
+
+
+def test_trace_plan_continuation_preserves_parameters_and_checks_scope_and_full_view(tmp_path):
+    async def check():
+        path = tmp_path / 'trace-plans.sqlite3'
+        store = StudioStore(path)
+        images = ReferenceImages(store)
+        session = store.create_session('分页计划')
+        task = store.create_task(session['id'])
+        caller = f"main:{task['id']}"
+        source = save_source(images, task)
+        present(images, task, caller, source)
+        first, page = await images.trace(task['id'], caller, trace_args(source, limit=1))
+        plan_id = page['trace_plan_id']
+        with pytest.raises(ValueError, match='own model context'):
+            await images.continue_trace(task['id'], 'child', page['next_page'])
+        present(images, task, 'child', source)
+        second, final = await images.continue_trace(task['id'], 'child', page['next_page'])
+        assert final['mapping'] == page['mapping'] and final['source_region'] == page['source_region']
+        assert second[0]['name'] == '手部/轮廓-0002'
+        assert second[0]['strokeWidth'] == first[0]['strokeWidth']
+        with pytest.raises(ValueError, match='sigma'):
+            validate_tool('continue_reference_trace', {**page['next_page'], 'sigma': 5})
+        with pytest.raises(ValueError, match='offset'):
+            validate_tool('trace_reference', trace_args(source, offset=page['next_offset']))
+        other = store.create_session('独立画布')
+        other_task = store.create_task(other['id'])
+        with pytest.raises(KeyError, match='another canvas'):
+            await images.continue_trace(other_task['id'], 'main', page['next_page'])
+        future = store.create_task(session['id'])
+        future_caller = f"main:{future['id']}"
+        present(images, future, future_caller, source)
+        _, future_page = await images.trace(future['id'], future_caller, trace_args(source, name='后续计划', limit=1))
+        with pytest.raises(KeyError, match='later task'):
+            await images.continue_trace(task['id'], caller, future_page['next_page'])
+        store.close()
+        reopened = StudioStore(path)
+        restored = ReferenceImages(reopened)
+        try:
+            continued, metadata = await restored.continue_trace(task['id'], 'child', {'trace_plan_id': plan_id, 'offset': 1})
+            assert continued == second and metadata['trace_plan_id'] == plan_id
+            assert metadata['cached_geometry'] and metadata['next_page'] is None
+            reopened.update_task(task['id'], 'completed')
+            reopened.update_task(future['id'], 'completed')
+            reopened.delete_session(session['id'])
+            assert reopened.connection.execute('SELECT count(*) FROM reference_trace_plans').fetchone()[0] == 0
+        finally:
+            reopened.close()
+    asyncio.run(check())

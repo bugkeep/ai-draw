@@ -4,7 +4,9 @@ import { resolve } from 'node:path'
 
 const baseUrl = process.env.DRAW_AGENT_URL || 'http://127.0.0.1:8000'
 const recordingName = process.env.DRAW_AGENT_RECORDING_NAME || 'portrait-recorded'
+const referenceSession = process.env.DRAW_AGENT_REFERENCE_SESSION || ''
 if (!/^[a-z0-9_-]+$/i.test(recordingName)) throw new Error('Use a simple recording filename')
+if (referenceSession && !/^[a-f0-9]{32}$/.test(referenceSession)) throw new Error('Use an existing reference session ID')
 const root = resolve('..')
 const directory = resolve(root, 'runs', 'portrait-recording')
 await mkdir(directory, { recursive: true })
@@ -19,8 +21,10 @@ page.on('pageerror', (error) => errors.push(error.message))
 let taskId
 let finished = false
 try {
-  const response = await context.request.post('/api/studio/sessions', { data: { title: '蒙娜丽莎 · 实际作画录像' } })
-  if (!response.ok()) throw new Error('Could not create portrait session')
+  const response = referenceSession
+    ? await context.request.get(`/api/studio/sessions/${referenceSession}`)
+    : await context.request.post('/api/studio/sessions', { data: { title: '蒙娜丽莎 · 实际作画录像' } })
+  if (!response.ok()) throw new Error('Could not open portrait session')
   const session = await response.json()
   await page.goto('/', { waitUntil: 'networkidle' })
   await page.locator(`[data-session-id="${session.id}"]`).click()
@@ -55,12 +59,17 @@ try {
   if (await download.failure()) throw new Error(await download.failure())
   const png = resolve(root, 'runs', `${recordingName}.png`)
   await download.saveAs(png)
+  const saved = await context.request.get(`/api/studio/sessions/${session.id}`)
+  if (!saved.ok()) throw new Error('Could not read native portrait document')
+  const native = resolve(root, 'runs', `${recordingName}.excalidraw`)
+  await writeFile(native, JSON.stringify({ type: 'excalidraw', version: 2, source: 'draw-agent-studio',
+    elements: (await saved.json()).document.elements, appState: { viewBackgroundColor: '#ffffff' }, files: {} }), 'utf8')
   const video = page.video()
   await context.close()
   const output = resolve(root, 'runs', `${recordingName}.webm`)
   await copyFile(await video.path(), output)
   const report = { session_id: session.id, task_id: taskId, prompt, status: task.status,
-    latency_ms: task.latency_ms, output, png, browser_errors: errors }
+    latency_ms: task.latency_ms, output, png, native, reference_session: referenceSession || null, browser_errors: errors }
   await writeFile(resolve(root, 'runs', `${recordingName}.json`), JSON.stringify(report, null, 2), 'utf8')
   console.log(JSON.stringify(report))
   if (task.status !== 'completed' || errors.length) throw new Error(`Portrait recording did not pass: ${task.status}`)

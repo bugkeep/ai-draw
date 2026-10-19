@@ -10,7 +10,7 @@ from .settings import ModelConfig, ModelSettings
 from .research import DrawingResearch, RESEARCH_TOOLS
 from .store import StudioStore, VersionConflict
 from .memory import MEMORY_TOOLS
-from .reference_images import IMAGE_QUERY_TOOLS
+from .reference_images import IMAGE_QUERY_TOOLS, TRACE_TOOLS
 
 
 class AgentManager:
@@ -196,7 +196,7 @@ class AgentManager:
                 document = {**run['document'], 'elements': run['draft'], 'selection': run['selection']}
                 pictures, observations = await self.vision.context(
                     run['owner_task_id'], run['agent_id'], run['id'], document)
-                references, reference_ids = self.references.context(run['owner_task_id'], run['id'])
+                references, reference_ids = await self.references.prepare_context(run['owner_task_id'], run['id'])
                 messages = self.memory.prepare_messages(run['owner_task_id'], run['agent_id'], run['id'],
                     f"{run['id']}:{len(run['prepared'])}", document, models.child_messages(run, agent)) + references + pictures
                 message = await models.respond(run["owner_task_id"], run["agent_id"], round_number,
@@ -259,9 +259,10 @@ class AgentManager:
                         else:
                             trace = {}
                             preparation_name = name
-                            if name == 'trace_reference':
+                            if name in TRACE_TOOLS:
                                 args = validate_tool(name, args, child=True)
-                                items, trace = await self.references.trace(run['owner_task_id'], run['id'], args)
+                                prepare = self.references.trace if name == 'trace_reference' else self.references.continue_trace
+                                items, trace = await prepare(run['owner_task_id'], run['id'], args)
                                 preparation_name, args = 'create_elements', {'items': items}
                             draft, selection, actions, output = prepare_drawing_tool(
                                 preparation_name, args, run["document"], run["draft"], run["selection"],

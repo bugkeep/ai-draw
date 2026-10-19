@@ -43,7 +43,7 @@ SQLite 的 `canvas_observations` 保存 PNG、画布内容标识、所属会话�
 
 检索可读取每页最多八个搜索结果，并发检查排名靠前的五个网页，返回最多三个来源和每个来源最多三段相关文字。这些数量用于控制资料阅读量；绘图动作和模型任务继续按用户目标执行。网页读取具有网络等待、正文长度和重定向保护，避免资料工具长期占用连接。
 
-检索结果、网页正文、筛选原因和短返回分别保存到现有 `tool_logs`。成功检索在同一画布缓存一小时，参考编号与画布关联，其他画布不能读取。网页只允许公开 HTTP/HTTPS 地址，每次跳转均检查目标地址；本地和私有网络地址会被拒绝。网页内容作为参考数据处理，不能改变工具权限或要求访问凭据。
+检索结果、网页正文、筛选原因和短返回分别保存到现有 `tool_logs`。成功检索在同一画布缓存一小时，参考编号与画布关联，其他画布和后续任务的记录不能读取。网页只允许公开 HTTP/HTTPS 地址，每次跳转均检查目标地址；本地和私有网络地址会被拒绝。网页内容作为参考数据处理，不能改变工具权限或要求访问凭据。
 
 涉及较多资料时，主 Agent 可以创建研究子 Agent。研究子 Agent 阅读来源后返回作画方案和来源编号，主 Agent 据此安排画笔。子 Agent 使用相同模型连接，保持独立上下文，并且不能创建或控制其他 Agent。
 
@@ -55,19 +55,26 @@ SQLite 的 `canvas_observations` 保存 PNG、画布内容标识、所属会话�
 
 | 工具 | 输入 | 返回与行为 |
 | --- | --- | --- |
-| `search_reference_images` | `query`、`subject_terms`、`goal`、`source`、`page` | 实际读取的图片编号、来源标题、链接、像素尺寸与描述 |
+| `search_reference_images` | `query`、`subject_terms`、`goal`、`source`、`page` | 实际读取的图片编号、来源信息与候选对比预览 |
 | `view_reference_image` | `reference_id`、可选像素 `region` | 将完整参考图及最近所需局部图附加到该 Agent 的下一轮上下文 |
-| `trace_reference` | 图片编号、区域名称、源像素区域、共同画布 `target`、提取与样式参数、分页位置 | 准备独立原生 `freedraw` 对象，返回对象编号、映射、路径数量及 `next_offset` |
+| `trace_reference` | 图片编号、区域名称、共同 `source_frame`、源像素 `region`、画布 `target`、提取与样式参数、第一页数量 | 创建固定计划，准备原生 `freedraw` 对象，返回 `trace_plan_id`、对象编号、映射和 `next_page` |
+| `continue_reference_trace` | `trace_plan_id`、`offset`、`limit`，可直接传入上一页的 `next_page` | 使用已保存计划的原参数、原区域、原映射和样式准备后续路径 |
 
 `source=pages` 使用公共文字搜索定位插图页面，通过 trafilatura 与 lxml 读取页面元信息和与主体相关的图片地址。`source=images` 使用公共图片索引，解析由 DDGS 提供。来源页面、图片和图片索引通过 HTTPX 读取，逐次检查跳转目标，下载后通过 Pillow 解码实际像素，检查分辨率并合并重复来源及相似图片。搜索使用主题与查询相关性排序，最多提供三个不同来源；图片元信息不能证明姿态与用户要求相符，Agent 需要查看实际图片后选择。
 
 参考图片只允许公开 HTTP/HTTPS 来源，网络读取具有 20 MB 文件、2,400 万解码像素和跳转保护。支持 Pillow 的 PNG、JPEG、WebP、GIF、BMP、TIFF、AVIF 和 ICO 解码；动画图片使用第一帧，EXIF 方向校正后将透明区域铺成白色。保存的参考图最长边为 2048 像素，查看图片最长边为 1280 像素。工具返回的 `width`、`height` 与区域坐标均使用保存后的参考图尺寸。
 
-`reference_images` 保存原始文件、解码图片、来源及所属会话和任务；`reference_image_views` 保存各调用者的当前图片、区域与实际发送状态；`reference_traces` 保存提取参数与完整源像素路径。主 Agent 与子 Agent 分别选择图片，每次模型响应成功后才记录已发送。提取前检查本调用者已收到完整参考图，其他 Agent 的查看记录不能代替本人的检查。当前上下文只提供选定参考图及其所需局部图片，历史图片继续保存在数据库。
+`reference_images` 保存原始文件、解码图片、来源及所属会话和任务；`reference_image_views` 保存各调用者的当前图片、区域与实际发送状态；`reference_search_previews` 保存带 A/B/C 标签的候选对比图及调用者归属；`reference_traces` 保存提取参数与完整源像素路径；`reference_trace_plans` 保存固定的区域、映射和样式，供主 Agent 与子 Agent 使用同一计划继续分页。搜索成功后，候选预览直接进入对应 Agent 的下一轮图片上下文。主 Agent 首次使用已有资料时也会收到候选对比图，可直接选择已保存的参考图。
 
-`mode=edges` 使用 scikit-image 的 Canny 提取照片或绘画的边界；`mode=ink` 对浅色纸面上的深色线条进行阈值处理，再生成中心路径。骨架化后由 Skan 读取有序分支，通过 Shapely 简化曲线和裁切区域。`sigma` 控制图像平滑，`min_length` 过滤短路径，`simplify` 指定源像素误差；这些参数需要结合当前参考图选择，提取后仍需检查画布上的主体结构与线条。
+主 Agent 与子 Agent 分别选择图片，每次模型响应成功后才记录已发送。候选预览帮助选择图片，提取前仍需检查本调用者已收到选定来源的完整图片；预览和其他 Agent 的查看记录不能代替该检查。选中完整参考图后，对比预览从当前上下文移除。当前上下文保留选定参考图及所需局部图片，历史图片继续保存在数据库。
 
-`target={x,y,width,height}` 始终表示整张参考图片在画布中的范围，按比例居中映射。`region` 只决定读取哪些源像素，不改变比例和位置；分别绘制面部、双手和背景的子 Agent 使用相同 `target`。`offset` 与 `limit` 对完整路径分页，返回 `next_offset` 供继续处理，没有作品路径总数限制。
+`mode=edges` 使用 scikit-image 的 Canny 提取照片或绘画的边界；`mode=ink` 对浅色纸面上的深色线条进行阈值处理，再生成中心路径。`contrast=local` 使用 CLAHE 增强低对比度图片中的结构，默认 `contrast=none` 保留原图对比度。骨架化后由 Skan 读取有序分支，通过 Shapely 简化曲线和裁切区域。`sigma` 控制图像平滑，`min_length` 过滤短路径，`simplify` 指定源像素误差；这些参数需要结合当前参考图选择，提取后仍需检查画布上的主体结构与线条。
+
+`source_frame={x,y,width,height}` 指定原图中完整作品的共同裁剪范围，省略时使用整张原图。`target={x,y,width,height}` 表示该完整范围在画布中的位置，按比例居中映射。`region` 使用原图像素坐标，只选择共同范围内的某个部位，不改变比例和位置；分别绘制面部、双手和背景的子 Agent 使用相同 `source_frame` 和 `target`。超出共同范围的部位请求会返回参数错误。
+
+`trace_reference` 创建计划并准备第一页，返回固定的 `trace_plan_id` 和下一页请求 `next_page`。后续使用 `continue_reference_trace`，从 SQLite 读取该计划的原参数；修改区域、映射或提取参数时创建新计划，从其第一条路径开始。主 Agent 可以把计划编号及下一页请求交给子 Agent，子 Agent 查看完整来源后按原计划继续。路径可以持续分页，没有作品路径总数限制。
+
+压缩记忆保留各提取配置的历史路径范围、重复生成数量、首个缺失位置及相关 `memory_ref`。相同配置改用新的名称，仍记为相同来源路径。该记录帮助 Agent 查询原对象并修改，已经擦除的历史路径不会据此自动恢复；历史范围本身不表示当前画面已经完成。
 
 例如，以“右手”为区域名称生成的路径使用“右手/轮廓-0001”等名称，每条都有独立编号。后续通过 `search_memory` 找到对应笔画，再用原生选择、移动、`reshape_path` 或 `erase_strokes` 编辑；撤销和重做继续使用同一历史流程。子 Agent 提取的笔画保存在私有草稿，主 Agent 接收摘要后决定提交。完整点列保存在 SQLite，工具对话返回编号和统计。画布与导出的 Excalidraw 文档不需要参考图片对象。
 
@@ -104,6 +111,12 @@ node scripts/export_smoke.js
 
 `evaluate_quality --database runs/quality.sqlite3 --output-dir runs/quality` 可以使用独立数据库在进程内运行同样的生产 API，并保存各题的原生作品及实际检查 PNG。`evaluate_visual_edit` 检查看图后擦除多余眼睛、局部擦除和连续编辑。`evaluate_visual_quality` 根据实际 PNG 或原生文档生成有证据的模型辅助评价，保留独立于结构检查的结果。
 
-`evaluate_reference_images` 使用真实公共来源检查下载、图片上下文、缓存及画布隔离，需要新的独立数据库。`evaluate_reference_edit --source-database DATABASE --reference-id IMAGE_ID --database runs/reference-edit.sqlite3 --output runs/reference-edit.json` 使用实际已经下载的参考图和真实模型，检查子 Agent 提取、主 Agent 提交、复用同一子 Agent、原编号连续编辑、其他对象保护及撤销重做。该检查验证参考轮廓执行流程，整幅作品的视觉验收仍需单独进行。
+`evaluate_reference_images` 使用真实公共来源检查下载、图片上下文、缓存及画布隔离，并使用实际模型逐张评价主体、姿态和必要结构是否可见。评测需要已配置的模型和新的独立数据库。`--recheck REPORT.json` 可以使用对应旧评测数据库中的实际图片重新评价，不发起新的网页搜索；该结果只说明保存图片的可用程度。
+
+`evaluate_reference_edit --source-database DATABASE --reference-id IMAGE_ID --database runs/reference-edit.sqlite3 --output runs/reference-edit.json` 使用实际已经下载的参考图和真实模型，检查子 Agent 提取、主 Agent 提交、复用同一子 Agent、原编号连续编辑、其他对象保护及撤销重做。该检查验证参考轮廓执行流程，整幅作品的视觉验收仍需单独进行。
+
+`evaluate_trace_continuation --source-database DATABASE --reference-id IMAGE_ID --database runs/trace-continuation.sqlite3 --output runs/trace-continuation.json` 使用真实模型验证主 Agent 创建计划、子 Agent 使用同一计划继续、参数和映射保持、已提交对象保护及实际图片反馈。
+
+`prepare_reference_evaluation --source-database DATABASE --reference-id IMAGE_ID --database runs/reference-drawing.sqlite3 --output runs/reference-seed.json` 在新的独立画布中导入实际保存的参考图，`--reference-id` 可重复。将输出的 `session_id` 设置为 `DRAW_AGENT_REFERENCE_SESSION`，再用 `verify_browser --database runs/reference-drawing.sqlite3 --scripts record_portrait.js` 录制该画布上的完整绘图。该流程验证已有参考图的使用，不衡量新一次公共搜索的可用性。
 
 `python -m scripts.verify_browser --database runs/browser-verification.sqlite3` 自动在空闲本地端口运行生产服务，依次执行浏览器检查，然后正常结束服务。`--scripts` 可选择检查脚本。已有真实研究任务时，设置 `DRAW_AGENT_SESSION` 后，可使用 `--database DATABASE --scripts references_smoke.js` 验证来源链接、刷新恢复及画布归属。

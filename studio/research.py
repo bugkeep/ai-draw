@@ -71,13 +71,15 @@ class DrawingResearch:
     def __init__(self, store: StudioStore):
         self.store = store
 
-    def _cached_source(self, session_id: str, reference_id: str) -> dict:
+    def _cached_source(self, task_id: str, reference_id: str) -> dict:
+        session_id = self.store.get_task(task_id)['session_id']
         with self.store.lock:
             row = self.store.connection.execute(
-                "SELECT l.payload FROM tool_logs l JOIN tasks t ON t.id=l.task_id "
-                "WHERE t.session_id=? AND l.kind='research_source' "
+                "SELECT l.payload FROM tool_logs l JOIN tasks original ON original.id=l.task_id "
+                "JOIN tasks current ON current.id=? WHERE original.session_id=? AND original.rowid<=current.rowid "
+                "AND l.kind='research_source' "
                 "AND json_extract(l.payload,'$.reference_id')=? ORDER BY l.id DESC LIMIT 1",
-                (session_id, reference_id),
+                (task_id, session_id, reference_id),
             ).fetchone()
         if row is None:
             raise ValueError("Reference not found in this canvas")
@@ -138,10 +140,11 @@ class DrawingResearch:
                                                arguments.get("page", 1)]).encode()).hexdigest()
         with self.store.lock:
             cached = self.store.connection.execute(
-                "SELECT l.payload FROM tool_logs l JOIN tasks t ON t.id=l.task_id "
-                "WHERE t.session_id=? AND l.kind='research_result' AND l.created_at>? "
+                "SELECT l.payload FROM tool_logs l JOIN tasks original ON original.id=l.task_id "
+                "JOIN tasks current ON current.id=? WHERE original.session_id=? AND original.rowid<=current.rowid "
+                "AND l.kind='research_result' AND l.created_at>? "
                 "AND json_extract(l.payload,'$.cache_key')=? ORDER BY l.id DESC LIMIT 1",
-                (session_id, time.time() - 3600, cache_key),
+                (task_id, session_id, time.time() - 3600, cache_key),
             ).fetchone()
         if cached is not None:
             output = json.loads(cached["payload"])["output"]
@@ -210,7 +213,7 @@ class DrawingResearch:
     async def call(self, task_id: str, agent_id: str, name: str, arguments: dict) -> dict:
         if name == "search_references":
             return await self.search(task_id, agent_id, arguments)
-        source = self._cached_source(self.store.get_task(task_id)["session_id"], arguments["reference_id"])
+        source = self._cached_source(task_id, arguments["reference_id"])
         terms = [term.strip() for term in arguments["focus_terms"] if term.strip()]
         if not terms:
             raise ValueError("Provide concrete focus terms for reference reading")

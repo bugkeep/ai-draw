@@ -42,7 +42,7 @@ python -m uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8000
 
 Agent 可以通过 `search_references` 使用免费的公共搜索查阅具体画法，使用 `read_reference` 阅读相关步骤。服务读取网页正文，检查主题与绘画步骤，过滤重复和无关内容，只返回少量来源及相关片段。较多的检索工作可以交给子 Agent；完整检索和网页记录保存在 SQLite，同一画布可以使用缓存。公共搜索可能遇到限流或连接失败，工具会返回实际错误，Agent 根据反馈继续处理。筛选方法与配置见[绘图工具及资料检索](docs/drawing-tools.md)。
 
-`search_reference_images` 查找插图来源或公共图片索引，实际读取、解码和筛选图片。`view_reference_image` 把选定的参考图片提供给对应 Agent；`trace_reference` 可以在其查看完整参考图后，按区域提取轮廓并生成独立的原生画笔对象。参考图片与轮廓数据单独保存在 SQLite，最终画布保留可编辑笔画。不同区域沿用整张参考图的共同坐标映射，主 Agent 审阅并提交子 Agent 的私有结果，后续可以检索名称、移动、修改或擦除同一对象。
+`search_reference_images` 查找插图来源或公共图片索引，实际读取、解码和筛选图片，并把带编号的候选预览交给 Agent 比较姿态和完整程度。`view_reference_image` 提供选中图片的完整像素；`trace_reference` 在完整图片检查后按区域生成独立的原生画笔对象。`source_frame` 可以选定图片中的完整作品，排除外围画框和页面文字；不同子 Agent 使用相同裁剪范围和画布映射。低对比度照片可使用局部对比度增强。图片、预览与轮廓数据单独保存在 SQLite，最终画布保留可编辑笔画，后续可以检索名称、移动、修改或擦除同一对象。
 
 点击“导出作品”可以选择 PNG、JPG、WebP、SVG 或 Excalidraw 文件。图片支持 1、2、4 倍清晰度；PNG、WebP 和 SVG 可使用透明背景，JPG 使用画布背景颜色。Excalidraw 文件保留原生图形与画笔，便于继续编辑。
 

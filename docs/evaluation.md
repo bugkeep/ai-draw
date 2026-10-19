@@ -1,12 +1,12 @@
 # 真实操作评测
 
-评测日期：2026 年 10 月 19 日。环境为 Windows、Python 3.13、Node.js 24、Chrome，实际模型为 Ark Agent Plan `ark-code-latest`。服务、SQLite 和浏览器均在本机运行。当前 API 6 包含实际画布图片检查、橡皮擦、参考图片与区域轮廓工具。完整工具过程及作品保存在本机 Git 忽略的 `runs/`；下文人物与多题材生成表保留 API 4 样本的版本背景，画面验收单独记录。
+评测日期：2026 年 10 月 19 日至 20 日。环境为 Windows、Python 3.13、Node.js 24、Chrome，实际模型为 Ark Agent Plan `ark-code-latest`。服务、SQLite 和浏览器均在本机运行。当前 API 6 包含实际画布图片检查、橡皮擦、候选参考图预览、区域轮廓与固定计划分页。完整工具过程及作品保存在本机 Git 忽略的 `runs/`；下文人物与多题材生成表保留 API 4 样本的版本背景，画面验收单独记录。
 
 ## 自动化与浏览器检查
 
 | 检查 | 结果 | 范围 |
 | --- | --- | --- |
-| 后端检查 | 86/86 通过，25.49 秒 | 实际 SQLite、原生渲染、全图与局部图片、参考图解码与轮廓、检查归属、整条与局部擦除、旋转几何、路径修改、记忆检索与压缩、执行次数摘要、引用字段校验、历史顺序与事务失败保护、完整错误、输入顺序、保存恢复、提交幂等、共享恢复队列 |
+| 后端检查 | 92/92 通过，27.94 秒 | 实际 SQLite、原生渲染、全图与局部图片、参考图预览与裁剪、固定计划分页、低对比度轮廓、归属与任务顺序、擦除、旋转几何、路径修改、记忆检索与压缩、重复提取范围摘要、历史事务、完整错误、输入顺序、保存恢复、提交幂等、共享恢复队列 |
 | 浏览器完整检查 | 45/45 通过 | 编辑器 5 项、导出 13 项、设置 8 项、滚动与名称 9 项、删除 10 项 |
 | 运行状态与停止 | 8/8 通过 | 实际模型请求、用时更新、刷新与切换恢复、其他画布隔离、停止、重复停止及终止状态清理 |
 | 已读取来源展示 | 4/4 通过 | 实际研究任务的来源链接、刷新恢复及其他画布的资料归属 |
@@ -14,7 +14,7 @@
 
 浏览器导出检查实际下载 PNG、JPG、WebP、SVG 和 Excalidraw 文件，解析文件内容，并检查图片尺寸、透明背景、名称和小尺寸窗口。PNG 另外检查 2 倍与 4 倍分辨率。独立浏览器检查另外启用 `DRAW_AGENT_TEST_MODEL=1`，实际点击设置页的连接测试，图片识别、工具及文本响应通过。
 
-后端检查仍有一条 Starlette/AnyIO 的弃用提示。前端构建仍有打包体积提示。两者均保留在检查输出中。
+后端检查保留 Starlette/AnyIO 和 scikit-image/NumPy 的弃用提示。前端构建保留打包体积提示，相关信息均可在检查输出中查看。
 
 ```bash
 python -m pytest -q
@@ -97,7 +97,7 @@ python -m scripts.evaluate_quality --url http://127.0.0.1:8001 --output-dir runs
 
 ## 参考图片与原生轮廓连续编辑
 
-参考图片检查使用实际 Pillow 解码、SQLite 和原生绘图工具，12 项通过，覆盖 PNG/JPEG/WebP/GIF/BMP/TIFF、EXIF 方向、透明区域、错误文件、插图页面解析、画布与任务顺序隔离、查看状态、重启、共同坐标映射、完整路径分页、移动、局部擦除、撤销重做与重复调用。
+参考图片检查使用实际 Pillow 解码、SQLite 和原生绘图工具，16 项通过，覆盖 PNG/JPEG/WebP/GIF/BMP/TIFF、EXIF 方向、透明区域、错误文件、插图页面解析、画布与任务顺序隔离、候选预览与完整图片检查、重启、裁剪后的共同映射、固定计划分页、局部对比度、移动、擦除、撤销重做与重复调用。
 
 真实模型检查从已经实际下载的蒙娜丽莎参考图提取三条原生轮廓，由子 Agent 在私有草稿中准备，主 Agent 审阅后提交；随后通过 `send_input` 复用同一子 Agent，检索与读取原笔画，向右移动 20 像素。全部 12 项检查通过，第一轮 39.19 秒，第二轮 51.80 秒，工具错误为零。检查包含参考图片实际进入子 Agent 上下文、主 Agent 提交两次结果、原编号保持、其他三个对象保护、实际画布图片反馈和撤销重做。记录为 `runs/reference-edit-model-final.json` 及同名数据库。
 
@@ -105,11 +105,18 @@ python -m scripts.evaluate_quality --url http://127.0.0.1:8001 --output-dir runs
 
 公共检索分别检查人物、山水与动物。图片索引能返回并解码三类图片，但部分结果只匹配主体名称，姿态和绘画形式需要实际看图判断。插图来源检索读取到人物图和山体绘画教程；其他请求仍出现空结果、403 或网络错误。报告为 `runs/reference-images-market-verified.json`、`runs/reference-articles-verified.json` 和 `runs/reference-tutorials-verified.json`，后两组未通过全部来源可用性检查。
 
+实际模型重新评价已保存的九张参考图片，六张能够支持对应结构问题。人物组有两张可用图片，一张为宣传封面；动物组三张图片中只有一张能支持坐姿身体结构，另两张无法提供所需完整姿态。三个题目均至少有一张可用来源。报告为 `runs/reference-usefulness-20261019.json`，该次使用已有图片，没有重新衡量公共搜索的连接可用性。评测现已分别记录下载与隔离检查、实际图片可用性及整幅作品质量。
+
+固定计划的真实模型检查为 11/11 项通过，用时 54.62 秒，工具错误为零。主 Agent 查看完整参考图并提取前两条路径，把 `trace_plan_id` 和 `next_page` 交给子 Agent；子 Agent 查看完整来源后使用 `continue_reference_trace` 准备后两条，最后由主 Agent 提交。检查核对计划编号、区域、参数对应的提取编号、画布映射、连续编号、原笔画保护、其他图形保护、实际图片上下文和错误反馈。记录为 `runs/trace-plan-model-final-20261020.json` 及同名数据库。该检查验证分页执行，不作为整幅人物画的艺术质量结论。
+
+压缩记忆从实际人物任务的 22 次成功提取记录中计算出：共生成 1,247 条不同的来源路径，另有 2,180 条重复路径；新参数对应序列的开头 160 条始终没有生成。该记录直接说明了跨参数沿用页码及更名重复提取的问题。固定计划保留区域与参数，范围摘要在压缩后继续提供历史区间和首个缺失位置。分析报告为 `runs/trace-coverage-audit-20261020.json`，仅重放已有记录，没有将该人物任务记为成功。
+
 “画一幅蒙娜丽莎素描图”的独立浏览器运行没有通过整幅作品验收。两次运行在未取得合适参考图片后继续绘制，已通过本次评测的停止接口终止并保存实际录像与图片，记录为 `runs/portrait-reference-verified.json` 与 `runs/portrait-reference-articles.json`。原生轮廓与连续编辑通过不代表人物、山水等整幅作品已经达到目标质量；GitHub Issue #44 继续跟踪来源可用性、构图质量与完整任务延迟。
 
 ```bash
 python -m scripts.evaluate_reference_images --database runs/reference-images.sqlite3 --output runs/reference-images.json
 python -m scripts.evaluate_reference_edit --source-database SOURCE_DATABASE --reference-id IMAGE_ID --database runs/reference-edit.sqlite3 --output runs/reference-edit.json
+python -m scripts.evaluate_trace_continuation --source-database SOURCE_DATABASE --reference-id IMAGE_ID --database runs/trace-continuation.sqlite3 --output runs/trace-continuation.json
 ```
 
 ## 连续修改与历史保存耗时

@@ -1,11 +1,14 @@
 import asyncio
+import io
 import json
 
 import pytest
+from PIL import Image, ImageDraw
 
 from studio.agents import DrawingAgents, compact_drawing_exchange
 from studio.agents import prepare_drawing_tool
 from studio.runtime import DrawingRuntime
+from studio.reference_images import decode_reference
 from studio.settings import ModelConfig, ModelSettings
 from studio.store import StudioStore
 
@@ -295,6 +298,48 @@ def test_path_revision_history_survives_compaction_and_excludes_other_callers(tm
             }, 'future-revision')
             assert runtime.memory.snapshot(task['id'], 'main', f"main:{task['id']}", 'new-state',
                 document)['execution_history']['recent_path_edits'][0]['revisions'] == 4
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())
+
+
+def test_trace_range_memory_survives_compaction_and_distinguishes_renamed_duplicates(tmp_path):
+    async def check():
+        store, runtime, session, task, models = workspace(tmp_path / 'trace-ranges.sqlite3')
+        try:
+            image = Image.new('RGB', (256, 256), 'white')
+            drawing = ImageDraw.Draw(image)
+            drawing.line([(32, 64), (224, 64)], fill='black', width=5)
+            drawing.line([(128, 160), (128, 224)], fill='black', width=5)
+            data = io.BytesIO()
+            image.save(data, format='PNG')
+            source = runtime.references.save_image(task['id'], 'main', {
+                'title': '轮廓分页记录', 'url': 'https://example.org/trace-ranges',
+                'image': 'https://example.org/trace-ranges.png'}, data.getvalue(), decode_reference(data.getvalue()))
+            caller = f"main:{task['id']}"
+            runtime.references.view(task['id'], caller, {'reference_id': source['reference_id']})
+            runtime.references.delivered(task['id'], caller, runtime.references.context(task['id'], caller)[1])
+            args = {'reference_id': source['reference_id'], 'name': 'first-pass', 'mode': 'ink', 'sigma': 0,
+                    'target': {'x': 0, 'y': 0, 'width': 256, 'height': 256}, 'min_length': 5, 'limit': 1}
+            first = await call(runtime, models, session, task, 'trace_reference', args, 'trace-first')
+            second = await call(runtime, models, session, task, 'continue_reference_trace', first['next_page'], 'trace-second')
+            repeated = await call(runtime, models, session, task, 'trace_reference', {**args, 'name': 'renamed-pass'}, 'trace-renamed')
+            assert first['ok'] and second['ok'] and repeated['ok']
+            await call(runtime, models, session, task, 'compact_context', {
+                'goal': '检查当前线条', 'summary': '已经生成轮廓，准备检查重复范围'}, 'save-trace-stage')
+            document = store.get_document(session['document']['id'])
+            progress = runtime.memory.snapshot(task['id'], 'main', caller, 'next-state', document)['execution_history']['reference_traces']
+            assert progress['family_count'] == 1 and progress['unindexed_record_count'] == 0
+            family = progress['families'][0]
+            assert family['successful_calls'] == 3 and family['prepared_ranges'] == [[0, 2]]
+            assert family['prepared_path_count'] == 2 and family['repeated_path_count'] == 1
+            assert family['first_unprepared_offset'] is None and len(family['trace_plan_ids']) == 2
+            assert set(family['names']) == {'first-pass', 'renamed-pass'}
+            assert all(runtime.memory.recall(task['id'], 'main', {'memory_ref': reference}, document)['ok']
+                       for reference in family['memory_refs'])
+            other = runtime.memory.snapshot(task['id'], 'other-agent', caller, 'next-state', document)
+            assert 'reference_traces' not in other['execution_history']
         finally:
             await runtime.close()
             store.close()

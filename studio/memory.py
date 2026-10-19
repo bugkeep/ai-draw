@@ -51,6 +51,48 @@ def search_terms(value):
     return []
 
 
+def trace_progress(records):
+    families, unknown = {}, 0
+    for record in records:
+        summary = json.loads(record['summary'])
+        if not all(key in summary for key in ('trace_id', 'source_region', 'mapping', 'offset', 'returned_paths', 'total_paths')):
+            unknown += 1
+            continue
+        key = json.dumps([summary['trace_id'], summary['source_region'], summary['mapping']], sort_keys=True)
+        if key not in families:
+            families[key] = {name: summary[name] for name in ('trace_id', 'reference_id', 'source_region', 'source_frame', 'mapping', 'total_paths')
+                             if name in summary}
+            families[key].update(names=[], trace_plan_ids=[], memory_refs=[], successful_calls=0, ranges=[])
+        family = families[key]
+        family['successful_calls'] += 1
+        family['ranges'].append([summary['offset'], summary['offset'] + summary['returned_paths']])
+        for field, value in [('names', summary.get('name')), ('trace_plan_ids', summary.get('trace_plan_id')),
+                             ('memory_refs', record['id'])]:
+            if value and value not in family[field] and len(family[field]) < 3:
+                family[field].append(value)
+    result = []
+    for family in list(families.values())[:8]:
+        ranges, total = [], 0
+        for start, end in sorted(family.pop('ranges')):
+            total += end - start
+            if ranges and start <= ranges[-1][1]:
+                ranges[-1][1] = max(end, ranges[-1][1])
+            else:
+                ranges.append([start, end])
+        prepared = sum(end - start for start, end in ranges)
+        first_missing = ranges[0][1] if ranges and ranges[0][0] == 0 else 0
+        family.update(prepared_ranges=ranges[:8], range_count=len(ranges),
+            prepared_path_count=prepared, repeated_path_count=total - prepared,
+            first_unprepared_offset=first_missing if first_missing < family['total_paths'] else None)
+        result.append(family)
+    return {'families': result, 'family_count': len(families), 'unindexed_record_count': unknown,
+        'instruction': 'These are historical successful path ranges [start,end), not proof that the current drawing is complete. '
+            'Renaming a trace does not change its geometry. Repeated ranges recreate the same source paths, including paths you erased. '
+            'Inspect the actual current drawing, recall the recorded object IDs for edits, and continue a saved trace_plan_id with its next_page. '
+            'Changing a region or extraction parameters starts a different path sequence at offset 0. '
+            'first_unprepared_offset identifies a historical gap; use the exact associated plan rather than another plan\'s offset.'}
+
+
 class AgentMemory:
     def __init__(self, store):
         self.store = store
@@ -268,6 +310,13 @@ class AgentMemory:
                 'AND original.rowid<=current.rowid GROUP BY element_id ORDER BY latest DESC LIMIT 8',
                 (task_id, caller_id, actor_id),
             ).fetchall()
+            traces = self.store.connection.execute(
+                'SELECT m.id,m.summary FROM agent_memories m JOIN tasks original ON original.id=m.task_id '
+                'JOIN tasks current ON current.id=? WHERE m.session_id=? AND m.caller_id=? AND m.actor_id=? '
+                "AND m.tool_name IN ('trace_reference','continue_reference_trace') AND m.is_error=0 "
+                'AND original.rowid<=current.rowid ORDER BY m.created_at DESC',
+                (task_id, self._session(task_id), caller_id, actor_id),
+            ).fetchall()
         notes = {**json.loads(row['payload']), 'memory_ref': row['id'], 'source_task_id': row['task_id']} if row else {'revision': 0, 'notes': None}
         known_ids = {item['id'] for item in document['elements'] if not item.get('isDeleted')}
         names = {item['id']: item.get('customData', {}).get('name', '') for item in document['elements']}
@@ -275,6 +324,7 @@ class AgentMemory:
         return {'working_memory': notes, 'missing_or_removed_object_ids': sorted(missing),
                 'known_queries_in_current_state': [{**dict(item), 'request': json.loads(item['request'])['request']} for item in queries],
                 'execution_history': {'tool_counts': [dict(item) for item in activity],
+                    **({'reference_traces': trace_progress(traces)} if traces else {}),
                     'recent_path_edits': [{**dict(item), 'name': names.get(item['element_id'], ''),
                                            'exists': item['element_id'] in known_ids} for item in paths],
                     'instruction': 'Counts retain earlier attempts after conversation compaction; they are not operation limits. '
