@@ -5,6 +5,7 @@ export function activityPhase(value) {
   if (value.phase === 'thinking') text = '正在安排绘图'
   if (value.phase === 'research') text = '正在检索并筛选绘图参考资料'
   if (value.phase === 'observing') text = '正在查看当前画布图片'
+  if (value.phase === 'quality_review') text = '正在检查画面质量'
   if (value.phase === 'model_request') text = value.agent_id === 'main' ? '主 Agent 正在思考' : '子 Agent 正在准备画笔动作'
   if (['model_wait', 'model_retry'].includes(value.phase)) text = '模型连接正在限流，按顺序恢复请求'
   if (value.phase === 'agent_state') {

@@ -54,6 +54,8 @@ Agent 可以通过 `search_references` 使用免费的公共搜索查阅具体�
 
 每个会话有独立画布、消息、任务、实时事件和撤销历史。切换画布或打开多个窗口时，各自显示所属会话的内容；同一会话内的指令按顺序执行，当前 Agent 上下文不包含后续排队任务的指令。服务重启后，数据仍保存在 `runs/studio.sqlite3`，该路径可通过 `DRAW_AGENT_DB` 配置。
 
+模型绘图在宣布完成前进行独立图片检查；未通过时，具体缺陷和修正建议返回主 Agent 继续处理。同一张未改变的画面复用检查结果。检查中可随时停止，已经提交的原生图形继续保留。画布修改使用增量事件推送，断线后继续同步；长期作画没有应用层的总动作数或单次模型请求时限。
+
 点击“新建”后可直接输入画布名称，按 Enter 或点击勾号保存，按 Escape 或点击取消关闭名称编辑。已有画布条目右侧的铅笔按钮可修改名称，名称会同步更新到画布标题并保存到数据库。左侧画布列表与右侧对话分别滚动，画布和输入框保留在窗口内。
 
 条目右侧的删除按钮会打开确认窗口。删除会移除该画布的图形、对话、任务、工具记录和历史；运行或排队中的任务需要先停止。删除当前画布后自动打开其他画布，列表为空时创建空白画布。同一画布的其他窗口会接收删除通知并切换。
@@ -193,6 +195,8 @@ npm run test:sync
 也可以在仓库根目录运行 `python -m scripts.verify_browser --database runs/browser-verification.sqlite3`，自动使用空闲端口和独立数据库完成浏览器检查，结束后正常关闭测试服务。
 
 `scene_sync_smoke.js` 使用真实 HTTP 与 WebSocket 服务，检查连续修改、双窗口导出一致、丢失或乱序消息后的快照恢复、断线回放和画布切换。它会创建独立测试会话。已有完整作画事件归档时，可运行 `python -m scripts.evaluate_scene_events --source-database ARCHIVE --output runs/scene-events.json`，只读比较原有全量事件与增量数据量，并通过前端实际使用的增量处理函数重建最终对象、图层顺序与选择状态。该回放不发送模型请求，不衡量重新作画的总延迟。
+
+`evaluate_completion_review --rejected-artwork PATH.excalidraw --drawing-request "原绘图要求" --database runs/completion-review.sqlite3 --output runs/completion-review.json` 使用真实模型检查完成边界：缺陷作品应被拒绝，正确的局部修改应被允许，同一画面复用检查结果并保留图形和历史。通过 `python -m scripts.evaluate_completion_review` 执行，需要已配置真实模型及全新的独立测试数据库。它验证完成检查，完整绘画质量仍按题材单独验收。
 
 ## 当前边界
 

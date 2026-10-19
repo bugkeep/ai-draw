@@ -3,6 +3,7 @@ import asyncio
 import hashlib
 import json
 import os
+import shutil
 import time
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from fastapi.testclient import TestClient
 from server.app import create_app
 from studio.renderer import CanvasRenderer
 from studio.vision import scene_digest
+from studio.quality import review_scene_key
 
 
 async def render_final_document(document):
@@ -34,13 +36,18 @@ def main():
     root = Path(__file__).resolve().parent.parent
     implementation = {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in (
         'studio/runtime.py', 'studio/agents.py', 'studio/actions.py', 'studio/result_review.py',
-        'studio/memory.py', 'studio/vision.py', 'studio/reference_images.py', 'studio/store.py')}
+        'studio/memory.py', 'studio/vision.py', 'studio/reference_images.py', 'studio/store.py', 'studio/quality.py')}
     dataset_hash = hashlib.sha256(args.dataset.read_bytes()).hexdigest()
     cases = json.loads(args.dataset.read_text(encoding="utf-8"))["cases"]
     selected = set(args.cases.split(",")) if args.cases else {case["id"] for case in cases}
     if selected - {case["id"] for case in cases}:
         raise ValueError("Unknown evaluation case")
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    if not args.recheck:
+        for name in implementation:
+            snapshot = args.output_dir / 'implementation' / name
+            snapshot.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(root / name, snapshot)
     results = []
     if args.database:
         if args.database.resolve() == Path('runs/studio.sqlite3').resolve():
@@ -107,13 +114,20 @@ def main():
                 "freedraw", "line", "arrow", "ellipse", "rectangle", "diamond", "text"} for item in elements)
             checks["arrows"] = sum(item["type"] == "arrow" for item in elements) >= case.get("min_arrows", 0)
             checks['final_model_canvas_inspected'] = not contexts or final_observed
+            quality = [item['payload']['result'] for item in logs if item['kind'] == 'quality_review'
+                       and item['payload']['result']['scene_key'] == review_scene_key(scene)]
+            quality = quality[-1] if quality else None
+            checks['independent_visual_review_passed'] = not contexts or bool(quality and quality['ok'])
             commits = [item for item in logs if item["kind"] == "commit"]
             result = {"case": case["id"], "prompt": case["prompt"], "session_id": session_id, "task_id": task_id,
-                      'implementation_sha256': implementation, 'dataset_sha256': dataset_hash,
+                      'implementation_sha256': existing.get('implementation_sha256') if args.recheck else implementation,
+                      'dataset_sha256': existing.get('dataset_sha256') if args.recheck else dataset_hash,
+                      'evaluation_implementation_sha256': implementation, 'evaluation_dataset_sha256': dataset_hash,
                       "status": task["status"], "error": task["error"], "element_count": len(elements),
                       "latency_ms": task["latency_ms"], "structural_checks": checks,
                       "first_canvas_update_ms": round((commits[0]["created_at"] - task["created_at"]) * 1000, 1) if commits else None,
                       "model_retry_count": sum(item["kind"] == "model_retry" for item in logs),
+                      'independent_visual_review': quality,
                       'image_observation_count': sum(item['kind'] == 'canvas_observation' for item in logs),
                       'final_shared_scene_hash': final_hash,
                       'final_model_canvas_observed': final_observed if contexts else None,
@@ -123,6 +137,8 @@ def main():
                                               json.loads(item["payload"]["output"]).get("ok") is False for item in logs),
                       "structural_checks_passed": task["status"] == "completed" and all(checks.values()),
                       "visual_rubric": case["visual_rubric"], "visual_acceptance": "pending_user_review"}
+            if args.recheck:
+                result['prompt'] = existing.get('prompt', case['prompt'])
             (args.output_dir / f"{case['id']}.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
             (args.output_dir / f"{case['id']}.excalidraw").write_text(json.dumps({
                 "type": "excalidraw", "version": 2, "source": "draw-agent-studio", "elements": elements,

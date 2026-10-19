@@ -19,6 +19,7 @@ from .vision import CanvasVision
 from .memory import AgentMemory, MEMORY_TOOLS
 from .reference_images import IMAGE_QUERY_TOOLS, TRACE_TOOLS, ReferenceImages
 from .result_review import AgentResultReview
+from .quality import DrawingQuality
 
 
 class DrawingRuntime:
@@ -30,6 +31,7 @@ class DrawingRuntime:
         self.cancel_requested: set[str] = set()
         self.vision = CanvasVision(store)
         self.result_reviews = AgentResultReview(store, self.vision)
+        self.quality = DrawingQuality(store, self.vision)
         self.memory = AgentMemory(store)
         self.references = ReferenceImages(store)
         self.children = AgentManager(store, settings, self.vision, self.memory, self.references)
@@ -138,6 +140,7 @@ class DrawingRuntime:
     async def _draw(self, agents: DrawingAgents, task_id: str, session_id: str,
                     document_id: str, message: str) -> tuple[str, bool]:
         history = self.store.context_messages(session_id, task_id)
+        self.quality.begin(task_id, self.store.get_document(document_id), message)
         turns: list[list[dict]] = []
         round_number = 0
         self.store.publish(document_id, "phase", {"task_id": task_id, "phase": "thinking"})
@@ -177,6 +180,13 @@ class DrawingRuntime:
                     self.vision.require_review(task_id, f'main:{task_id}', self.store.get_document(document_id))
                 except ValueError as error:
                     turns.append([response, {'role': 'user', 'content': str(error)}])
+                    continue
+                try:
+                    quality = await self.quality.assess(task_id, agents.settings)
+                except ValueError as error:
+                    quality = {'ok': False, 'error': str(error)}
+                if not quality['ok']:
+                    turns.append([response, {'role': 'user', 'content': json.dumps(quality, ensure_ascii=False)}])
                     continue
                 runs = self.store.agents.task_runs(session_id, task_id)
                 partial = any(run["status"] in {"failed", "paused", "queued", "running"} for run in runs)
@@ -232,9 +242,11 @@ class DrawingRuntime:
                         raise ValueError(f"Settle active Agents and pending results before completing: {active}, "
                                          f"{[item['id'] for item in pending]}")
                     self.vision.require_review(task_id, caller_id, self.store.get_document(document_id))
+                    quality = await self.quality.assess(task_id, models.settings)
                     runs = self.store.agents.task_runs(session_id, task_id)
-                    output = {"ok": True, "summary": args["summary"], "partial": any(
-                        run["status"] in {"failed", "paused", "queued", "running"} for run in runs)}
+                    output = ({"ok": True, "summary": args["summary"], "quality_review_key": quality['review_key'],
+                        "partial": any(run["status"] in {"failed", "paused", "queued", "running"} for run in runs)}
+                        if quality['ok'] else quality)
                 elif name in MEMORY_TOOLS:
                     output = self.memory.call(task_id, 'main', name, args, self.store.get_document(document_id))
                 elif name == 'view_canvas':

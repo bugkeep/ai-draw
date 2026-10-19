@@ -170,6 +170,26 @@ python -m scripts.verify_history_migration --source-database runs/studio.sqlite3
 
 `evaluate_quality` 使用任务结束后的实际共享原生文档导出 PNG，候选图片不参与最终作品导出。模型看图的证据单独核对共享画布范围、当前内容标识和实际模型上下文中的图片编号。报告保存实现文件和题目数据的 SHA-256，分别记录候选图数量与最终共享画布的看图状态。
 
+## 完成时独立图片检查
+
+主 Agent 已查看图片仍不足以证明成图合格。一次单次总体评价把有缺陷的实际人物作品判为可完成，未作为最终检查方案；后续逐项评价还出现模型返回无效 JSON，运行时未记录通过。相应实验保留在 `runs/completion-review-model-20261020.json` 与 `runs/completion-review-criteria-model-20261020.json`。原始无效响应现作为有来源和 SHA-256 的解析回归样本保存于 `tests/fixtures/`，不使用伪造模型回复。
+
+当前检查先独立描述实际像素，再逐项判断任务匹配、比例连接、必要细节、线条及构图；失败项目必须给出具体修正建议。实际 Ark 模型的两组完成边界检查均为 9/9 项通过：拒绝之前实际生成的缺陷蒙娜丽莎与捧杯人物，允许原编号红色圆的精确移动，保留另一个对象，不修改原生画布或历史；同一画面正负检查结果均可复用，并且任务之间隔离。记录为 `runs/completion-review-focused-model-20261020.json` 和 `runs/completion-review-portrait-model-20261020.json`。
+
+该版本后端检查为 122/122 项通过，前端同步函数检查为 5/5 项通过，六个完整浏览器检查脚本通过，包括动画中途取消后的保存画面恢复。记录为 `runs/tests-quality-completion-final-20261020.stdout.log` 与 `runs/browser-quality-completion-full-20261020.stdout.log`。
+
+上述边界检查在实际主模型收到图片后，显式调用运行时完成工具，验证拒绝与通过流程；它们不是重新生成完整作品的成功率。缺陷蒙娜丽莎的独立检查耗时 28.60 秒，缺陷捧杯人物为 33.25 秒；对应精确移动的检查为 12.66 秒与 14.39 秒，未改变画面的后续检查未重复发起请求。新增模型检查有实际耗时，完整任务延迟仍需继续优化。
+
+完整实际 Agent 流程另通过 14/14 项分页定位与原对象修改检查：主 Agent 创建子 Agent，子 Agent 读取四页定位目标，主 Agent 查看候选图后提交，独立检查允许完成，其他对象与撤销重做保持一致。用时 68.64 秒，工具错误为零；记录为 `runs/quality-reviewed-scene-paging-20261020.json`。这证明完成检查接入了实际 Agent 流程，不能推出整幅人物、山水或其他题材已经通过。
+
+```bash
+python -m scripts.evaluate_completion_review --rejected-artwork PATH.excalidraw --drawing-request "该作品原本应完成的绘图要求" --database runs/completion-review.sqlite3 --output runs/completion-review.json
+```
+
+五类题材仍分别验收。没有独立检查的旧版本山水测试完成于 486.77 秒，但桥岸连接和线条质量仍不满意；同版本捧杯人物在最后保存活动为 3,162.60 秒时仍有头颈比例及握杯关系缺陷，评测进程退出后通过项目的中断恢复流程核实为 `cancelled`。现场及中断过程记录为 `runs/drawing-quality-preview-20261020/portrait-with-prop-cancelled.json`、原生文件和 PNG。它不是完成延迟或成功作品。其余题材的新版实际绘图继续单独评测，不以编辑功能检查代替视觉验收。
+
+新的 `evaluate_quality` 运行会将实际使用的实现文件复制到输出目录的 `implementation/`，与 SHA-256 一起保存。重新检查已有任务时保留原绘图实现、原要求与题目标识，当前评测实现及题目标识另外记录；缺少旧版本标识时保留未知状态，不把当前代码当成旧任务的绘图版本。
+
 ## 连续作画事件与断线恢复
 
 画布、撤销历史、提交进度和增量事件使用同一事务。新增检查覆盖事件插入失败后的完整回滚、两个 SQLite 写入连接的版本顺序、会话文档与游标的一致读快照、503 条事件跨页回放、旧客户端快照兼容、删除通知，以及客户端文字消息与画布通知同时到达时的事件交付。
