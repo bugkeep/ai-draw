@@ -1,32 +1,15 @@
-import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
+import react from '@vitejs/plugin-react'
 
 export default defineConfig({
-  plugins: [vue()],
-  resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
-    },
-  },
+  plugins: [react()],
   server: {
     port: 5173,
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
-      },
-      '/assets/content/': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/assets/preview/': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      '/assets/metadata/': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
+        ws: true,
       },
     },
   },
