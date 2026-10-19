@@ -17,9 +17,40 @@ from .store import StudioStore
 TOOL_DEFINITIONS = CHILD_TOOLS
 
 
+def compact_drawing_exchange(turn: list[dict]) -> list[dict]:
+    if not turn or turn[0].get('role') != 'assistant':
+        return turn
+    calls = turn[0].get('tool_calls', [])
+    outputs = [item for item in turn[1:] if item.get('role') == 'tool']
+    if (not calls or len(outputs) != len(calls) or len(turn) != len(outputs) + 1
+            or {call['id'] for call in calls} != {item['tool_call_id'] for item in outputs}):
+        return turn
+    by_id = {item['tool_call_id']: item for item in outputs}
+    archived = [call for call in calls if len(call['function']['arguments']) >= 2000
+                and json.loads(by_id[call['id']]['content']).get('ok') is True]
+    if not archived:
+        return turn
+    archived_ids = {call['id'] for call in archived}
+    checkpoint = {'completed_drawing_tools': [{
+        'name': call['function']['name'], 'call_id': call['id'], 'arguments_record': 'SQLite agent_tool_calls',
+    } for call in archived], 'function_call_outputs': [{
+        'type': 'function_call_output', 'call_id': item['tool_call_id'], 'output': item['content'],
+    } for item in outputs if item['tool_call_id'] in archived_ids], 'instruction': 'These tools succeeded; drawing effects are already in the current canvas/draft. '
+                                         'Full arguments remain in SQLite; use current object IDs and images for further edits.'}
+    if turn[0].get('content'):
+        checkpoint['assistant_note'] = turn[0]['content']
+    result = [{'role': 'user', 'content': json.dumps(checkpoint, ensure_ascii=False)}]
+    remaining = [call for call in calls if call['id'] not in archived_ids]
+    if remaining:
+        result.extend([{**turn[0], 'tool_calls': remaining},
+                       *[item for item in outputs if item['tool_call_id'] not in archived_ids]])
+    return result
+
+
 def recent_tool_exchanges(turns: list[list[dict]], character_budget: int = 16_000) -> list[dict]:
     selected, size = [], 0
     for turn in reversed(turns):
+        turn = compact_drawing_exchange(turn)
         turn_size = len(json.dumps(turn, ensure_ascii=False))
         if selected and size + turn_size > character_budget:
             break
@@ -167,14 +198,23 @@ MAIN_SYSTEM = (
     "For portraits use a tall frame, a head about one third of the frame width, shoulders spanning most of its width, "
     "and hands in the lower portion. The subject should fill the composition rather than sit inside a wide empty landscape. "
     "Your next context includes a fresh canvas checkpoint and compact Agent states; complete raw tool records remain in SQLite. "
+    "Use compact_context to persist a concise goal, constraints, decisions, completed work and pending work. "
+    "Successful bulky tool records are summarized with memory_ref; use search_memory and recall_memory for precisely needed information. "
+    "For an old object, search names/IDs then recall its current geometry by element_id, using pages if needed. "
+    "Delegate geometry-heavy repair to a child with the affected IDs and concrete visible defect; keep your own context focused on composition and decisions. "
+    "Your durable query record shows what has already been inspected in the current state. Do not repeat a broad unchanged geometry query. "
     "task_progress is your durable work record: it lists dispatched inputs, submitted results and remaining work. "
     "Use only the exact result_id and agent_id values in that record or tool outputs. "
     "Submitted results already exist on the canvas and fulfill their recorded goals. Reuse their objects for edits. "
     "Once the requested composition is present and all chosen results are committed, return your final reply promptly. "
     "Your context includes actual rendered canvas images after drawing changes. Inspect the visible result, not just object names. "
+    "The images attached to this context already show the current content and count as visual inspection. "
+    "Request a close-up only for a specific remaining issue that the attached images cannot resolve. "
+    "Do not repeatedly request unchanged views; either correct a concrete visible defect or finish when the requested composition is complete. "
     "Before finish_drawing, the latest changed canvas must have been presented to you as an image. "
     "Use view_canvas with a region for a close-up, and inspect_scene with that same region to identify the corresponding object IDs. "
     "Correct visibly misplaced or repeated contours using reshape_path, erase_strokes or delete_elements. "
+    "When the user explicitly requests an eraser, perform that edit with erase_strokes. "
     "Do not keep adding strokes over an incorrect structure. Finish only after inspecting the corrected image. "
     "If any tool fails, read its full output in the next context and correct it; never skip error feedback to finish early. "
     "For figurative art, establish one shared coordinate plan and anatomical proportions before assigning work. "
@@ -206,6 +246,7 @@ MAIN_SYSTEM = (
 )
 CHILD_SYSTEM = (
     "You are an independent drawing child Agent with persistent private context. "
+    "When the user explicitly requests an eraser, perform that edit with erase_strokes. "
     "Prepare native editable Excalidraw actions for the assigned input by calling the provided drawing tools. "
     "Only the main Agent may create or control Agents. You cannot spawn, delegate, send input to or resume any Agent. "
     "Your tools operate on a private draft. The main Agent reviews your saved result before submitting it to the shared canvas. "
@@ -218,11 +259,16 @@ CHILD_SYSTEM = (
     "Never use SVG or edit unrelated objects. Use inspect_scene with ids or a name/text query when more object information is needed. "
     "Your context contains the goal, previous work summary, current draft and recent complete tool exchanges. "
     "The draft already includes their successful effects. Raw older calls remain in SQLite. "
+    "Use compact_context to save decisions, constraints, completed work and pending work before clearing conversational detail. "
+    "Use search_memory for prior records and recall_memory with element_id for precise current geometry. "
+    "Large successful results have memory_ref summaries; read specific objects or text pages as needed, rather than repeating broad geometry queries. "
     "Correct invalid tool parameters using the returned error. Reply in the user's language."
     " Use draw_paths for ALL smooth organic contours and batch related strokes in one call. "
     "Keep the assigned anatomical bounds and attachment points exact. Make fingers, eyelids, hair strands and folds separate strokes. "
     "For pencil work, vary gray tone, width and opacity; use directional hatching sparingly and preserve white highlights. "
     "Inspect the actual private-draft image provided after your drawing changes before using finish_drawing. "
+    "The attached images already count as visual inspection; do not request the same unchanged full view again. "
+    "Use a close-up for a specific unresolved defect, correct that defect, then finish when the assigned work is complete. "
     "Use view_canvas for close-ups and inspect_scene with the same region to find the corresponding object IDs. "
     "Use erase_strokes/reshape_path to fix the existing structure before adding more detail. "
     "Excalidraw pen size is strokeWidth*4.25; for pencil work usually use native strokeWidth=0.2..0.5 and restrained opacity. "

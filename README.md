@@ -6,6 +6,8 @@ Draw Agent Studio 是一个通过连续对话编辑同一张画布的开源绘�
 
 主 Agent 查看已提交画布的实际 PNG，子 Agent 查看自己的草稿；修改后自动提供当前图片，也可以放大指定区域。Agent 可以使用橡皮擦去除整条笔画或局部线段，检查修正后的图片再完成。历史图片与完整工具记录保存在 SQLite，上下文只提供当前全图及所需局部图片。
 
+Agent 使用 `compact_context` 保存目标、约束、重要对象、已完成内容与待办事项。成功的长工具结果提供摘要和 `memory_ref`，完整参数及返回保存在 SQLite；需要修改早期对象时，通过 `search_memory` 找到对象或记录，再由 `recall_memory` 按需取回当前属性、路径点或历史原文。主 Agent 与各子 Agent 的工作记忆独立保存，未读工具错误完整进入下一轮上下文。具体行为见[Agent 记忆与工具压缩](docs/agent-memory.md)。
+
 绘图动作数量与模型请求持续时间由任务需要决定。用户可主动停止任务；子 Agent 可以执行绘图和资料检索，不能创建或控制其他 Agent。
 
 ## 运行
@@ -63,6 +65,7 @@ Agent 可以通过 `search_references` 使用免费的公共搜索查阅具体�
 | `studio/agents.py`、`studio/agent_tools.py` | 主 Agent 工具循环所用上下文、模型请求和工具定义 |
 | `studio/agent_manager.py` | 子 Agent 身份、输入排队、并发执行、等待和关闭恢复 |
 | `studio/agent_store.py` | Agent 私有上下文、执行检查点、调用幂等和绘图结果 |
+| `studio/memory.py` | 成功工具摘要、工作记忆、历史检索、精确取回和未读错误补充 |
 | `studio/llm.py`、`studio/settings.py` | 多厂商模型请求、连接验证和加密配置 |
 | `studio/runtime.py` | 任务队列、逐项提交、画笔过程和取消操作 |
 | `studio/store.py` | SQLite 会话、画布版本、历史记录和工具记录 |
@@ -110,7 +113,10 @@ python -m scripts.evaluate_visual_edit
 
 ```bash
 python -m scripts.evaluate_agent_lifecycle
+python -m scripts.evaluate_memory --database runs/memory-evaluation.sqlite3 --output runs/memory-evaluation.json
 ```
+
+`evaluate_memory` 使用真实模型验证 80 轮绘图后的早期对象检索、原对象修改、工作记忆保存、服务重启及继续编辑，同时核查其他 79 个对象保持原样。它需要新的独立评测数据库，完整任务用时与每项检查写入报告。
 
 对组合绘图评测创建的画布，可以继续检查主 Agent 复用原子 Agent、原对象编辑、撤销重做及关闭恢复：
 

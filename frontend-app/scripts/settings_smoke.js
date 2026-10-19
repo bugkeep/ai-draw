@@ -93,7 +93,7 @@ try {
   if (testModel) {
     if (!original.configured) throw new Error('Configure a real model before testing the connection')
     await page.getByRole('button', { name: '测试连接', exact: true }).click()
-    await page.getByRole('status').filter({ hasText: '连接成功：文本响应与工具调用均通过' }).waitFor({ timeout: 120000 })
+    await page.getByRole('status').filter({ hasText: '连接成功：图片识别、文本响应与工具调用均通过' }).waitFor({ timeout: 120000 })
   }
   await save.click()
   await page.getByText('配置已保存，后续绘图将使用此模型。', { exact: true }).waitFor()

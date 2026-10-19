@@ -141,7 +141,9 @@ class StudioStore:
 
     def get_document(self, document_id: str) -> dict[str, Any]:
         with self.lock:
-            row = self.connection.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
+            row = self.connection.execute(
+                'SELECT id,title,version,elements,selection,updated_at FROM documents WHERE id=?', (document_id,),
+            ).fetchone()
         if row is None:
             raise KeyError(f"Document not found: {document_id}")
         return self._document(row)

@@ -16,6 +16,7 @@ from .settings import ModelSettings
 from .research import DrawingResearch, RESEARCH_TOOLS
 from .store import StudioStore, VersionConflict
 from .vision import CanvasVision
+from .memory import AgentMemory, MEMORY_TOOLS
 
 
 class DrawingRuntime:
@@ -26,7 +27,8 @@ class DrawingRuntime:
         self.document_locks: dict[str, asyncio.Lock] = {}
         self.cancel_requested: set[str] = set()
         self.vision = CanvasVision(store)
-        self.children = AgentManager(store, settings, self.vision)
+        self.memory = AgentMemory(store)
+        self.children = AgentManager(store, settings, self.vision, self.memory)
 
     @property
     def busy(self) -> bool:
@@ -139,10 +141,13 @@ class DrawingRuntime:
             round_number += 1
             document = self.store.get_document(document_id)
             pictures, observations = await self.vision.context(task_id, 'main', f'main:{task_id}', document)
-            response = await agents.respond(task_id, "main", round_number, agents.main_messages(
+            messages = self.memory.prepare_messages(task_id, 'main', f'main:{task_id}',
+                f"{document_id}:{document['version']}", document, agents.main_messages(
                 task_id, message, document, history, recent_tool_exchanges(turns),
-            ) + pictures, observation_ids=observations)
+            )) + pictures
+            response = await agents.respond(task_id, "main", round_number, messages, observation_ids=observations)
             self.vision.delivered(task_id, f'main:{task_id}', observations)
+            self.memory.delivered(f'main:{task_id}', messages)
             calls = response.get("tool_calls", [])
             if not calls:
                 active = [agent for agent in self.store.agents.list_agents(session_id)
@@ -169,17 +174,24 @@ class DrawingRuntime:
             exchange = [response]
             errors = False
             completed = None
+            compacted = False
             for index, call in enumerate(calls):
                 completion_error = ("Read and handle every tool error before completing."
                                     if errors else "finish_drawing must be the last tool call in the response."
                                     if index != len(calls) - 1 else "")
                 output = await self.call_main_tool(agents, task_id, session_id, document_id, call, round_number,
                                                    completion_error=completion_error)
+                current = self.store.get_document(document_id)
+                context_output = self.memory.for_context(task_id, 'main', f'main:{task_id}', call['id'],
+                    call['function']['name'], call['function']['arguments'], output, f"{document_id}:{current['version']}")
                 exchange.append({"role": "tool", "tool_call_id": call["id"],
-                                 "content": json.dumps(output, ensure_ascii=False)})
+                                 "content": json.dumps(context_output, ensure_ascii=False)})
                 errors = errors or output.get("ok") is False
+                compacted = compacted or call['function']['name'] == 'compact_context' and output.get('ok') is True
                 if call["function"]["name"] == "finish_drawing" and output.get("ok"):
                     completed = output
+            if compacted:
+                turns.clear()
             turns.append(exchange)
             if completed is not None and not errors:
                 return completed["summary"], completed["partial"]
@@ -213,6 +225,8 @@ class DrawingRuntime:
                     runs = self.store.agents.task_runs(session_id, task_id)
                     output = {"ok": True, "summary": args["summary"], "partial": any(
                         run["status"] in {"failed", "paused", "queued", "running"} for run in runs)}
+                elif name in MEMORY_TOOLS:
+                    output = self.memory.call(task_id, 'main', name, args, self.store.get_document(document_id))
                 elif name == 'view_canvas':
                     output = await self.vision.observe(task_id, 'main', caller_id,
                                                        self.store.get_document(document_id), args.get('region'))
@@ -239,6 +253,9 @@ class DrawingRuntime:
             except (ValueError, KeyError, TypeError, VersionConflict) as exc:
                 output = {"ok": False, "error": validation_summary(exc)}
             self.store.agents.finish_call(caller_id, call["id"], output)
+        current = self.store.get_document(document_id)
+        self.memory.register(task_id, 'main', caller_id, call['id'], name, raw_args, output,
+                             f"{document_id}:{current['version']}")
         self.store.log_tool(task_id, "main", round_number, "function_call_output", {
             "type": "function_call_output", "call_id": call["id"],
             "output": json.dumps(output, ensure_ascii=False), "cached": cached,

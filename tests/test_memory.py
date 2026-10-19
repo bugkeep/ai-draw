@@ -1,0 +1,238 @@
+import asyncio
+import json
+
+import pytest
+
+from studio.agents import DrawingAgents, compact_drawing_exchange
+from studio.agents import prepare_drawing_tool
+from studio.runtime import DrawingRuntime
+from studio.settings import ModelConfig, ModelSettings
+from studio.store import StudioStore
+
+
+def workspace(path):
+    store = StudioStore(path)
+    runtime = DrawingRuntime(store, ModelSettings(store))
+    session = store.create_session('持久工作记忆')
+    task = store.create_task(session['id'])
+    models = DrawingAgents(store, ModelConfig(provider='ollama', model='llama3.1', api_base='http://localhost:11434'))
+    return store, runtime, session, task, models
+
+
+async def call(runtime, models, session, task, name, arguments, call_id):
+    return await runtime.call_main_tool(models, task['id'], session['id'], session['document']['id'], {
+        'id': call_id, 'type': 'function', 'function': {'name': name, 'arguments': json.dumps(arguments)}})
+
+
+def test_large_geometry_is_compressed_and_exact_points_and_raw_output_remain_retrievable(tmp_path):
+    async def check():
+        store, runtime, session, task, models = workspace(tmp_path / 'geometry.sqlite3')
+        try:
+            created = await call(runtime, models, session, task, 'create_element', {
+                'type': 'freedraw', 'name': '较早的面部轮廓', 'points': [[index, index % 30] for index in range(900)],
+            }, 'create')
+            element_id = created['changed_ids'][0]
+            args = {'ids': [element_id], 'include_geometry': True}
+            output = await call(runtime, models, session, task, 'inspect_scene', args, 'inspect')
+            document = store.get_document(session['document']['id'])
+            compact = runtime.memory.for_context(task['id'], 'main', f"main:{task['id']}", 'inspect',
+                'inspect_scene', json.dumps(args), output, f"{document['id']}:{document['version']}")
+            assert compact['compressed'] and len(json.dumps(compact)) < 7000
+            assert '"points"' not in json.dumps(compact)
+            assert len(output['scene']['elements'][0]['points']) == 900
+            restored, point_offset = [], 0
+            while point_offset is not None:
+                page = runtime.memory.recall(task['id'], 'main', {'element_id': element_id,
+                    'point_offset': point_offset, 'point_limit': 256}, document)
+                restored.extend(page['element']['points'])
+                point_offset = page['next_point_offset']
+            assert restored == document['elements'][0]['points']
+            chunks, offset = [], 0
+            while offset is not None:
+                page = runtime.memory.recall(task['id'], 'main', {'memory_ref': compact['memory_ref'],
+                    'section': 'output', 'offset': offset, 'max_chars': 12000}, document)
+                chunks.append(page['text'])
+                offset = page['next_offset']
+            assert json.loads(''.join(chunks)) == output
+            found = runtime.memory.search(task['id'], 'main', {'query': '面部'}, document)
+            assert found['objects'][0]['id'] == element_id and found['records']
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())
+
+
+def test_unread_errors_survive_history_removal_and_delivery_survives_restart(tmp_path):
+    async def check():
+        path = tmp_path / 'errors.sqlite3'
+        store, runtime, session, task, models = workspace(path)
+        invalid = {'id': 'invalid-json', 'type': 'function', 'function': {'name': 'move_elements', 'arguments': '{'}}
+        output = await runtime.call_main_tool(models, task['id'], session['id'], session['document']['id'], invalid)
+        assert output['ok'] is False
+        caller = f"main:{task['id']}"
+        document = store.get_document(session['document']['id'])
+        messages = runtime.memory.prepare_messages(task['id'], 'main', caller, 'current', document, [])
+        errors = [item for item in messages if item.get('role') == 'tool']
+        assert len(errors) == 1 and json.loads(errors[0]['content']) == output
+        assert messages[-2]['tool_calls'][0] == invalid
+        runtime.memory.delivered(caller, messages)
+        assert not any(item.get('role') == 'tool' for item in runtime.memory.prepare_messages(
+            task['id'], 'main', caller, 'current', document, []))
+        await runtime.close()
+        store.close()
+        reopened = StudioStore(path)
+        continued = DrawingRuntime(reopened, ModelSettings(reopened))
+        try:
+            assert not any(item.get('role') == 'tool' for item in continued.memory.prepare_messages(
+                task['id'], 'main', caller, 'current', document, []))
+        finally:
+            await continued.close()
+            reopened.close()
+    asyncio.run(check())
+
+
+def test_working_notes_and_search_exclude_future_tasks_and_other_scopes(tmp_path):
+    async def check():
+        store, runtime, session, task, models = workspace(tmp_path / 'notes.sqlite3')
+        other = store.create_session('独立会话')
+        other_task = store.create_task(other['id'])
+        document = store.get_document(session['document']['id'])
+        try:
+            old = runtime.memory.compact(task['id'], 'main', {'expected_revision': 0,
+                'goal': '修正人物轮廓', 'summary': '已检查面部，等待调整右手', 'pending': ['调整右手']}, document)
+            future = store.create_task(session['id'])
+            store.add_message(session['id'], 'user', 'FUTURE_ONLY_禁止进入较早任务', future['id'])
+            new = runtime.memory.compact(future['id'], 'main', {'expected_revision': 1,
+                'goal': 'FUTURE_ONLY_未来任务', 'summary': '等待执行'}, document)
+            snapshot = runtime.memory.snapshot(task['id'], 'main', f"main:{task['id']}", 'state', document)
+            assert snapshot['working_memory']['memory_ref'] == old['memory_ref']
+            assert snapshot['working_memory']['revision'] == 1
+            found = runtime.memory.search(task['id'], 'main', {'query': 'FUTURE_ONLY'}, document)
+            assert found['records'] == []
+            with pytest.raises(KeyError, match='later task'):
+                runtime.memory.recall(task['id'], 'main', {'memory_ref': new['memory_ref']}, document)
+            with pytest.raises(KeyError, match='Agent and canvas'):
+                runtime.memory.recall(other_task['id'], 'main', {'memory_ref': old['memory_ref']}, other['document'])
+            with pytest.raises(KeyError, match='Agent and canvas'):
+                runtime.memory.recall(task['id'], 'agent-other', {'memory_ref': old['memory_ref']}, document)
+            with pytest.raises(ValueError, match='revision'):
+                runtime.memory.compact(future['id'], 'main', {'expected_revision': 0,
+                    'goal': '重复更新', 'summary': '不应覆盖'}, document)
+            assert runtime.memory.snapshot(future['id'], 'main', 'later', 'state', document)['working_memory']['revision'] == 2
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())
+
+
+def test_query_memory_survives_compaction_and_is_invalidated_by_canvas_changes(tmp_path):
+    async def check():
+        store, runtime, session, task, models = workspace(tmp_path / 'queries.sqlite3')
+        try:
+            created = await call(runtime, models, session, task, 'create_element', {'type': 'ellipse', 'name': '左眼'}, 'eye')
+            element_id = created['changed_ids'][0]
+            args = {'ids': [element_id], 'include_geometry': False}
+            for index in range(2):
+                await call(runtime, models, session, task, 'inspect_scene', args, f'inspect-{index}')
+            await call(runtime, models, session, task, 'compact_context', {
+                'goal': '调整左眼', 'summary': '已查阅左眼位置', 'pending': ['移动左眼'], 'object_ids': [element_id],
+            }, 'compact')
+            document = store.get_document(session['document']['id'])
+            snapshot = runtime.memory.snapshot(task['id'], 'main', f"main:{task['id']}",
+                f"{document['id']}:{document['version']}", document)
+            assert snapshot['known_queries_in_current_state'][0]['repeat_count'] == 2
+            assert snapshot['known_queries_in_current_state'][0]['request'] == args
+            assert snapshot['working_memory']['notes']['pending'] == ['移动左眼']
+            await call(runtime, models, session, task, 'move_elements', {'ids': [element_id], 'dx': 10, 'dy': 0}, 'move')
+            current = store.get_document(document['id'])
+            assert runtime.memory.snapshot(task['id'], 'main', f"main:{task['id']}",
+                f"{current['id']}:{current['version']}", current)['known_queries_in_current_state'] == []
+            store.delete_session(session['id'])
+            assert store.connection.execute('SELECT count(*) FROM agent_memories').fetchone()[0] == 0
+            assert store.connection.execute('SELECT count(*) FROM agent_working_memory').fetchone()[0] == 0
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())
+
+
+def test_mixed_exchange_archives_successful_parameters_and_preserves_full_error(tmp_path):
+    async def check():
+        store, runtime, session, task, models = workspace(tmp_path / 'mixed.sqlite3')
+        try:
+            good = {'id': 'draw', 'type': 'function', 'function': {'name': 'create_element', 'arguments': json.dumps({
+                'type': 'freedraw', 'points': [[index, index % 9] for index in range(700)]})}}
+            bad = {'id': 'missing', 'type': 'function', 'function': {'name': 'move_elements', 'arguments': json.dumps({
+                'ids': ['missing'], 'dx': 10, 'dy': 0})}}
+            outputs = [await runtime.call_main_tool(models, task['id'], session['id'], session['document']['id'], item)
+                       for item in (good, bad)]
+            exchange = [{'role': 'assistant', 'tool_calls': [good, bad]},
+                        *[{'role': 'tool', 'tool_call_id': item['id'], 'content': json.dumps(output)}
+                          for item, output in zip((good, bad), outputs)]]
+            compact = compact_drawing_exchange(exchange)
+            assert compact[0]['role'] == 'user' and 'completed_drawing_tools' in json.loads(compact[0]['content'])
+            assert compact[1]['tool_calls'] == [bad]
+            assert json.loads(compact[2]['content']) == outputs[1]
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())
+
+
+def test_child_notes_and_tool_memory_survive_shutdown_with_private_scope(tmp_path):
+    async def check():
+        path = tmp_path / 'child.sqlite3'
+        store, runtime, session, task, models = workspace(path)
+        child = store.agents.create_agent(session['id'], task['id'], 'child', '准备眼睛轮廓', 'Artist', [])
+        run = runtime.children._initialize(session['id'], store.agents.next_run(session['id'], child['agent_id'], task['id']))
+        arguments = {'paths': [{'name': '私有眼睛', 'points': [[10, 20], [30, 10], [50, 20]]}]}
+        encoded = json.dumps(arguments)
+        store.agents.begin_call(task['id'], run['id'], 'draw', 'draw_paths', encoded)
+        draft, selection, prepared, output = prepare_drawing_tool('draw_paths', arguments, run['document'], run['draft'], [])
+        run.update(draft=draft, selection=selection, prepared=prepared)
+        store.agents.finish_call(run['id'], 'draw', output, run)
+        memory_ref = runtime.memory.register(task['id'], child['agent_id'], run['id'], 'draw', 'draw_paths',
+                                             encoded, output, f"{run['id']}:1")
+        document = {**run['document'], 'elements': draft, 'selection': selection}
+        saved = runtime.memory.compact(task['id'], child['agent_id'], {
+            'goal': '准备眼睛轮廓', 'summary': '已准备一条曲线，等待检查', 'object_ids': output['changed_ids'],
+            'evidence_refs': [memory_ref], 'pending': ['检查草稿图片'],
+        }, document)
+        store.agents.pause_agent(session['id'], child['agent_id'])
+        await runtime.close()
+        store.close()
+        reopened = StudioStore(path)
+        continued = DrawingRuntime(reopened, ModelSettings(reopened))
+        try:
+            snapshot = continued.memory.snapshot(task['id'], child['agent_id'], run['id'], f"{run['id']}:1", document)
+            assert snapshot['working_memory']['memory_ref'] == saved['memory_ref']
+            assert snapshot['working_memory']['notes']['pending'] == ['检查草稿图片']
+            recalled = continued.memory.recall(task['id'], child['agent_id'], {'memory_ref': memory_ref, 'section': 'arguments'}, document)
+            assert json.loads(recalled['text']) == arguments
+            with pytest.raises(KeyError, match='Agent and canvas'):
+                continued.memory.recall(task['id'], 'main', {'memory_ref': memory_ref}, session['document'])
+            assert continued.memory.search(task['id'], 'main', {'query': '私有眼睛'}, session['document'])['records'] == []
+            assert reopened.get_document(document['id'])['elements'] == []
+        finally:
+            await continued.close()
+            reopened.close()
+    asyncio.run(check())
+
+
+def test_search_indexes_objects_beyond_the_short_result_preview(tmp_path):
+    async def check():
+        store, runtime, session, task, models = workspace(tmp_path / 'index.sqlite3')
+        try:
+            output = await call(runtime, models, session, task, 'create_elements', {'items': [
+                {'type': 'ellipse', 'name': f'节点{index}', 'x': index * 20} for index in range(24)
+            ]}, 'create-many')
+            document = store.get_document(session['document']['id'])
+            final_id = output['changed_ids'][-1]
+            found = runtime.memory.search(task['id'], 'main', {'object_ids': [final_id]}, document)
+            assert [item['id'] for item in found['objects']] == [final_id]
+            assert any(item['tool'] == 'create_elements' for item in found['records'])
+            assert runtime.memory.recall(task['id'], 'main', {'element_id': final_id}, document)['element']['customData']['name'] == '节点23'
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())

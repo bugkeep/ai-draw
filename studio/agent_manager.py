@@ -9,14 +9,16 @@ from .errors import AgentOutputError, validation_summary
 from .settings import ModelConfig, ModelSettings
 from .research import DrawingResearch, RESEARCH_TOOLS
 from .store import StudioStore, VersionConflict
+from .memory import MEMORY_TOOLS
 
 
 class AgentManager:
-    def __init__(self, store: StudioStore, settings: ModelSettings, vision):
+    def __init__(self, store: StudioStore, settings: ModelSettings, vision, memory):
         self.store = store
         self.records = store.agents
         self.settings = settings
         self.vision = vision
+        self.memory = memory
         self.workers: dict[str, asyncio.Task] = {}
         self.controls: dict[str, asyncio.Lock] = {}
         self.changed = asyncio.Condition()
@@ -174,7 +176,7 @@ class AgentManager:
 
     async def _execute_run(self, models: DrawingAgents, session_id: str, run: dict) -> None:
         round_number = 0
-        restored_history = recent_tool_messages(self.records.recent_messages(run["id"]))
+        restored_history = recent_tool_messages(run['conversation'])
         while True:
             round_number += 1
             run = self.records.get_run(session_id, run["id"])
@@ -192,10 +194,13 @@ class AgentManager:
                 document = {**run['document'], 'elements': run['draft'], 'selection': run['selection']}
                 pictures, observations = await self.vision.context(
                     run['owner_task_id'], run['agent_id'], run['id'], document)
+                messages = self.memory.prepare_messages(run['owner_task_id'], run['agent_id'], run['id'],
+                    f"{run['id']}:{len(run['prepared'])}", document, models.child_messages(run, agent)) + pictures
                 message = await models.respond(run["owner_task_id"], run["agent_id"], round_number,
-                                               models.child_messages(run, agent) + pictures, child=True,
+                                               messages, child=True,
                                                observation_ids=observations)
                 self.vision.delivered(run['owner_task_id'], run['id'], observations)
+                self.memory.delivered(run['id'], messages)
                 self.records.save_response(run, message)
             calls = message.get("tool_calls", [])
             if not calls:
@@ -212,6 +217,7 @@ class AgentManager:
             exchange = [message]
             errors = False
             completed_summary = None
+            compacted = False
             for index, call in enumerate(calls):
                 name, raw_args = call["function"]["name"], call["function"]["arguments"]
                 self.store.log_tool(run["owner_task_id"], run["agent_id"], round_number, "function_call", {
@@ -232,6 +238,10 @@ class AgentManager:
                                 self.vision.require_review(run['owner_task_id'], run['id'], {
                                     **run['document'], 'elements': run['draft'], 'selection': run['selection']})
                             output = {"ok": True, "summary": args["summary"]}
+                        elif name in MEMORY_TOOLS:
+                            args = validate_tool(name, args, child=True)
+                            output = self.memory.call(run['owner_task_id'], run['agent_id'], name, args, {
+                                **run['document'], 'elements': run['draft'], 'selection': run['selection']})
                         elif name == 'view_canvas':
                             args = validate_tool(name, args, child=True)
                             output = await self.vision.observe(run['owner_task_id'], run['agent_id'], run['id'], {
@@ -250,16 +260,19 @@ class AgentManager:
                 errors = errors or output.get("ok") is False
                 if name == "finish_drawing" and output.get("ok"):
                     completed_summary = output["summary"]
-                exchange.append({"role": "tool", "tool_call_id": call["id"],
-                                 "content": json.dumps(output, ensure_ascii=False)})
+                compacted = compacted or name == 'compact_context' and output.get('ok') is True
                 if not cached:
                     self.records.finish_call(run["id"], call["id"], output, run)
+                context_output = self.memory.for_context(run['owner_task_id'], run['agent_id'], run['id'],
+                    call['id'], name, raw_args, output, f"{run['id']}:{len(run['prepared'])}")
+                exchange.append({"role": "tool", "tool_call_id": call["id"],
+                                 "content": json.dumps(context_output, ensure_ascii=False)})
                 self.store.log_tool(run["owner_task_id"], run["agent_id"], round_number, "function_call_output", {
                     "type": "function_call_output", "call_id": call["id"],
                     "output": json.dumps(output, ensure_ascii=False), "run_id": run["id"], "cached": cached,
                 })
                 await asyncio.sleep(0)
-            self.records.finish_response(run["id"], recent_tool_messages(history + exchange))
+            self.records.finish_response(run["id"], recent_tool_messages(([] if compacted else history) + exchange))
             if completed_summary is not None and not errors:
                 result = self.records.complete_run(session_id, run["id"], completed_summary)
                 self.store.log_tool(run["owner_task_id"], run["agent_id"], round_number, "agent_result", result)

@@ -146,7 +146,7 @@ export default function SettingsPage() {
                 <label className="settings-field"><span>模型名称{form.provider === 'azure' ? ' / 部署名' : ''}</span>
                   <input aria-label="模型名称" value={form.model} onChange={(event) => update('model', event.target.value)} required
                     placeholder={form.provider === 'litellm' ? 'provider/model' : '填写厂商提供的模型 ID'} />
-                  <small>请选择支持工具调用（function calling）的文本模型。</small></label>
+                  <small>请选择同时支持图片输入与工具调用（function calling）的模型。</small></label>
                 <label className="settings-field full-width"><span>API 地址 <em>Base URL</em></span>
                   <input aria-label="API 地址" type="url" value={form.api_base} onChange={(event) => update('api_base', event.target.value)}
                     placeholder="留空使用厂商默认地址" required={Boolean(preset?.requires_base)} />
@@ -169,7 +169,7 @@ export default function SettingsPage() {
                   <small>用于厂商的思考模式、区域等选项。连接凭据请使用专用字段或服务端云凭据。</small></label>
               </div></details>
             </fieldset>
-            <div className="settings-footer"><p>测试当前表单的文本响应与工具调用，保存后应用配置。</p><div>
+            <div className="settings-footer"><p>测试当前表单的图片识别、文本响应与工具调用，保存后应用配置。</p><div>
               <button type="button" className="secondary-button" onClick={test} disabled={testing || saving || stale}>{testing ? '正在测试…' : '测试连接'}</button>
               <button type="submit" className="primary-button" disabled={busy || saving || testing || stale}>{saving ? '正在保存…' : '保存配置'}</button>
             </div></div>

@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -66,6 +66,34 @@ class ViewCanvas(ToolInput):
     region: CanvasRegion | None = None
 
 
+class SearchMemory(ToolInput):
+    query: str = ''
+    object_ids: list[str] = Field(default_factory=list)
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=8, ge=1, le=20)
+
+
+class RecallMemory(ToolInput):
+    memory_ref: str = ''
+    element_id: str = ''
+    section: Literal['summary', 'arguments', 'output'] = 'summary'
+    offset: int = Field(default=0, ge=0)
+    max_chars: int = Field(default=4000, ge=1, le=12000)
+    point_offset: int = Field(default=0, ge=0)
+    point_limit: int = Field(default=128, ge=1, le=256)
+
+
+class CompactContext(ToolInput):
+    expected_revision: int = Field(default=0, ge=0)
+    goal: str = Field(min_length=1, max_length=2000)
+    summary: str = Field(min_length=1, max_length=4000)
+    constraints: list[str] = Field(default_factory=list)
+    completed: list[str] = Field(default_factory=list)
+    pending: list[str] = Field(default_factory=list)
+    object_ids: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
 class SearchReferences(ToolInput):
     query: str = Field(min_length=1)
     subject_terms: list[str] = Field(min_length=1)
@@ -96,13 +124,14 @@ REFERENCE_INPUTS = {
     "search_references": SearchReferences,
     "read_reference": ReadReference,
 }
+MEMORY_INPUTS = {'search_memory': SearchMemory, 'recall_memory': RecallMemory, 'compact_context': CompactContext}
 LIFECYCLE_INPUTS = {
     "spawn_agent": SpawnAgent, "send_input": SendInput, "wait_agent": WaitAgent,
     "close_agent": AgentIdentity, "resume_agent": AgentIdentity,
     "apply_agent_result": ApplyAgentResult,
     "reject_agent_result": RejectAgentResult,
 }
-CHILD_INPUTS = {**DRAWING_INPUTS, **REFERENCE_INPUTS}
+CHILD_INPUTS = {**DRAWING_INPUTS, **REFERENCE_INPUTS, **MEMORY_INPUTS}
 CHILD_TOOL_NAMES = frozenset(CHILD_INPUTS)
 MAIN_TOOL_NAMES = CHILD_TOOL_NAMES | frozenset(LIFECYCLE_INPUTS)
 
@@ -118,7 +147,7 @@ REFERENCE_TOOLS = [
     definition("read_reference", "Read additional relevant passages from a verified reference_id in this canvas. Provide focus_terms for the technique or structure you need. The source must have been successfully read by search_references. Returns excerpts, not a full web log.", ReadReference),
 ]
 DRAWING_TOOLS = [
-    definition("view_canvas", "View the actual rendered PNG of your current canvas: the shared submitted drawing for the main Agent, your private draft for a child. The image is attached to your next context, with its scene_bounds coordinate mapping. Optional region x/y/width/height requests a closer view without changing the canvas. Before completing, inspect the current image and fix visible anatomy, overlaps, misplaced features and excessive strokes. Older images stay in SQLite rather than accumulating in context.", ViewCanvas),
+    definition("view_canvas", "View the actual rendered PNG of your current canvas: the shared submitted drawing for the main Agent, your private draft for a child. Current images are already attached automatically after changes. Use this tool when you need a specific closer region x/y/width/height, with scene_bounds coordinate mapping. Do not repeat unchanged views already supplied. Before completing, inspect the current image and fix visible anatomy, overlaps, misplaced features and excessive strokes. Older images stay in SQLite rather than accumulating in context.", ViewCanvas),
     definition("erase_strokes", "Erase along absolute canvas points with a brush radius. points must be [[x,y]] even for one dab, or [[x1,y1],[x2,y2]] for a sweep. mode=segment removes touched portions of pen/line strokes and preserves editable fragments; mode=stroke deletes whole touched objects like Excalidraw. Optional ids limits targets. Locked/unrelated objects are preserved. One gesture is one undo step. Remove incorrect lines before redrawing instead of adding overlapping contours.", EraseStrokes),
     definition("draw_paths", "Draw a batch of smooth native editable pen strokes through named anchor points. Use for portraits, organic contours, hair, fingers, folds and hatching. Each path is separate; smooth defaults true, closed false. Shared origin/scale transform points. strokeWidth is the native Excalidraw brush unit: rendered base size=strokeWidth*4.25, so pencil strokes usually use 0.2..0.5. Default 0.4. Per-path style overrides shared style. Refine existing outlines with reshape_path or erase_strokes instead of adding duplicate contours.", DrawPaths),
     definition("reshape_path", "Reshape an existing native pen/line stroke using absolute canvas anchor points, preserving its object ID, name, style and unrelated artwork. Smooth defaults true. Use for precise follow-up edits to a mouth, eyelid or contour. inspect_scene geometry points are relative to x/y and rotated by angle around the element center; your replacement points always use final absolute canvas coordinates.", ReshapePath),
@@ -140,7 +169,12 @@ LIFECYCLE_TOOLS = [
     definition("apply_agent_result", "Approve and submit one saved child drawing result to this canvas, step by step. Review its summary first. Apply listed depends_on results first. Repeating this call skips actions already committed.", ApplyAgentResult),
     definition("reject_agent_result", "Reject unsubmitted actions from a child result with an explanation. Already committed actions stay on the canvas. Use send_input to request corrected work when needed.", RejectAgentResult),
 ]
-CHILD_TOOLS = DRAWING_TOOLS + REFERENCE_TOOLS
+MEMORY_TOOL_DEFINITIONS = [
+    definition('search_memory', 'Search your scoped SQLite memory for old object names/IDs, completed tool records, working notes and earlier conversation. Returns current canvas/draft object metadata and historical memory_ref records. Use concrete query words or object_ids. Results have offset/limit pages; next_offset allows all records to be retrieved. Other Agents and canvases remain isolated, and later queued user messages are excluded.', SearchMemory),
+    definition('recall_memory', 'Retrieve precisely what is needed. Pass element_id for CURRENT native geometry, with point_offset/point_limit pages and total point_count; all pages are available. Pass memory_ref for a saved summary, original tool arguments or full output, with offset/max_chars JSON text pages. Historical records do not prove current geometry. Prefer one object over a broad full-scene geometry query; delegate extensive geometry work to a child.', RecallMemory),
+    definition('compact_context', 'Save durable structured working memory before replacing conversational detail: goal, decisions/constraints, completed work, pending work, important object IDs and evidence memory_refs. Use the current working_memory revision. Successful calls replace earlier conversational detail with these notes; complete raw calls remain searchable in SQLite. Current errors still reach the next context in full. Notes are not a drawing commit or proof of completion.', CompactContext),
+]
+CHILD_TOOLS = DRAWING_TOOLS + REFERENCE_TOOLS + MEMORY_TOOL_DEFINITIONS
 MAIN_TOOLS = CHILD_TOOLS + LIFECYCLE_TOOLS
 
 

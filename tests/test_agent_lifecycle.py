@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from server.app import create_app
 from studio.agent_tools import validate_tool
-from studio.agents import DrawingAgents, prepare_drawing_tool
+from studio.agents import DrawingAgents, compact_drawing_exchange, prepare_drawing_tool
 from studio.runtime import DrawingRuntime
 from studio.settings import ModelConfig, ModelSettings
 from studio.store import StudioStore, VersionConflict
@@ -83,6 +83,38 @@ def test_child_context_continues_after_erasing_assigned_construction_object(tmp_
     live = [item for item in store.get_document(document_id)['elements'] if not item.get('isDeleted')]
     assert len(live) == 1 and live[0]['id'] != original_id and live[0]['customData']['name'] == '修正轮廓'
     store.close()
+
+
+def test_successful_geometry_context_keeps_actual_outputs_and_archived_arguments(tmp_path):
+    async def check():
+        store, runtime, session, task = workspace(tmp_path)
+        models = DrawingAgents(store, ModelConfig(provider='ollama', model='llama3.1', api_base='http://localhost:11434'))
+        call = {'id': 'large-drawing', 'type': 'function', 'function': {
+            'name': 'create_element', 'arguments': json.dumps({
+                'type': 'freedraw', 'name': '连续曲线', 'points': [[index, index % 20] for index in range(700)],
+            })}}
+        output = await runtime.call_main_tool(models, task['id'], session['id'], session['document']['id'], call)
+        assert output['ok']
+        exchange = [{'role': 'assistant', 'tool_calls': [call]},
+                    {'role': 'tool', 'tool_call_id': call['id'], 'content': json.dumps(output)}]
+        compact = compact_drawing_exchange(exchange)
+        checkpoint = json.loads(compact[0]['content'])
+        assert len(json.dumps(compact)) < len(json.dumps(exchange)) / 2
+        assert json.loads(checkpoint['function_call_outputs'][0]['output']) == output
+        assert checkpoint['function_call_outputs'][0]['call_id'] == call['id']
+        recorded = store.connection.execute('SELECT arguments FROM agent_tool_calls WHERE caller_id=? AND call_id=?',
+                                            (f"main:{task['id']}", call['id'])).fetchone()[0]
+        assert recorded == call['function']['arguments']
+        assert len(store.get_document(session['document']['id'])['elements'][0]['points']) == 700
+        invalid = {'id': 'invalid-edit', 'type': 'function', 'function': {
+            'name': 'move_elements', 'arguments': json.dumps({'ids': ['missing'], 'dx': 10, 'dy': 0})}}
+        error = await runtime.call_main_tool(models, task['id'], session['id'], session['document']['id'], invalid)
+        failed = [{'role': 'assistant', 'tool_calls': [invalid]},
+                  {'role': 'tool', 'tool_call_id': invalid['id'], 'content': json.dumps(error)}]
+        assert not error['ok'] and compact_drawing_exchange(failed) == failed
+        await runtime.close()
+        store.close()
+    asyncio.run(check())
 
 
 def test_wait_only_observes_and_returns_on_first_ready_child(tmp_path):
