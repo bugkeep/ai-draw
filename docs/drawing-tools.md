@@ -51,6 +51,28 @@ SQLite 的 `canvas_observations` 保存 PNG、画布内容标识、所属会话�
 
 当前筛选使用正文内容和规则评分。它能减少无关介绍、重复网页及没有步骤的页面，不能保证每篇教程的专业水平。原始链接保留在工具结果中，便于检查来源。
 
+## 参考图片与区域轮廓
+
+| 工具 | 输入 | 返回与行为 |
+| --- | --- | --- |
+| `search_reference_images` | `query`、`subject_terms`、`goal`、`source`、`page` | 实际读取的图片编号、来源标题、链接、像素尺寸与描述 |
+| `view_reference_image` | `reference_id`、可选像素 `region` | 将完整参考图及最近所需局部图附加到该 Agent 的下一轮上下文 |
+| `trace_reference` | 图片编号、区域名称、源像素区域、共同画布 `target`、提取与样式参数、分页位置 | 准备独立原生 `freedraw` 对象，返回对象编号、映射、路径数量及 `next_offset` |
+
+`source=pages` 使用公共文字搜索定位插图页面，通过 trafilatura 与 lxml 读取页面元信息和与主体相关的图片地址。`source=images` 使用公共图片索引，解析由 DDGS 提供。来源页面、图片和图片索引通过 HTTPX 读取，逐次检查跳转目标，下载后通过 Pillow 解码实际像素，检查分辨率并合并重复来源及相似图片。搜索使用主题与查询相关性排序，最多提供三个不同来源；图片元信息不能证明姿态与用户要求相符，Agent 需要查看实际图片后选择。
+
+参考图片只允许公开 HTTP/HTTPS 来源，网络读取具有 20 MB 文件、2,400 万解码像素和跳转保护。支持 Pillow 的 PNG、JPEG、WebP、GIF、BMP、TIFF、AVIF 和 ICO 解码；动画图片使用第一帧，EXIF 方向校正后将透明区域铺成白色。保存的参考图最长边为 2048 像素，查看图片最长边为 1280 像素。工具返回的 `width`、`height` 与区域坐标均使用保存后的参考图尺寸。
+
+`reference_images` 保存原始文件、解码图片、来源及所属会话和任务；`reference_image_views` 保存各调用者的当前图片、区域与实际发送状态；`reference_traces` 保存提取参数与完整源像素路径。主 Agent 与子 Agent 分别选择图片，每次模型响应成功后才记录已发送。提取前检查本调用者已收到完整参考图，其他 Agent 的查看记录不能代替本人的检查。当前上下文只提供选定参考图及其所需局部图片，历史图片继续保存在数据库。
+
+`mode=edges` 使用 scikit-image 的 Canny 提取照片或绘画的边界；`mode=ink` 对浅色纸面上的深色线条进行阈值处理，再生成中心路径。骨架化后由 Skan 读取有序分支，通过 Shapely 简化曲线和裁切区域。`sigma` 控制图像平滑，`min_length` 过滤短路径，`simplify` 指定源像素误差；这些参数需要结合当前参考图选择，提取后仍需检查画布上的主体结构与线条。
+
+`target={x,y,width,height}` 始终表示整张参考图片在画布中的范围，按比例居中映射。`region` 只决定读取哪些源像素，不改变比例和位置；分别绘制面部、双手和背景的子 Agent 使用相同 `target`。`offset` 与 `limit` 对完整路径分页，返回 `next_offset` 供继续处理，没有作品路径总数限制。
+
+例如，以“右手”为区域名称生成的路径使用“右手/轮廓-0001”等名称，每条都有独立编号。后续通过 `search_memory` 找到对应笔画，再用原生选择、移动、`reshape_path` 或 `erase_strokes` 编辑；撤销和重做继续使用同一历史流程。子 Agent 提取的笔画保存在私有草稿，主 Agent 接收摘要后决定提交。完整点列保存在 SQLite，工具对话返回编号和统计。画布与导出的 Excalidraw 文档不需要参考图片对象。
+
+来源页面、说明和图片中的文字均属于外部参考数据。来源许可未核实时记录为 `unverified`，不根据搜索标题推断许可。公共搜索或来源被拒绝时返回实际错误及必要筛选说明，Agent 可以调整查询；来源可访问性和整幅作品质量需要通过实际生成分别验收。
+
 ## 作品导出
 
 “导出作品”读取当前编辑器快照，导出期间使用该快照的图形、文字、背景与图片文件。
@@ -71,6 +93,7 @@ SQLite 的 `canvas_observations` 保存 PNG、画布内容标识、所属会话�
 python -m scripts.evaluate_research
 python -m scripts.evaluate_quality
 python -m scripts.evaluate_research_agent
+python -m scripts.evaluate_reference_images --database runs/reference-images.sqlite3 --output runs/reference-images.json
 cd frontend-app
 node scripts/export_smoke.js
 ```
@@ -80,5 +103,7 @@ node scripts/export_smoke.js
 `evaluate_research_agent --database runs/research-agent.sqlite3` 可以在独立进程内加载生产 ASGI 应用，使用环境变量中的真实模型配置检查同样的 HTTP API 与 Agent 流程，无需额外监听端口。
 
 `evaluate_quality --database runs/quality.sqlite3 --output-dir runs/quality` 可以使用独立数据库在进程内运行同样的生产 API，并保存各题的原生作品及实际检查 PNG。`evaluate_visual_edit` 检查看图后擦除多余眼睛、局部擦除和连续编辑。`evaluate_visual_quality` 根据实际 PNG 或原生文档生成有证据的模型辅助评价，保留独立于结构检查的结果。
+
+`evaluate_reference_images` 使用真实公共来源检查下载、图片上下文、缓存及画布隔离，需要新的独立数据库。`evaluate_reference_edit --source-database DATABASE --reference-id IMAGE_ID --database runs/reference-edit.sqlite3 --output runs/reference-edit.json` 使用实际已经下载的参考图和真实模型，检查子 Agent 提取、主 Agent 提交、复用同一子 Agent、原编号连续编辑、其他对象保护及撤销重做。该检查验证参考轮廓执行流程，整幅作品的视觉验收仍需单独进行。
 
 `python -m scripts.verify_browser --database runs/browser-verification.sqlite3` 自动在空闲本地端口运行生产服务，依次执行浏览器检查，然后正常结束服务。`--scripts` 可选择检查脚本。已有真实研究任务时，设置 `DRAW_AGENT_SESSION` 后，可使用 `--database DATABASE --scripts references_smoke.js` 验证来源链接、刷新恢复及画布归属。

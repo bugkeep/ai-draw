@@ -10,15 +10,17 @@ from .settings import ModelConfig, ModelSettings
 from .research import DrawingResearch, RESEARCH_TOOLS
 from .store import StudioStore, VersionConflict
 from .memory import MEMORY_TOOLS
+from .reference_images import IMAGE_QUERY_TOOLS
 
 
 class AgentManager:
-    def __init__(self, store: StudioStore, settings: ModelSettings, vision, memory):
+    def __init__(self, store: StudioStore, settings: ModelSettings, vision, memory, references):
         self.store = store
         self.records = store.agents
         self.settings = settings
         self.vision = vision
         self.memory = memory
+        self.references = references
         self.workers: dict[str, asyncio.Task] = {}
         self.controls: dict[str, asyncio.Lock] = {}
         self.changed = asyncio.Condition()
@@ -194,12 +196,14 @@ class AgentManager:
                 document = {**run['document'], 'elements': run['draft'], 'selection': run['selection']}
                 pictures, observations = await self.vision.context(
                     run['owner_task_id'], run['agent_id'], run['id'], document)
+                references, reference_ids = self.references.context(run['owner_task_id'], run['id'])
                 messages = self.memory.prepare_messages(run['owner_task_id'], run['agent_id'], run['id'],
-                    f"{run['id']}:{len(run['prepared'])}", document, models.child_messages(run, agent)) + pictures
+                    f"{run['id']}:{len(run['prepared'])}", document, models.child_messages(run, agent)) + references + pictures
                 message = await models.respond(run["owner_task_id"], run["agent_id"], round_number,
                                                messages, child=True,
-                                               observation_ids=observations)
+                                               observation_ids=observations, reference_image_ids=reference_ids)
                 self.vision.delivered(run['owner_task_id'], run['id'], observations)
+                self.references.delivered(run['owner_task_id'], run['id'], reference_ids)
                 self.memory.delivered(run['id'], messages)
                 self.records.save_response(run, message)
             calls = message.get("tool_calls", [])
@@ -249,10 +253,20 @@ class AgentManager:
                         elif name in RESEARCH_TOOLS:
                             args = validate_tool(name, args, child=True)
                             output = await DrawingResearch(self.store).call(run["owner_task_id"], run["agent_id"], name, args)
+                        elif name in IMAGE_QUERY_TOOLS:
+                            args = validate_tool(name, args, child=True)
+                            output = await self.references.call(run['owner_task_id'], run['agent_id'], run['id'], name, args)
                         else:
+                            trace = {}
+                            preparation_name = name
+                            if name == 'trace_reference':
+                                args = validate_tool(name, args, child=True)
+                                items, trace = await self.references.trace(run['owner_task_id'], run['id'], args)
+                                preparation_name, args = 'create_elements', {'items': items}
                             draft, selection, actions, output = prepare_drawing_tool(
-                                name, args, run["document"], run["draft"], run["selection"],
+                                preparation_name, args, run["document"], run["draft"], run["selection"],
                             )
+                            output.update(trace)
                             run["draft"], run["selection"] = draft, selection
                             run["prepared"].extend(actions)
                     except (ValueError, KeyError, TypeError) as exc:

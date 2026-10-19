@@ -42,6 +42,8 @@ python -m uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8000
 
 Agent 可以通过 `search_references` 使用免费的公共搜索查阅具体画法，使用 `read_reference` 阅读相关步骤。服务读取网页正文，检查主题与绘画步骤，过滤重复和无关内容，只返回少量来源及相关片段。较多的检索工作可以交给子 Agent；完整检索和网页记录保存在 SQLite，同一画布可以使用缓存。公共搜索可能遇到限流或连接失败，工具会返回实际错误，Agent 根据反馈继续处理。筛选方法与配置见[绘图工具及资料检索](docs/drawing-tools.md)。
 
+`search_reference_images` 查找插图来源或公共图片索引，实际读取、解码和筛选图片。`view_reference_image` 把选定的参考图片提供给对应 Agent；`trace_reference` 可以在其查看完整参考图后，按区域提取轮廓并生成独立的原生画笔对象。参考图片与轮廓数据单独保存在 SQLite，最终画布保留可编辑笔画。不同区域沿用整张参考图的共同坐标映射，主 Agent 审阅并提交子 Agent 的私有结果，后续可以检索名称、移动、修改或擦除同一对象。
+
 点击“导出作品”可以选择 PNG、JPG、WebP、SVG 或 Excalidraw 文件。图片支持 1、2、4 倍清晰度；PNG、WebP 和 SVG 可使用透明背景，JPG 使用画布背景颜色。Excalidraw 文件保留原生图形与画笔，便于继续编辑。
 
 执行期间显示已经用时、当前模型或画笔状态。连接收到 HTTP 429 后，主 Agent 与子 Agent 共用恢复队列，按照厂商等待时间错开后续请求；等待可以停止。工具错误始终返回对应 Agent 的上下文，完成信号需要全部本轮工具成功，且本任务的子 Agent 和结果均已处理。
@@ -62,6 +64,7 @@ Agent 可以通过 `search_references` 使用免费的公共搜索查阅具体�
 | `studio/eraser.py` | 整条与局部擦除、旋转几何、剩余曲线和对象保护 |
 | `studio/vision.py`、`studio/renderer.py` | 当前全图与局部图片、SQLite 图片记录、原生 Excalidraw 渲染进程 |
 | `studio/research.py` | 免费公共检索、网页正文读取、相关步骤筛选和画布资料缓存 |
+| `studio/reference_images.py` | 参考图片检索与 SQLite 保存、实际图片上下文、区域轮廓提取和原生笔画映射 |
 | `studio/agents.py`、`studio/agent_tools.py` | 主 Agent 工具循环所用上下文、模型请求和工具定义 |
 | `studio/agent_manager.py` | 子 Agent 身份、输入排队、并发执行、等待和关闭恢复 |
 | `studio/agent_store.py` | Agent 私有上下文、执行检查点、调用幂等和绘图结果 |

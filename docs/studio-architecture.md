@@ -12,6 +12,7 @@
 | 图片服务 | 当前原生对象、可选检查区域 | 复用 Chromium 的 Excalidraw 原生 PNG 导出、坐标映射和 SQLite 图片记录 |
 | 绘图执行器 | 主 Agent 接受的动作 | 按顺序提交、对象版本检查、事件与撤销记录 |
 | 资料检索工具 | 具体绘图问题、主题与关注词 | 免费公共搜索、正文读取、相关步骤及来源编号 |
+| 参考图片服务 | 公共插图来源、源像素区域及共同画布范围 | SQLite 图片存储、所属 Agent 的当前参考图、提取轮廓与原生画笔映射 |
 | 记忆服务 | 完整工具记录、结构化工作说明、检索条件 | 成功结果摘要、分页精确取回、独立工作记忆与未读错误反馈 |
 | SQLite | 文档、对话、任务和工具记录 | 重启恢复及事件追溯 |
 
@@ -38,6 +39,10 @@
 对象内容检查使用 RFC 8785 的规范 JSON 表示。浏览器对整数、小数以及空绑定列表的等价表示不会导致冲突或新增撤销记录；数据库已有的内容指纹仍按其原格式验证。画布对象数量和整体内容长度不设置应用层上限，长期绘图的资源需求由实际作品决定。
 
 `search_references` 使用 DDGS 公共搜索和网页正文筛选，`read_reference` 从已验证来源中按关注词选择片段。原始结果、全文和筛选记录保存在 SQLite，短片段和来源编号返回调用者。研究子 Agent 与绘图子 Agent 使用相同生命周期，研究工作可以不产生动作。主 Agent 审核研究摘要，再决定绘图内容。具体限制和公共搜索配置见[绘图工具与资料检索](drawing-tools.md)。
+
+`ReferenceImages` 独立保存原始参考图片、解码像素、当前查看记录和完整轮廓路径。搜索及参考图片按画布与来源任务顺序读取，后续排队任务的图片不参与当前任务。图片选择与已发送记录按主 Agent 调用者或子 Agent 的 `run_id` 分开保存，模型上下文明确区分参考图与实际画布。提取轮廓前检查该调用者已收到完整源图。
+
+区域轮廓使用 scikit-image、Skan 和 Shapely 生成有序原生笔画，图像解码、页面提取与轮廓计算在线程中进行；共享画布与数据库提交仍由原 runtime 负责。所有区域通过整张源图的共同 `target` 保持比例与位置。子 Agent 准备私有动作，主 Agent 审阅结果后逐笔提交，沿用版本检查、过程事件和撤销重做；主 Agent 上下文只接收编号、名称、统计和结果摘要。
 
 主 Agent 与子 Agent 均可把 `finish_drawing` 放在本轮最后一个工具位置，传入完成说明。runtime 先处理前面的全部工具，任何错误都会以原 `call_id` 返回上下文并拒绝本轮完成信号。主 Agent 还需要处理所有运行子 Agent 与待提交结果。成功时直接结束本轮，省去仅生成完成文本的模型请求。
 
@@ -66,6 +71,7 @@
 | `GET /api/studio/sessions/{id}/agents` | 读取该画布的子 Agent 状态及结果摘要 |
 | `GET /api/studio/sessions/{id}/agents/{agent_id}` | 读取指定子 Agent，检查画布归属 |
 | `GET /api/studio/sessions/{id}/observations/{observation_id}` | 读取属于该画布的 PNG 检查图片 |
+| `GET /api/studio/sessions/{id}/reference-images/{reference_id}` | 读取属于该画布的已保存参考 PNG |
 | `PATCH /api/studio/sessions/{id}` | 修改会话与关联画布名称，保留图形、对话、任务和撤销历史 |
 | `DELETE /api/studio/sessions/{id}` | 删除该会话及其画布、消息、任务、日志和事件；有运行或排队任务时返回 HTTP 409 |
 | `POST /api/studio/sessions/{id}/messages` | 排队执行一条绘图指令 |

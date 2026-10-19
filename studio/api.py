@@ -47,7 +47,7 @@ def studio_store(request: Request) -> StudioStore:
 @router.get("/health")
 async def health(request: Request):
     config = request.app.state.model_settings.load()
-    return {"status": "ok", "api_revision": 5, "provider_configured": config.configured,
+    return {"status": "ok", "api_revision": 6, "provider_configured": config.configured,
             "model": config.model, "provider": config.provider}
 
 
@@ -125,6 +125,15 @@ async def list_session_agents(request: Request, session_id: str):
 async def observation_image(request: Request, session_id: str, observation_id: str):
     try:
         image = request.app.state.drawing_runtime.vision.image(session_id, observation_id)
+        return Response(image, media_type='image/png', headers={'Cache-Control': 'private, no-store'})
+    except KeyError as error:
+        raise HTTPException(404, str(error)) from error
+
+
+@router.get('/sessions/{session_id}/reference-images/{reference_id}')
+async def reference_image(request: Request, session_id: str, reference_id: str):
+    try:
+        image = request.app.state.drawing_runtime.references.image(session_id, reference_id)
         return Response(image, media_type='image/png', headers={'Cache-Control': 'private, no-store'})
     except KeyError as error:
         raise HTTPException(404, str(error)) from error

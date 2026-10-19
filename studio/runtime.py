@@ -17,6 +17,7 @@ from .research import DrawingResearch, RESEARCH_TOOLS
 from .store import StudioStore, VersionConflict
 from .vision import CanvasVision
 from .memory import AgentMemory, MEMORY_TOOLS
+from .reference_images import IMAGE_QUERY_TOOLS, ReferenceImages
 
 
 class DrawingRuntime:
@@ -28,7 +29,8 @@ class DrawingRuntime:
         self.cancel_requested: set[str] = set()
         self.vision = CanvasVision(store)
         self.memory = AgentMemory(store)
-        self.children = AgentManager(store, settings, self.vision, self.memory)
+        self.references = ReferenceImages(store)
+        self.children = AgentManager(store, settings, self.vision, self.memory, self.references)
 
     @property
     def busy(self) -> bool:
@@ -141,12 +143,15 @@ class DrawingRuntime:
             round_number += 1
             document = self.store.get_document(document_id)
             pictures, observations = await self.vision.context(task_id, 'main', f'main:{task_id}', document)
+            references, reference_ids = self.references.context(task_id, f'main:{task_id}')
             messages = self.memory.prepare_messages(task_id, 'main', f'main:{task_id}',
                 f"{document_id}:{document['version']}", document, agents.main_messages(
                 task_id, message, document, history, recent_tool_exchanges(turns),
-            )) + pictures
-            response = await agents.respond(task_id, "main", round_number, messages, observation_ids=observations)
+            )) + references + pictures
+            response = await agents.respond(task_id, "main", round_number, messages, observation_ids=observations,
+                                            reference_image_ids=reference_ids)
             self.vision.delivered(task_id, f'main:{task_id}', observations)
+            self.references.delivered(task_id, f'main:{task_id}', reference_ids)
             self.memory.delivered(f'main:{task_id}', messages)
             calls = response.get("tool_calls", [])
             if not calls:
@@ -232,6 +237,8 @@ class DrawingRuntime:
                                                        self.store.get_document(document_id), args.get('region'))
                 elif name in RESEARCH_TOOLS:
                     output = await DrawingResearch(self.store).call(task_id, "main", name, args)
+                elif name in IMAGE_QUERY_TOOLS:
+                    output = await self.references.call(task_id, 'main', caller_id, name, args)
                 elif name == "spawn_agent":
                     output = await self.children.spawn_agent(session_id, task_id, call["id"], args, models.settings)
                 elif name == "send_input":
@@ -265,12 +272,18 @@ class DrawingRuntime:
     async def _direct_tool(self, task_id: str, session_id: str, document_id: str,
                            call_id: str, name: str, args: dict) -> dict:
         result_id = stable_id("result", f"{task_id}/{call_id}/direct")
+        trace = {}
+        preparation_name, preparation_args = name, args
+        if name == 'trace_reference':
+            items, trace = await self.references.trace(task_id, f'main:{task_id}', args)
+            preparation_name, preparation_args = 'create_elements', {'items': items}
         with self.store.lock:
             existing = self.store.connection.execute("SELECT id FROM drawing_results WHERE id=?", (result_id,)).fetchone()
         if existing is not None:
-            return await self.apply_result(task_id, session_id, document_id, result_id)
+            return {**trace, **await self.apply_result(task_id, session_id, document_id, result_id)}
         document = self.store.get_document(document_id)
-        _, _, prepared, output = prepare_drawing_tool(name, args, document, document["elements"], document["selection"])
+        _, _, prepared, output = prepare_drawing_tool(preparation_name, preparation_args, document, document["elements"], document["selection"])
+        output.update(trace)
         if prepared:
             result = self.store.agents.create_direct_result(session_id, task_id, call_id, prepared, name)
             output = {**output, **await self.apply_result(task_id, session_id, document_id, result["id"])}
