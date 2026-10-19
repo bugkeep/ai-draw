@@ -461,7 +461,6 @@ export default function App() {
     try {
       await flushSnapshot()
       await loadSession(id, true)
-      setPhase(null)
       setError('')
     } catch (cause) {
       setError(cause.message)

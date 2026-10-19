@@ -21,6 +21,9 @@ try {
   const response = await context.request.post('/api/studio/sessions', { data: { title: '任务状态与停止检查' } })
   if (!response.ok()) throw new Error('Could not create test canvas')
   const session = await response.json()
+  const otherResponse = await context.request.post('/api/studio/sessions', { data: { title: '状态隔离检查' } })
+  if (!otherResponse.ok()) throw new Error('Could not create the second canvas')
+  const other = await otherResponse.json()
   await page.goto('/', { waitUntil: 'networkidle' })
   await page.locator(`[data-session-id="${session.id}"]`).click()
   await page.getByRole('textbox', { name: '绘图指令' }).fill('画一幅海港城市的建筑素描，包含码头、帆船和临海街道。')
@@ -32,6 +35,23 @@ try {
   await page.reload({ waitUntil: 'networkidle' })
   await page.locator('.activity-time').waitFor()
   if (!(await page.locator('.activity-description').textContent()).includes('用时')) throw new Error('Task elapsed time was lost after reload')
+  const beforeSwitch = await read(`/api/studio/sessions/${session.id}`)
+  const phaseText = await page.locator('.activity-description > span').first().textContent()
+  if (!beforeSwitch.activity || phaseText === '正在绘图') throw new Error('The saved model phase was not restored after reload')
+  await page.locator(`[data-session-id="${other.id}"]`).click()
+  await page.waitForSelector(`[data-session-id="${other.id}"].selected`)
+  if (await page.locator('.activity').count()) throw new Error('Task activity entered another canvas')
+  await page.locator(`[data-session-id="${session.id}"]`).click()
+  await page.waitForSelector(`[data-session-id="${session.id}"].selected`)
+  await page.locator('.activity-time').waitFor()
+  const afterSwitch = await read(`/api/studio/sessions/${session.id}`)
+  if (beforeSwitch.activity.phase !== afterSwitch.activity?.phase ||
+      beforeSwitch.activity.agent_id !== afterSwitch.activity?.agent_id) {
+    throw new Error('The task phase changed during the observation; repeat this check')
+  }
+  if (await page.locator('.activity-description > span').first().textContent() !== phaseText) {
+    throw new Error('Switching back to the running canvas discarded its saved phase')
+  }
   const stop = page.locator('.activity').getByRole('button', { name: '停止', exact: true })
   await stop.click()
   await page.waitForFunction(() => !document.querySelector('.activity'))
@@ -42,7 +62,8 @@ try {
   const stored = await read(`/api/studio/sessions/${session.id}`)
   if (stored.activity !== null) throw new Error('A stopped task retained an active phase')
   if (errors.length) throw new Error(errors.join('\n'))
-  console.log(JSON.stringify({ elapsed_time: true, phase_after_reload: true, stop_completes: true,
+  console.log(JSON.stringify({ elapsed_time: true, phase_after_reload: true, phase_after_switch: true,
+    other_canvas_has_no_activity: true, stop_completes: true,
     repeated_stop: true, terminal_phase_cleared: true, no_browser_errors: true }))
 } finally {
   if (taskId) {
