@@ -30,6 +30,7 @@ def main():
     parser.add_argument('--url', required=True)
     parser.add_argument('--database', type=Path, required=True)
     parser.add_argument('--output-dir', type=Path, required=True)
+    parser.add_argument('--coordinate-space', choices=['image_pixels', 'image_normalized'], default='image_normalized')
     args = parser.parse_args()
     info = json.loads((args.output_dir / 'server.json').read_text(encoding='utf-8'))
     if (info.get('source') != 'owned_isolated_production_http_server' or info['url'] != args.url
@@ -85,7 +86,10 @@ def main():
             '嘴宽约为双眼中心间距的一半；使用 draw_paths 在双眼之间略下方补一个小巧鼻子，鼻子上端与眼线留出约眼间距八分之一的空隙。'
             '保持人脸轮廓、双眼和远处蓝色圆完全不变，不要标签或其他装饰。'
             '这次专门验证看图修正：三个绘图工具都必须带自己已查看的当前 observation_id，'
-            'points 直接使用对应 PNG 的 width/height 像素坐标，擦除 radius 也用像素，不要自行猜算画布坐标。'
+            + ('同时带 coordinate_space=image_normalized，points 两轴都使用 0..1000 的归一化图片坐标，'
+               '左上为(0,0)、右下为(1000,1000)，擦除 radius 按图片长边的千分比表示，不要自行换算像素或画布坐标。'
+               if args.coordinate_space == 'image_normalized' else
+               'points 直接使用对应 PNG 的 width/height 像素坐标，擦除 radius 也用像素，不要自行猜算画布坐标。') +
             '可用 view_canvas 查看人脸局部区域 x=-320,y=140,width=250,height=290；改变草稿后使用新图片的 view_ ID。'
             '只修正这三处，子 Agent 完成后由主 Agent 查看拟提交图片并提交，检查实际画布后结束。')
         response = client.post(f"/api/studio/sessions/{session['id']}/messages", json={'message': prompt})
@@ -113,7 +117,8 @@ def main():
         calls = [item for item in logs if item['kind'] == 'function_call']
         image_tools = {item['payload']['name'] for item in calls
             if item['payload']['name'] in {'draw_paths', 'reshape_path', 'erase_strokes'}
-            and json.loads(item['payload']['arguments']).get('observation_id')}
+            and json.loads(item['payload']['arguments']).get('observation_id')
+            and (json.loads(item['payload']['arguments']).get('coordinate_space') or 'image_pixels') == args.coordinate_space}
         present = {item['id']: item for item in final['elements'] if not item.get('isDeleted')}
         mouth_geometry = element_geometry(present[mouth['id']]) if mouth['id'] in present else None
         added = [item for item in present.values() if item['id'] not in {old['id'] for old in initial['elements']}]
@@ -125,7 +130,7 @@ def main():
         checks = {
             'actual_model_task_completed': task['status'] == 'completed',
             'main_dispatches_child': any(item['agent_id'] == 'main' and item['payload']['name'] == 'spawn_agent' for item in calls),
-            'all_three_tools_use_observed_pixels': image_tools == {'draw_paths', 'reshape_path', 'erase_strokes'},
+            'all_three_tools_use_requested_image_coordinates': image_tools == {'draw_paths', 'reshape_path', 'erase_strokes'},
             'main_reviews_proposed_pixels': any(item['agent_id'] == 'main' and item['kind'] == 'model_context'
                 and item['payload'].get('result_observation_ids') for item in logs),
             'main_submits_child_result': any(item['agent_id'] == 'main' and item['payload']['name'] == 'apply_agent_result' for item in calls),
@@ -152,6 +157,7 @@ def main():
             'source': 'draw-agent-studio', 'elements': final['elements'], 'appState': {'viewBackgroundColor': '#ffffff'}, 'files': {}},
             ensure_ascii=False), encoding='utf-8')
         result = {**case, 'status': task['status'], 'latency_ms': task['latency_ms'], 'error': task['error'],
+            'requested_coordinate_space': args.coordinate_space,
             'scope': 'real main/child image-coordinate local repair; controlled native fixture, not full-art acceptance',
             'source_fixture': 'native cartoon face at negative coordinates and a distant blue circle; no model replies mocked',
             'checks': checks, 'tool_error_count': len(errors), 'passed': all(checks.values()), 'mouth_bounds': mouth_bounds,

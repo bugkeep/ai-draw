@@ -91,8 +91,9 @@ class CanvasVision:
                     'scene_bounds': rendered['scene_bounds'], 'pixels_per_unit': rendered['pixels_per_unit'],
                     'latency_ms': round((time.perf_counter() - started) * 1000, 1),
                     'instruction': 'The actual PNG is attached to your next model context. Inspect it before completing or correcting the drawing. '
-                        'For draw_paths, reshape_path or erase_strokes, supply this observation_id to use its width/height pixel coordinates directly; '
-                        'the runtime converts them to canvas units. After changes use the fresh current image ID.'}
+                        'For visual edits use this observation_id with coordinate_space=image_normalized: '
+                        'both image axes span 0..1000, independent of PNG size. Runtime converts to canvas units. '
+                        'After changes use the fresh current image ID.'}
         with self.store.lock, self.store.connection:
             self.store.connection.execute('INSERT INTO canvas_observations VALUES(?,?,?,?,?,?,?,?,?,?,NULL)',
                 (observation_id, session_id, task_id, caller_id, agent_id, digest, region_json,
@@ -144,11 +145,12 @@ class CanvasVision:
             metadata = json.loads(row['metadata'])
             png = row['png']
             if metadata['region'] is not None and not result_id:
-                png = coordinate_guide(png)
+                png = coordinate_guide(png, units='image_normalized')
                 metadata['coordinate_guide'] = {
-                    'units': 'original_png_pixels', 'grid_spacing': 100,
-                    'instruction': 'Blue grid and x/y pixel labels are a runtime positioning guide, not drawn objects. '
-                        'Read these labels when choosing image-pixel anchors; they do not change the image dimensions or mapping.'}
+                    'units': 'image_normalized', 'grid_spacing': 100,
+                    'instruction': 'Blue grid labels use 0..1000 on EACH axis, not original pixels. '
+                        'Use observation_id plus coordinate_space=image_normalized for these anchors. '
+                        'The runtime guide is not drawn artwork and does not change PNG dimensions.'}
             messages.append({'role': 'user', 'content': [
                 {'type': 'text', 'text': json.dumps({'canvas_observation': metadata,
                     'instruction': ('PROPOSED RESULT: this image replays the pending result on the current shared canvas. '
@@ -200,7 +202,7 @@ class CanvasVision:
                              'and pixels attached to your next context, then retry the intended edit.')
         mapped = map_observed_arguments(name, arguments, metadata)
         evidence = {key: metadata[key] for key in ('observation_id', 'scene_hash', 'scene_bounds', 'pixels_per_unit')}
-        evidence.update(input_space='image_pixels', output_space='canvas')
+        evidence.update(input_space=arguments.get('coordinate_space') or 'image_pixels', output_space='canvas')
         return mapped, {'coordinate_frame': evidence}
 
     def require_review(self, task_id: str, caller_id: str, document: dict, *, allow_empty: bool = True) -> None:

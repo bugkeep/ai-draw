@@ -10,6 +10,7 @@ def capture_implementation(output_dir, *, snapshot=True):
         'frontend-app/src/renderCanvas.js', 'frontend-app/package.json', 'frontend-app/package-lock.json',
         'scripts/evaluation_artifacts.py', 'scripts/evaluate_quality.py', 'scripts/evaluate_reference_polygon.py',
         'scripts/evaluate_prompt_context.py', 'scripts/evaluate_observed_coordinates.py',
+        'scripts/evaluate_visual_grounding.py',
         'scripts/verify_browser.py', 'frontend-app/scripts/quality_evaluation.js'))
     implementation = {path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in files}
     if snapshot:

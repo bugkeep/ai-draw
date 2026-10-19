@@ -85,7 +85,7 @@ API 7 的手动编辑使用 `ManualEdits` 保存待提交与正在发送的两�
 
 ## API
 
-模型检查图的 `observation_id` 也可以作为 `draw_paths`、`reshape_path`、`erase_strokes` 的像素坐标来源。`CanvasVision.ground_tool` 检查任务、调用者、已发送状态及当前内容哈希，然后根据实际 PNG 的逐方向比例换算。准备后的动作与事务仍只使用画布单位，工具完整记录保留原始像素参数和映射依据。提交幂等在坐标换算之前返回已有调用结果，避免重试时重复执行。
+模型检查图的 `observation_id` 也可以作为 `draw_paths`、`reshape_path`、`erase_strokes` 的图片坐标来源。`CanvasVision.ground_tool` 检查任务、调用者、已发送状态及当前内容哈希，然后换算到画布。`coordinate_space=image_normalized` 使用两轴 `0..1000` 与实际 `scene_bounds`；默认的像素模式继续使用 PNG 的逐方向比例。准备后的动作与事务仍只使用画布单位，工具完整记录保留原始坐标模式、参数和映射依据。提交幂等在坐标换算之前返回已有调用结果，避免重试时重复执行。
 
 `canvas_viewports` 按任务与调用者保存指定局部区域，随任务级联删除。每次上下文重新渲染当前区域，复用相同内容的图片缓存；自动提供最新局部图而非旧版本图片。局部模型图片通过 `image_guide` 加入像素刻度，保存的 PNG、内容哈希与原生画布不受辅助层影响。主 Agent 的待提交结果检查仍使用独立调用者编号及原始预览。
 
