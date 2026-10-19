@@ -2,6 +2,34 @@
 
 评测日期：2026 年 10 月 19 日。环境：Windows、Python 3.13、Node.js 24、Chrome、Ark Agent Plan `ark-code-latest`。服务和浏览器均在本机运行。下列结果是本次测试记录，样本数量见各项说明。
 
+## Agent 生命周期版本（API 3）
+
+代码版本为 `21de1e2`，测试使用独立数据库和实际模型连接。
+
+| 场景 | 结果 | 耗时与记录 |
+| --- | --- | --- |
+| 后端自动化检查 | 36/36 通过 | 实际 SQLite 与原生绘图动作；包含输入排队、编号、观察、保存恢复、提交幂等、工作记录及画布隔离 |
+| 浏览器检查 | 32/32 通过 | 编辑器 5 项、设置与隔离 8 项、滚动与名称 9 项、删除 10 项 |
+| 实际模型生命周期检查 | 15/15 项通过 | 138.31 秒；两名子 Agent 并发请求、运行期间关闭、保留动作后恢复、连续输入及重复提交 |
+| 主 Agent 自主完成公园场景 | 1/1 次通过 | 三名子 Agent，48 个提交动作，最终 46 个对象，451.34 秒；六次 HTTP 429 |
+| 主 Agent 复用原子 Agent 继续编辑 | 12/12 项通过 | 编辑 151.95 秒；随后关闭和恢复检查 14.91 秒 |
+
+组合绘图中，主 Agent 调用三次 `spawn_agent`、三次 `wait_agent` 和三次 `apply_agent_result`，工具错误为零。首次画布更新为 175.10 秒。房屋、两棵树、太阳、云朵和光芒的几何位置检查通过。每名子 Agent 的工具过程保存在自己的记录中，主 Agent 使用摘要和结果编号进行审核。
+
+后续编辑由实际主 Agent 调用 `send_input`，复用原子 Agent，将同一个对象向右移动 17 个单位。其他对象保持不变，撤销与重做检查通过。主 Agent 随后调用 `close_agent` 和 `resume_agent`；恢复后保持原执行编号和 Final 状态，已完成工作没有重跑。
+
+结果文件为 `runs/agent-lifecycle-real-2.json`、`runs/agent-main-multiagent-real-3-metrics.json` 和 `runs/agent-reuse-real-1.json`。组合绘图的执行编号为 `3ed06cf799a94466b267ffa04da14241`，会话编号为 `7e0c908372354c45892adae0d02d7996`。可以在相同数据库的测试服务上重新检查指定执行：
+
+```bash
+python -m scripts.evaluate_multiagent --url http://127.0.0.1:8001 --session-id 7e0c908372354c45892adae0d02d7996 --task-id 3ed06cf799a94466b267ffa04da14241
+```
+
+当前 Ark 连接实际返回了突发请求保护，完整绘图耗时包含等待及重试。并发请求、上下文隔离和逐步提交已通过上述场景检查，低延迟目标仍需要继续验证和优化。
+
+在运行期间关闭子 Agent 的评测中，LiteLLM 1.103.0 两次输出 `OpenAIChatCompletion.acompletion` 未等待协程提示；关闭、恢复和绘图状态检查通过。依赖取消处理问题在 [Issue #42](https://github.com/bugkeep/ai-draw/issues/42) 跟踪。
+
+## 初始版本评测
+
 | 场景 | 结果 | 耗时 |
 | --- | --- | --- |
 | 同一画布连续创建、移动、选择、撤销、重做、画笔笑脸 | 6/6 通过 | 中位数 15 毫秒；95 百分位 1.76 秒 |
