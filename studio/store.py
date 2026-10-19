@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .actions import apply_action, element_fingerprint
+from .agent_store import AgentStore
 
 
 class VersionConflict(Exception):
@@ -64,6 +65,7 @@ class StudioStore:
             );
         """)
         self.connection.commit()
+        self.agents = AgentStore(self)
 
     def close(self) -> None:
         with self.lock:
@@ -143,6 +145,13 @@ class StudioStore:
         if row is None:
             raise KeyError(f"Document not found: {document_id}")
         return self._document(row)
+
+    def session_document_id(self, session_id: str) -> str:
+        with self.lock:
+            row = self.connection.execute("SELECT document_id FROM sessions WHERE id=?", (session_id,)).fetchone()
+        if row is None:
+            raise KeyError(f"Session not found: {session_id}")
+        return row["document_id"]
 
     def delete_session(self, session_id: str) -> dict[str, str]:
         with self.lock, self.connection:
@@ -345,11 +354,19 @@ class StudioStore:
             self.publish(document_id, "scene", {"document": document, "source": "manual", "client_id": client_id})
         return document
 
-    def commit_action(self, document_id: str, action: dict[str, Any], expected_elements: dict[str, Any]) -> dict[str, Any]:
+    def commit_action(self, document_id: str, action: dict[str, Any], expected_elements: dict[str, Any],
+                      receipt: tuple[str, int] | None = None) -> dict[str, Any]:
         with self.lock, self.connection:
             row = self.connection.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
             if row is None:
                 raise KeyError(f"Document not found: {document_id}")
+            if receipt is not None:
+                saved, duplicate = self.agents.validate_commit(document_id, *receipt)
+                if duplicate:
+                    return {"document": self._document(row), "changed_ids": [], "already_committed": True}
+                if saved["action"] != action:
+                    raise ValueError("Drawing action does not match the saved result")
+                expected_elements = saved["expected_elements"]
             elements = json.loads(row["elements"])
             current_by_id = {element["id"]: element for element in elements}
             for element_id, expected in expected_elements.items():
@@ -364,6 +381,8 @@ class StudioStore:
                     raise VersionConflict(f"Element {element_id} changed while the Agent was drawing")
             updated, selection, changed = apply_action(elements, json.loads(row["selection"]), action)
             document = self._save(row, updated, selection, True)
+            if receipt is not None:
+                self.agents.advance_commit(*receipt)
         self.publish(document_id, "scene", {"document": document, "source": "agent", "action": action["kind"]})
         return {"document": document, "changed_ids": changed}
 

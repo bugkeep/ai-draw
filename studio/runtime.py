@@ -1,11 +1,15 @@
 import asyncio
+import json
 import math
 import time
 import uuid
 from typing import Any
 
 from .actions import create_native_element, element_fingerprint, validate_action
-from .agents import DrawingAgents
+from .agent_manager import AgentManager
+from .agent_store import stable_id
+from .agent_tools import CHILD_TOOL_NAMES, validate_tool
+from .agents import DrawingAgents, prepare_drawing_tool, recent_tool_exchanges
 from .errors import validation_summary
 from .fast_path import fast_actions
 from .settings import ModelSettings
@@ -19,19 +23,20 @@ class DrawingRuntime:
         self.running: dict[str, asyncio.Task] = {}
         self.document_locks: dict[str, asyncio.Lock] = {}
         self.cancel_requested: set[str] = set()
+        self.children = AgentManager(store, settings)
 
     @property
     def busy(self) -> bool:
-        return bool(self.running)
+        return bool(self.running) or self.children.busy
 
     def session_busy(self, session_id: str) -> bool:
-        return any(self.store.get_task(task_id)["session_id"] == session_id for task_id in self.running)
+        return (any(self.store.get_task(task_id)["session_id"] == session_id for task_id in self.running)
+                or self.children.session_busy(session_id))
 
     def submit(self, session_id: str, message: str) -> dict[str, Any]:
-        session = self.store.get_session(session_id)
+        document_id = self.store.session_document_id(session_id)
         task = self.store.create_task(session_id)
         self.store.add_message(session_id, "user", message, task["id"])
-        document_id = session["document"]["id"]
         self.store.publish(document_id, "task", {"task_id": task["id"], "status": "queued"})
         self.running[task["id"]] = asyncio.create_task(
             self._run(task["id"], session_id, document_id, message)
@@ -52,6 +57,7 @@ class DrawingRuntime:
             task.cancel()
         if self.running:
             await asyncio.gather(*self.running.values(), return_exceptions=True)
+        await self.children.close()
 
     def _status(self, task_id: str, document_id: str, status: str,
                 summary: str = "", error: str = "", latency_ms: float = 0) -> None:
@@ -93,74 +99,149 @@ class DrawingRuntime:
                 self._status(task_id, document_id, "partial" if partial else "completed", reply,
                              latency_ms=(time.perf_counter() - started) * 1000)
         except asyncio.CancelledError:
+            await self.children.close_task(task_id)
             self.store.publish(document_id, "scene", {"document": self.store.get_document(document_id), "source": "cancel"})
             self._status(task_id, document_id, "cancelled", "绘图已停止。",
                          latency_ms=(time.perf_counter() - started) * 1000)
         except Exception as exc:
+            await self.children.close_task(task_id)
             self.store.log_tool(task_id, "runtime", 0, "error", {"type": type(exc).__name__, "message": str(exc)})
             self.store.publish(document_id, "scene", {"document": self.store.get_document(document_id), "source": "error"})
             self._status(task_id, document_id, "failed", error=validation_summary(exc),
                          latency_ms=(time.perf_counter() - started) * 1000)
         finally:
+            await self.children.close_task(task_id)
             self.cancel_requested.discard(task_id)
             self.running.pop(task_id, None)
 
     async def _draw(self, agents: DrawingAgents, task_id: str, session_id: str,
                     document_id: str, message: str) -> tuple[str, bool]:
-        session = self.store.get_session(session_id)
-        base_document = session["document"]
-        plan = await agents.plan(task_id, message, base_document, self.store.context_messages(session_id, task_id))
-        self.store.publish(document_id, "phase", {"task_id": task_id, "phase": "planned",
-                                                   "delegations": len(plan.delegations)})
-        reports: list[dict[str, Any]] = []
-        if plan.delegations:
-            results = await asyncio.gather(
-                *(agents.child(task_id, delegation, base_document) for delegation in plan.delegations),
-                return_exceptions=True,
-            )
-            retry_indices = [index for index, result in enumerate(results) if isinstance(result, Exception)]
-            if retry_indices:
-                self.store.publish(document_id, "phase", {"task_id": task_id, "phase": "recovering",
-                                                           "count": len(retry_indices)})
-                self.store.log_tool(task_id, "main", 0, "retry_children", {
-                    "ids": [plan.delegations[index].id for index in retry_indices],
-                    "errors": {plan.delegations[index].id: validation_summary(results[index]) for index in retry_indices},
-                    "model": agents.settings.model,
-                })
-                retries = await asyncio.gather(
-                    *(agents.child(task_id, plan.delegations[index], base_document) for index in retry_indices),
-                    return_exceptions=True,
-                )
-                results = list(results)
-                for index, retry in zip(retry_indices, retries):
-                    results[index] = retry
-            for delegation, result in zip(plan.delegations, results):
-                if isinstance(result, Exception):
-                    report = {"id": delegation.id, "goal": delegation.goal, "summary": "",
-                              "actions": [], "success": False, "error": str(result)}
+        history = self.store.context_messages(session_id, task_id)
+        turns: list[list[dict]] = []
+        round_number = 0
+        self.store.publish(document_id, "phase", {"task_id": task_id, "phase": "thinking"})
+        while True:
+            round_number += 1
+            response = await agents.respond(task_id, "main", round_number, agents.main_messages(
+                task_id, message, self.store.get_document(document_id), history, recent_tool_exchanges(turns),
+            ))
+            calls = response.get("tool_calls", [])
+            if not calls:
+                active = [agent for agent in self.store.agents.list_agents(session_id)
+                          if agent["owner_task_id"] == task_id and agent["state"] == "Running"]
+                pending = self.store.agents.pending_results(session_id, task_id=task_id)
+                if active or pending:
+                    turns.append([response, {"role": "user", "content": json.dumps({
+                        "instruction": "Finish or close active child work, and apply or reject pending results before replying.",
+                        "active_agent_ids": [agent["agent_id"] for agent in active],
+                        "pending_results": [self.store.agents.result_summary(item) for item in pending],
+                    }, ensure_ascii=False)}])
+                    continue
+                reply = str(response.get("content") or "").strip()
+                if not reply:
+                    raise ValueError("主 Agent 未返回工具调用或完成说明。")
+                runs = self.store.agents.task_runs(session_id, task_id)
+                partial = any(run["status"] in {"failed", "paused", "queued", "running"} for run in runs)
+                return reply, partial
+            exchange = [response]
+            for call in calls:
+                output = await self.call_main_tool(agents, task_id, session_id, document_id, call, round_number)
+                exchange.append({"role": "tool", "tool_call_id": call["id"],
+                                 "content": json.dumps(output, ensure_ascii=False)})
+            turns.append(exchange)
+
+    async def call_main_tool(self, models: DrawingAgents, task_id: str, session_id: str,
+                             document_id: str, call: dict, round_number: int = 0) -> dict:
+        caller_id = f"main:{task_id}"
+        name, raw_args = call["function"]["name"], call["function"]["arguments"]
+        self.store.agents.check_task(session_id, task_id)
+        if self.store.session_document_id(session_id) != document_id:
+            raise KeyError("Main Agent tool call targets a different canvas")
+        self.store.log_tool(task_id, "main", round_number, "function_call", {
+            "type": "function_call", "call_id": call["id"], "name": name, "arguments": raw_args,
+        })
+        output = self.store.agents.begin_call(task_id, caller_id, call["id"], name, raw_args)
+        cached = output is not None
+        if not cached:
+            try:
+                args = validate_tool(name, json.loads(raw_args))
+                if name == "spawn_agent":
+                    output = await self.children.spawn_agent(session_id, task_id, call["id"], args, models.settings)
+                elif name == "send_input":
+                    output = await self.children.send_input(session_id, task_id, call["id"], args, models.settings)
+                elif name == "wait_agent":
+                    output = await self.children.wait_agent(session_id, args["ids"], args.get("after"))
+                elif name == "close_agent":
+                    output = await self.children.close_agent(session_id, args["agent_id"])
+                elif name == "resume_agent":
+                    output = await self.children.resume_agent(session_id, task_id, args["agent_id"], models.settings)
+                elif name == "apply_agent_result":
+                    output = await self.apply_result(task_id, session_id, document_id, args["result_id"])
+                elif name == "reject_agent_result":
+                    output = self.store.agents.reject_result(session_id, args["result_id"], args["reason"])
+                elif name in CHILD_TOOL_NAMES:
+                    output = await self._direct_tool(task_id, session_id, document_id, call["id"], name, args)
                 else:
-                    report = result
-                reports.append(report)
-                self.store.log_tool(task_id, "main", 0, "child_report", report)
-                self.store.publish(document_id, "phase", {"task_id": task_id, "phase": "child_ready",
-                                                           "child_id": delegation.id, "success": report["success"]})
-        accepted_ids: list[str] = []
-        review_reply = ""
-        if reports:
-            accepted_ids, review_reply = await agents.review(task_id, message, reports)
-        prepared: list[dict[str, Any]] = []
-        for action in plan.actions:
-            prepared.append({"action": validate_action(action), "expected_elements": None})
-        by_id = {report["id"]: report for report in reports}
-        for child_id in accepted_ids:
-            prepared.extend(by_id[child_id]["actions"])
-        if not prepared:
-            raise ValueError("No drawing actions passed main agent review")
-        await self._commit_prepared(task_id, document_id, prepared)
-        failed_goals = [report["id"] for report in reports if not report["success"]]
-        if failed_goals:
-            return f"已完成部分绘图，以下部分需要重试：{', '.join(failed_goals)}。", True
-        return review_reply or plan.reply or f"已完成 {len(prepared)} 个绘图动作。", False
+                    raise ValueError(f"Unknown main Agent tool: {name}")
+            except (ValueError, KeyError, TypeError, VersionConflict) as exc:
+                output = {"ok": False, "error": validation_summary(exc)}
+            self.store.agents.finish_call(caller_id, call["id"], output)
+        self.store.log_tool(task_id, "main", round_number, "function_call_output", {
+            "type": "function_call_output", "call_id": call["id"],
+            "output": json.dumps(output, ensure_ascii=False), "cached": cached,
+        })
+        return output
+
+    async def _direct_tool(self, task_id: str, session_id: str, document_id: str,
+                           call_id: str, name: str, args: dict) -> dict:
+        result_id = stable_id("result", f"{task_id}/{call_id}/direct")
+        with self.store.lock:
+            existing = self.store.connection.execute("SELECT id FROM drawing_results WHERE id=?", (result_id,)).fetchone()
+        if existing is not None:
+            return await self.apply_result(task_id, session_id, document_id, result_id)
+        document = self.store.get_document(document_id)
+        _, _, prepared, output = prepare_drawing_tool(name, args, document, document["elements"], document["selection"])
+        if prepared:
+            result = self.store.agents.create_direct_result(session_id, task_id, call_id, prepared, name)
+            output = {**output, **await self.apply_result(task_id, session_id, document_id, result["id"])}
+        return output
+
+    async def apply_result(self, task_id: str, session_id: str, document_id: str, result_id: str) -> dict:
+        self.store.agents.check_task(session_id, task_id)
+        if self.store.session_document_id(session_id) != document_id:
+            raise KeyError("Drawing result submission targets a different canvas")
+        result = self.store.agents.get_result(session_id, result_id)
+        if result["rejected_reason"]:
+            raise ValueError("This drawing result has been rejected")
+        changed_ids = []
+        for index in range(result["committed_count"], len(result["actions"])):
+            item = result["actions"][index]
+            action = item["action"]
+            with self.store.lock:
+                _, duplicate = self.store.agents.validate_commit(document_id, result_id, index)
+            if duplicate:
+                continue
+            if action["kind"] == "create_element" and action["args"]["type"] == "freedraw":
+                await self._animate_stroke(task_id, document_id, action)
+            try:
+                outcome = self.store.commit_action(document_id, action, item["expected_elements"], (result_id, index))
+            except (ValueError, VersionConflict):
+                self.store.publish(document_id, "scene", {"document": self.store.get_document(document_id), "source": "error"})
+                raise
+            if not outcome.get("already_committed"):
+                changed_ids.extend(outcome["changed_ids"])
+                self.store.log_tool(task_id, "main", index + 1, "commit", {
+                    "result_id": result_id, "kind": action["kind"], "changed_ids": outcome["changed_ids"],
+                    "document_version": outcome["document"]["version"],
+                })
+                self.store.publish(document_id, "phase", {"task_id": task_id, "phase": "drawing",
+                                                           "completed": index + 1, "total": len(result["actions"])})
+                if len(result["actions"]) > 1:
+                    await asyncio.sleep(0.09)
+        saved = self.store.agents.get_result(session_id, result_id)
+        document = self.store.get_document(document_id)
+        return {"ok": True, **self.store.agents.result_summary(saved), "changed_ids": changed_ids,
+                "selected_ids": document["selection"], "document_version": document["version"]}
 
     async def _commit_prepared(self, task_id: str, document_id: str, prepared: list[dict[str, Any]]) -> None:
         total = len(prepared)

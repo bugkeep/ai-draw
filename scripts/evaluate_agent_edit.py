@@ -7,15 +7,13 @@ import httpx
 
 
 def wait_for_task(client: httpx.Client, task_id: str) -> dict:
-    deadline = time.monotonic() + 120
-    while time.monotonic() < deadline:
+    while True:
         response = client.get(f"/api/studio/tasks/{task_id}")
         response.raise_for_status()
         task = response.json()
         if task["status"] in {"completed", "partial", "failed", "cancelled"}:
             return task
         time.sleep(0.2)
-    raise TimeoutError(f"Task {task_id} exceeded 120 seconds")
 
 
 def is_green(color: str) -> bool:

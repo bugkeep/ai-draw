@@ -2,7 +2,7 @@
 
 Draw Agent Studio 是一个通过连续对话编辑同一张画布的开源绘图应用。用户可以描述图形、接着说“选中它”“向右移动 80 像素”“改成蓝色”，也可以直接使用 Excalidraw 选择和调整对象。Agent 的画笔轨迹按帧显示，完成后仍是可编辑的 Excalidraw 对象。
 
-目前支持矩形、椭圆、菱形、文字、线条、箭头和画笔对象，以及选择、移动、修改、删除、撤销和重做。常见的明确指令由本地绘图命令处理；复杂场景由主 Agent 安排子 Agent 并行准备动作。主 Agent 审阅子 Agent 返回的 JSON，再按画布版本依次提交。子 Agent 的工具记录保存在 SQLite，主 Agent 的上下文只包含画布摘要、最近对话和子 Agent 结果。
+目前支持矩形、椭圆、菱形、文字、线条、箭头和画笔对象，以及选择、移动、修改、删除、撤销和重做。常见的明确指令由本地绘图命令处理；复杂场景由主 Agent 调用工具创建子 Agent，并行准备动作。子 Agent 可以复用、继续接收输入、关闭和恢复，每条输入具有独立编号。主 Agent 审阅结构化摘要，再接受结果并逐步提交。子 Agent 的完整工具记录和上下文保存在 SQLite。
 
 绘图动作数量与模型请求持续时间由任务需要决定。用户可主动停止任务；子 Agent 只执行绘图工具，不能创建其他 Agent。
 
@@ -45,14 +45,16 @@ python -m uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8000
 | --- | --- |
 | `frontend-app/` | React、Excalidraw、绘图对话和实时事件展示 |
 | `studio/actions.py` | 绘图动作校验与原生 Excalidraw 对象构建 |
-| `studio/agents.py` | 主 Agent 规划、子 Agent 工具调用和结果审阅 |
+| `studio/agents.py`、`studio/agent_tools.py` | 主 Agent 工具循环所用上下文、模型请求和工具定义 |
+| `studio/agent_manager.py` | 子 Agent 身份、输入排队、并发执行、等待和关闭恢复 |
+| `studio/agent_store.py` | Agent 私有上下文、执行检查点、调用幂等和绘图结果 |
 | `studio/llm.py`、`studio/settings.py` | 多厂商模型请求、连接验证和加密配置 |
 | `studio/runtime.py` | 任务队列、逐项提交、画笔过程和取消操作 |
 | `studio/store.py` | SQLite 会话、画布版本、历史记录和工具记录 |
 | `studio/api.py` | HTTP API 与画布 WebSocket 事件 |
 | `scripts/` | 真实操作成功率与延迟评测 |
 
-会话、任务和绘图提交的处理方法见[架构说明](docs/studio-architecture.md)。前端使用 [Excalidraw](https://github.com/excalidraw/excalidraw)，许可证为 MIT；本项目许可证见 [LICENSE](LICENSE)。
+会话、任务和绘图提交的处理方法见[架构说明](docs/studio-architecture.md)，工具协议与状态转换见[子 Agent 生命周期](docs/agent-lifecycle.md)。前端使用 [Excalidraw](https://github.com/excalidraw/excalidraw)，许可证为 MIT；本项目许可证见 [LICENSE](LICENSE)。
 参与开发请阅读[贡献说明](CONTRIBUTING.md)，需求与故障通过 GitHub Issue 管理，代码变更通过 Pull Request 审阅。
 
 ## 验证
@@ -82,6 +84,18 @@ python -m scripts.probe_model
 python -m scripts.evaluate_agent_edit
 python -m scripts.evaluate_multiagent
 python -m scripts.evaluate_transformer
+```
+
+生命周期评测从 `.env` 或 `DRAW_AGENT_*` 环境变量读取模型连接，在独立 SQLite 数据库中检查排队、关闭恢复、提交幂等和同一对象的后续编辑：
+
+```bash
+python -m scripts.evaluate_agent_lifecycle
+```
+
+对组合绘图评测创建的画布，可以继续检查主 Agent 复用原子 Agent、原对象编辑、撤销重做及关闭恢复：
+
+```bash
+python -m scripts.evaluate_agent_reuse --session-id SESSION_ID
 ```
 
 评测逐项检查画布中的对象和任务结果，并记录成功率、耗时与子 Agent 数量。`evaluate_agent_edit` 检查真实模型能否根据上一轮对话修改同一个对象。结果写入 Git 忽略的 `runs/`。Windows 环境的 pytest 临时目录若无写入权限，可追加 `--basetemp runs/pytest-studio`。

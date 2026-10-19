@@ -14,7 +14,7 @@ async function request(path, options = {}) {
   return data
 }
 
-export const STUDIO_API_REVISION = 2
+export const STUDIO_API_REVISION = 3
 
 export const studioApi = {
   health: () => request('/health'),

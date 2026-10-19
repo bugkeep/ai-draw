@@ -349,9 +349,15 @@ export default function App() {
       }
     } else if (event.type === 'phase') {
       let text = ''
-      if (value.phase === 'planned') text = value.delegations ? `正在安排 ${value.delegations} 个子 Agent` : '正在准备绘图'
-      if (value.phase === 'child_ready') text = `子 Agent ${value.child_id} 已准备动作`
-      if (value.phase === 'recovering') text = `正在重新准备 ${value.count} 个绘图部分`
+      if (value.phase === 'thinking') text = '正在安排绘图'
+      if (value.phase === 'agent_state') {
+        const name = value.nickname || '子 Agent'
+        if (value.result?.status === 'failed') text = `${name} 未完成，正在等待主 Agent 处理`
+        else if (value.state === 'Shutdown') text = `${name} 已暂停，进度已保存`
+        else if (value.result?.result_id) text = `${name} 已准备绘图，正在等待提交`
+        else if (value.state === 'Running') text = `${name} 正在准备绘图${value.queued_inputs > 1 ? `，还有 ${value.queued_inputs - 1} 条输入排队` : ''}`
+        else text = `${name} 已完成`
+      }
       if (value.phase === 'drawing') text = `正在绘制 ${value.completed}/${value.total}`
       if (text) setPhase({ taskId: value.task_id, text })
     }

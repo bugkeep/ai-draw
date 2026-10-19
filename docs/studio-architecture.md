@@ -7,14 +7,16 @@
 | Excalidraw 编辑器 | 用户手势、画布事件 | 原生对象、选择状态和逐帧画笔展示 |
 | 会话 API | 对话文本、画布快照 | 会话、任务、版本化画布和事件连接 |
 | 模型配置与请求 | 设置表单、服务端凭据 | 单一共享连接、多厂商 API 适配、连接测试与加密保存 |
-| 主 Agent | 最近对话、画布摘要、用户目标 | 绘图方案、子任务和子 Agent 结果审阅 |
-| 子 Agent | 指定目标、相关对象与受限工具 | 经过校验的动作 JSON；无权直接修改共享画布 |
+| 主 Agent | 最近对话、画布摘要、用户目标 | 原生工具调用、子 Agent 生命周期和结果审阅 |
+| 子 Agent | 独立输入队列、相关对象与绘图工具 | 可恢复的私有上下文、绘图结果与结构化摘要 |
 | 绘图执行器 | 主 Agent 接受的动作 | 按顺序提交、对象版本检查、事件与撤销记录 |
 | SQLite | 文档、对话、任务和工具记录 | 重启恢复及事件追溯 |
 
-主 Agent 根据绘图目标安排子 Agent 同时准备独立的画面部分。每个子 Agent 使用隔离的画布副本，调用 `create_elements`、`create_element`、`select_elements`、`move_elements`、`update_elements`、`delete_elements` 或 `inspect_scene`。子 Agent 无权创建其他 Agent 或继续派发子任务，运行时逐次检查工具名称和参数。返回给主 Agent 的 JSON 包含摘要、动作和成功状态；每轮模型响应及工具结果写入 `tool_logs`。主 Agent 审阅 JSON 后，绘图执行器按序提交。对同一对象的并发修改通过元素版本检查拒绝覆盖。
+主 Agent 通过 `spawn_agent`、`send_input`、`wait_agent`、`close_agent` 和 `resume_agent` 管理子 Agent。`agent_id` 标识可复用会话，每条输入具有独立 `input_id` 和 `run_id`。单个 Agent 顺序处理输入，不同 Agent 并发准备。每个子 Agent 使用私有画布，调用原生绘图工具；工具列表和 runtime 校验均禁止子 Agent 创建或控制其他 Agent。
 
-主 Agent 的动作列表、子 Agent 累计准备动作和 `create_elements` 的对象列表均按完整内容处理。批量工具在应用到隔离画布前校验全部参数，几何数据或对象引用无效时返回校验问题。子 Agent 同时请求模型；某个子任务失败时使用同一连接重新准备一次。主 Agent 审阅的 JSON 只保留元素名称、类型、位置和动作数量，画笔点列及完整调用记录保留在 SQLite。主 Agent、子 Agent 和重试调用共用设置页保存的模型及 API Key，每个 Agent 独立创建消息列表。模型请求通过 LiteLLM 适配各厂商 API。
+主 Agent 接收状态、摘要、动作数量和 `result_id`，通过 `apply_agent_result` 接受并提交结果，通过 `reject_agent_result` 记录拒绝原因。完整动作、画笔点列、私有上下文和调用记录保存在 SQLite。主 Agent 可以提交先完成的部分，其余 Agent 继续执行。工具返回通过 `call_id` 关联，重复调用读取已有返回；共享画布修改和提交进度在同一事务中保存。对同一对象的并发修改通过对象内容检查拒绝覆盖。
+
+绘图动作和模型请求不设置数量或执行期限。批量绘图工具在应用到私有画布前校验全部参数。关闭子 Agent 保留工具检查点与输入队列，恢复使用原身份继续未完成工作；等待工具只负责观察。主 Agent、子 Agent 共用本次任务开始时的模型及 API Key。模型请求通过 LiteLLM 适配各厂商 API。状态转换、工具参数和恢复方式见[子 Agent 生命周期](agent-lifecycle.md)。
 
 画布由服务端保存。Excalidraw 的手动修改携带文档版本提交；版本变化时接口返回 HTTP 409，前端重新读取画布。绘图执行器每提交一步就发出 `scene` 事件。画笔对象在提交前发出多个 `stroke_progress` 事件，前端用临时对象显示轨迹，最后由正式 `scene` 事件替换。WebSocket 重连时带上最后收到的事件编号，从 SQLite 读取遗漏事件。
 
@@ -34,6 +36,8 @@
 | `POST /api/studio/settings/test` | 实际调用模型验证文本与工具调用能力 |
 | `GET/POST /api/studio/sessions` | 列出与创建会话 |
 | `GET /api/studio/sessions/{id}` | 读取会话、对话、画布和任务 |
+| `GET /api/studio/sessions/{id}/agents` | 读取该画布的子 Agent 状态及结果摘要 |
+| `GET /api/studio/sessions/{id}/agents/{agent_id}` | 读取指定子 Agent，检查画布归属 |
 | `PATCH /api/studio/sessions/{id}` | 修改会话与关联画布名称，保留图形、对话、任务和撤销历史 |
 | `DELETE /api/studio/sessions/{id}` | 删除该会话及其画布、消息、任务、日志和事件；有运行或排队任务时返回 HTTP 409 |
 | `POST /api/studio/sessions/{id}/messages` | 排队执行一条绘图指令 |

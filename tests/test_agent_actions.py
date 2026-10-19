@@ -1,7 +1,8 @@
 import pytest
 
 from studio.actions import validate_action
-from studio.agents import CHILD_TOOL_NAMES, TOOL_DEFINITIONS, Delegation, Plan, prepare_creation_batch, validate_child_tool
+from studio.agents import CHILD_TOOL_NAMES, TOOL_DEFINITIONS, prepare_creation_batch, prepare_drawing_tool, validate_child_tool
+from studio.agent_tools import MAIN_TOOL_NAMES, SpawnAgent, validate_tool
 from studio.errors import validation_summary
 from studio.store import StudioStore
 
@@ -9,13 +10,15 @@ from studio.store import StudioStore
 def test_complex_plan_and_child_batch_preserve_all_actions(tmp_path):
     items = [{"type": "rectangle", "x": 20 + (index % 9) * 90, "y": 20 + (index // 9) * 60,
               "width": 80, "height": 50, "name": f"节点 {index}"} for index in range(121)]
-    plan = Plan.model_validate({"actions": [{"kind": "create_element", "args": item} for item in items]})
-    assert len(plan.actions) == 121
+    assert len(validate_tool("create_elements", {"items": items})["items"]) == 121
     goal = "完整的区域绘图要求和连接点说明。" * 50
-    assert Delegation(id="diagram", goal=goal).goal == goal
+    assert SpawnAgent(message=goal).message == goal
     draft, selection, prepared, created_ids = prepare_creation_batch(items, [], [])
     assert len(draft) == len(prepared) == len(created_ids) == 121
     assert len(set(created_ids)) == 121 and selection == [created_ids[-1]]
+    document = {"id": "canvas", "version": 0, "elements": draft, "selection": selection}
+    _, _, _, inspected = prepare_drawing_tool("inspect_scene", {"query": "节点 0"}, document, draft, selection)
+    assert [item["id"] for item in inspected["scene"]["elements"]] == [created_ids[0]]
     store = StudioStore(tmp_path / "complex.sqlite3")
     session = store.create_session("连续创建与编辑")
     document_id = session["document"]["id"]
@@ -45,13 +48,10 @@ def test_batch_validation_is_atomic_and_diagnostics_exclude_input():
 
 
 def test_only_main_can_delegate_and_child_tools_cannot_create_agents():
-    plan = Plan(delegations=[Delegation(id=f"section-{index}", goal=f"绘制区域 {index}") for index in range(6)])
-    assert len(plan.delegations) == 6
-    with pytest.raises(ValueError, match="unique ID"):
-        Plan(delegations=[Delegation(id="same", goal="左侧"), Delegation(id="same", goal="右侧")])
+    assert {"spawn_agent", "send_input", "wait_agent", "close_agent", "resume_agent", "apply_agent_result"} <= MAIN_TOOL_NAMES
     assert {tool["function"]["name"] for tool in TOOL_DEFINITIONS} == CHILD_TOOL_NAMES
     for name in CHILD_TOOL_NAMES:
         validate_child_tool(name)
-    for name in ("spawn_agent", "create_agent", "delegate", "dispatch_task"):
+    for name in ("spawn_agent", "send_input", "wait_agent", "close_agent", "resume_agent", "create_agent", "delegate", "dispatch_task", "apply_agent_result"):
         with pytest.raises(ValueError, match="cannot create or delegate"):
             validate_child_tool(name)

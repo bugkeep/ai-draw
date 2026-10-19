@@ -3,112 +3,35 @@ import json
 import time
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
-
 from .actions import apply_action, element_fingerprint, validate_action
-from .errors import AgentOutputError, validation_summary
+from .agent_tools import CHILD_TOOL_NAMES, DRAWING_TOOLS, MAIN_TOOLS, validate_tool
 from .llm import ModelGateway
 from .settings import ModelConfig
 from .store import StudioStore
 
 
-class Delegation(BaseModel):
-    id: str = Field(min_length=1, max_length=30)
-    goal: str = Field(min_length=1)
-    relevant_ids: list[str] = Field(default_factory=list)
+TOOL_DEFINITIONS = DRAWING_TOOLS
 
 
-class Plan(BaseModel):
-    reply: str = Field(default="", max_length=1000)
-    actions: list[dict[str, Any]] = Field(default_factory=list)
-    delegations: list[Delegation] = Field(default_factory=list)
+def recent_tool_exchanges(turns: list[list[dict]], character_budget: int = 48_000) -> list[dict]:
+    selected, size = [], 0
+    for turn in reversed(turns):
+        turn_size = len(json.dumps(turn, ensure_ascii=False))
+        if selected and size + turn_size > character_budget:
+            break
+        selected.append(turn)
+        size += turn_size
+    del turns[:len(turns) - len(selected)]
+    return [message for turn in reversed(selected) for message in turn]
 
-    @model_validator(mode="after")
-    def check_delegation_ids(self):
-        ids = [item.id for item in self.delegations]
-        if len(ids) != len(set(ids)):
-            raise ValueError("Each child agent needs a unique ID")
-        return self
 
-
-TOOL_DEFINITIONS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "create_element", "description": "Prepare one native Excalidraw element. For line, arrow and freedraw, points are absolute if x and y are omitted; when x or y is supplied, points are relative to that origin. pointSpace can select either rule explicitly.",
-            "parameters": {
-                "type": "object", "properties": {
-                    "type": {"type": "string", "enum": ["rectangle", "ellipse", "diamond", "text", "line", "arrow", "freedraw"]},
-                    "x": {"type": "number"}, "y": {"type": "number"},
-                    "width": {"type": "number"}, "height": {"type": "number"},
-                    "points": {"type": "array", "items": {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}},
-                    "pointSpace": {"type": "string", "enum": ["absolute", "relative"]},
-                    "text": {"type": "string"}, "name": {"type": "string"},
-                    "strokeColor": {"type": "string"}, "backgroundColor": {"type": "string"},
-                    "strokeWidth": {"type": "number"}, "fontSize": {"type": "number"},
-                    "roughness": {"type": "integer"}, "opacity": {"type": "integer"},
-                }, "required": ["type"], "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "select_elements", "description": "Select existing element IDs for the next edit or to show the user.",
-            "parameters": {"type": "object", "properties": {"ids": {"type": "array", "items": {"type": "string"}}},
-                           "required": ["ids"], "additionalProperties": False},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "move_elements", "description": "Move existing elements by dx and dy canvas units.",
-            "parameters": {"type": "object", "properties": {
-                "ids": {"type": "array", "items": {"type": "string"}}, "dx": {"type": "number"}, "dy": {"type": "number"}},
-                "required": ["ids", "dx", "dy"], "additionalProperties": False},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "update_elements", "description": "Change supported element properties, including text, size and colors.",
-            "parameters": {"type": "object", "properties": {
-                "ids": {"type": "array", "items": {"type": "string"}},
-                "patch": {"type": "object"}},
-                "required": ["ids", "patch"], "additionalProperties": False},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "delete_elements", "description": "Delete existing elements by ID.",
-            "parameters": {"type": "object", "properties": {"ids": {"type": "array", "items": {"type": "string"}}},
-                           "required": ["ids"], "additionalProperties": False},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "inspect_scene", "description": "Read current draft element IDs, names, types and positions.",
-            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
-        },
-    },
-]
-TOOL_DEFINITIONS.insert(0, {
-    "type": "function",
-    "function": {
-        "name": "create_elements", "description": "Prepare several independent native Excalidraw elements in one validated tool call.",
-        "parameters": {"type": "object", "properties": {
-            "items": {"type": "array", "items": TOOL_DEFINITIONS[0]["function"]["parameters"],
-                      "minItems": 1}},
-            "required": ["items"], "additionalProperties": False},
-    },
-})
-
-CHILD_TOOL_NAMES = frozenset({
-    "create_elements", "create_element", "select_elements", "move_elements",
-    "update_elements", "delete_elements", "inspect_scene",
-})
+def recent_tool_messages(messages: list[dict]) -> list[dict]:
+    turns: list[list[dict]] = []
+    for message in messages:
+        if message["role"] == "assistant" or not turns:
+            turns.append([])
+        turns[-1].append(message)
+    return recent_tool_exchanges(turns)
 
 
 def validate_child_tool(name: str) -> None:
@@ -116,13 +39,21 @@ def validate_child_tool(name: str) -> None:
         raise ValueError("Child agents can only use drawing tools and cannot create or delegate to other agents")
 
 
-def scene_context(document: dict[str, Any]) -> dict[str, Any]:
+def scene_context(document: dict[str, Any], ids: list[str] | None = None, query: str = "") -> dict[str, Any]:
     elements = [element for element in document["elements"] if not element.get("isDeleted")]
-    selected_ids = set(document["selection"])
-    chosen = elements[-70:]
-    for element in elements:
-        if element["id"] in selected_ids and element not in chosen:
-            chosen.insert(0, element)
+    if ids:
+        by_id = {element["id"]: element for element in elements}
+        if set(ids) - set(by_id):
+            raise ValueError("Requested scene objects do not exist")
+        chosen = [by_id[element_id] for element_id in ids]
+    elif query:
+        chosen = [element for element in elements if query.casefold() in
+                  f"{element.get('customData', {}).get('name', '')} {element.get('text', '')}".casefold()]
+    else:
+        chosen = elements[-70:]
+        for element in elements:
+            if element["id"] in document["selection"] and element not in chosen:
+                chosen.insert(0, element)
     return {
         "document_id": document["id"], "version": document["version"],
         "element_count": len(elements), "selected_ids": document["selection"],
@@ -141,8 +72,7 @@ def prepare_creation_batch(items: list[dict], draft: list[dict], selection: list
     if not isinstance(items, list) or not items:
         raise ValueError("create_elements needs a non-empty items array")
     validated = [validate_action({"kind": "create_element", "args": item}) for item in items]
-    batch = []
-    created_ids = []
+    batch, created_ids = [], []
     for action in validated:
         draft, selection, changed_ids = apply_action(draft, selection, action)
         action["element_id"] = changed_ids[0]
@@ -151,179 +81,128 @@ def prepare_creation_batch(items: list[dict], draft: list[dict], selection: list
     return draft, selection, batch, created_ids
 
 
+def prepare_drawing_tool(name: str, arguments: dict, document: dict,
+                         draft: list[dict], selection: list[str]) -> tuple:
+    args = validate_tool(name, arguments, child=True)
+    if name == "inspect_scene":
+        return draft, selection, [], {"ok": True, "scene": scene_context(
+            {**document, "elements": draft, "selection": selection}, args.get("ids"), args.get("query", ""))}
+    if name == "create_elements":
+        draft, selection, actions, changed_ids = prepare_creation_batch(args["items"], draft, selection)
+    else:
+        action = validate_action({"kind": name, "args": args})
+        by_id = {element["id"]: element for element in draft}
+        expected = {element_id: {"version": int(by_id[element_id].get("version", 1)),
+                                 "fingerprint": element_fingerprint(by_id[element_id])}
+                    for element_id in args.get("ids", []) if element_id in by_id}
+        draft, selection, changed_ids = apply_action(draft, selection, action)
+        if name == "create_element":
+            action["element_id"] = changed_ids[0]
+        actions = [{"action": action, "expected_elements": expected}]
+    return draft, selection, actions, {"ok": True, "changed_ids": changed_ids,
+                                       "selected_ids": selection, "action_count": len(actions)}
+
+
+MAIN_SYSTEM = (
+    "You are the main Agent of a conversational Excalidraw drawing editor. Use the provided native tools. "
+    "You control the child Agent lifecycle through spawn_agent, send_input, wait_agent, close_agent and resume_agent. "
+    "spawn_agent starts immediately and returns stable agent_id, nickname, input_id and run_id. "
+    "For independent parts of a composition, spawn the children together in the same response so they run concurrently. "
+    "Give each child a self-contained goal with shared layout bounds, required labels and connector coordinates. "
+    "Reuse a suitable existing Agent with send_input for follow-up edits. Running inputs queue sequentially. "
+    "Use wait_agent to observe results. It never executes work. For subsequent waits use only returned running_ids, "
+    "with their revisions in after. Final and Shutdown Agents always return immediately, even with after. "
+    "Review result summaries and call apply_agent_result for each accepted result_id. Apply its depends_on results first. "
+    "Use reject_agent_result with a reason for irrelevant or invalid work, then send_input for corrections if needed. "
+    "Apply each ready part while other children are still running so the user sees progress. "
+    "Children only prepare private drafts; only your drawing tools and apply_agent_result modify the shared canvas. "
+    "Use close_agent to pause work and resume_agent to continue saved work. A Final Agent receives new work via send_input. "
+    "Do not finish your response while child work is Running or while accepted results still await submission. "
+    "Tool errors require correction or an honest explanation. Never claim unsubmitted work has been drawn. "
+    "For simple requests call drawing tools directly to minimize latency. Batch related creations with create_elements. "
+    "Always use native editable Excalidraw objects. Text needs type=text, x, y, text and optional fontSize. "
+    "For line, arrow and freedraw, points are absolute if x/y are omitted; otherwise points are relative to x/y. "
+    "For update_elements use ids and patch. For move_elements use ids and dx/dy, or one id and absolute x/y. "
+    "For continuous conversation, use existing IDs, selected_ids, prior conversation and Agent summaries to resolve references. "
+    "Preserve unrelated artwork. Use inspect_scene with ids or a name/text query to find older objects outside the overview. "
+    "For pen drawing use several freedraw strokes with ordered points. Coordinates around x=50..950,y=40..650 are visible. "
+    "Your next context includes a fresh canvas checkpoint and compact Agent states; complete raw tool records remain in SQLite. "
+    "task_progress is your durable work record: it lists dispatched inputs, submitted results and remaining work. "
+    "Use only the exact result_id and agent_id values in that record or tool outputs. "
+    "Submitted results already exist on the canvas and fulfill their recorded goals. Reuse their objects for edits. "
+    "Once the requested composition is present and all chosen results are committed, return your final reply promptly. "
+    "Reply briefly in the user's language after finishing the requested work."
+)
+CHILD_SYSTEM = (
+    "You are an independent drawing child Agent with persistent private context. "
+    "Prepare native editable Excalidraw actions for the assigned input by calling the provided drawing tools. "
+    "Only the main Agent may create or control Agents. You cannot spawn, delegate, send input to or resume any Agent. "
+    "Your tools operate on a private draft. The main Agent reviews your saved result before submitting it to the shared canvas. "
+    "Use create_elements for related shapes to reduce model calls. Continue with more tools when the goal requires further edits. "
+    "When every assigned requirement is present, return a brief final text describing your prepared work; then this run ends. "
+    "Use the draft and successful tool outputs to recognize completed work and finish promptly. "
+    "Your checkpoint lists already prepared work. Do not recreate shapes already present in the draft. "
+    "Tool outputs contain stable object IDs for subsequent edits. Use exact IDs, readable names and the assigned layout region. "
+    "Text needs x, y and text; omit default style properties. For paths omit x/y for absolute points, or include x/y with relative points. "
+    "Never use SVG or edit unrelated objects. Use inspect_scene with ids or a name/text query when more object information is needed. "
+    "Your context contains the goal, previous work summary, current draft and recent complete tool exchanges. "
+    "The draft already includes their successful effects. Raw older calls remain in SQLite. "
+    "Correct invalid tool parameters using the returned error. Reply in the user's language."
+)
+
+
 class DrawingAgents:
     def __init__(self, store: StudioStore, settings: ModelConfig):
         self.store = store
-        self.settings = settings
-        self.gateway = ModelGateway(settings)
+        self.settings = settings.model_copy(deep=True)
+        self.gateway = ModelGateway(self.settings)
 
-    async def plan(self, task_id: str, user_text: str, document: dict, messages: list[dict]) -> Plan:
-        system = (
-            "You are the main agent of a conversational Excalidraw drawing editor. "
-            "Respond with one JSON object with keys reply, actions, delegations. "
-            "Use native editable Excalidraw elements only. No SVG or code output. "
-            "Action format: {kind: create_element|select_elements|move_elements|update_elements|delete_elements, args: {...}}. "
-            "Existing-object examples: {kind:'move_elements',args:{ids:['id'],dx:70,dy:0}} and "
-            "{kind:'update_elements',args:{ids:['id'],patch:{backgroundColor:'#2f9e44'}}}. "
-            "Always use ids and patch for update_elements; never use an elements array. "
-            "For create_element use type, x, y, width, height, name, colors; text needs text. "
-            "For line, arrow and freedraw, omit x and y when points are absolute; when x or y is supplied, points are relative to that origin. "
-            "For move_elements use ids with dx and dy offsets, or one id with absolute x and y. "
-            "For simple requests return direct actions and no delegations to minimize latency. "
-            "For new multi-part compositions or flowcharts with multiple labeled sections, delegate independent sections to child agents. "
-            "In that case main actions cover only shared titles or connecting lines; each child prepares the full geometry and labels of its section. "
-            "Assign explicit shared layout regions and connector coordinates so independently prepared sections form one coherent drawing. "
-            "Include all section requirements and positions in each goal so children can prepare their parts without reading each other's tool logs. "
-            "Keep goals concise: name the section, required components, bounding region and connector endpoints. Let children determine individual shape geometry inside their regions. "
-            "Delegations each have id, goal, relevant_ids. Child agents prepare actions concurrently; you will review their JSON reports. "
-            "For edits, refer to exact existing element IDs. Prefer selected_ids when the user says this or it. "
-            "Preserve existing artwork unless explicitly asked to change it. "
-            "For a request to draw by pen, use multiple freedraw elements with 12-80 absolute points each so the drawing process is visible. "
-            "Use coordinates in the visible canvas around x=50..950 and y=40..650. "
-            "Reply and names should be in the user's language. Do not include markdown fences."
-        )
-        history = [{"role": item["role"], "content": item["content"]} for item in messages[-10:]
-                   if item["role"] in {"user", "assistant"}]
-        prompt = {"request": user_text, "canvas": scene_context(document), "recent_conversation": history}
-        conversation = [{"role": "system", "content": system},
-                        {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)}]
-        for attempt in range(2):
-            started = time.perf_counter()
-            response = await self.gateway.complete(conversation, on_retry=lambda info: self.store.log_tool(
-                task_id, "main", attempt, "model_retry", info))
-            content = response.choices[0].message.content or ""
-            self.store.log_tool(task_id, "main", attempt, "plan", {
-                "response": content, "latency_ms": round((time.perf_counter() - started) * 1000, 1),
-                "usage": response.usage.model_dump() if response.usage else None,
-            })
-            try:
-                plan = Plan.model_validate(json.loads(content))
-                if not plan.actions and not plan.delegations:
-                    raise ValueError("Main agent returned no drawing actions")
-                for action in plan.actions:
-                    validate_action(action)
-                return plan
-            except (ValueError, KeyError) as exc:
-                detail = validation_summary(exc)
-                self.store.log_tool(task_id, "main", attempt, "plan_validation_error", {"message": detail})
-                if attempt:
-                    raise AgentOutputError("模型返回的绘图参数仍未通过校验，请重新描述需要绘制或修改的内容。") from exc
-                conversation.extend([
-                    {"role": "assistant", "content": content},
-                    {"role": "user", "content": f"Correct the JSON action arguments and return the full plan again. Validation error: {detail}"},
-                ])
-        raise RuntimeError("Main agent did not produce a valid plan")
+    def main_messages(self, task_id: str, request: str, document: dict,
+                      history: list[dict], exchange: list[dict]) -> list[dict]:
+        session_id = self.store.get_task(task_id)["session_id"]
+        results = self.store.agents.task_results(session_id, task_id)
+        prompt = {
+            "request": request, "canvas": scene_context(document),
+            "recent_conversation": [{"role": item["role"], "content": item["content"]} for item in history],
+            "child_agents": self.store.agents.list_agents(session_id),
+            "task_progress": {
+                "inputs": self.store.agents.task_runs(session_id, task_id),
+                "submitted_results": [result for result in results
+                                      if result["committed_count"] == result["action_count"] and not result["rejected_reason"]],
+                "rejected_results": [result for result in results if result["rejected_reason"]],
+                "committed_actions": sum(result["committed_count"] for result in results),
+            },
+            "pending_results": [self.store.agents.result_summary(item)
+                                for item in self.store.agents.pending_results(session_id, task_id=task_id)],
+        }
+        return [{"role": "system", "content": MAIN_SYSTEM},
+                {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)}, *copy.deepcopy(exchange)]
 
-    async def child(self, task_id: str, delegation: Delegation, document: dict) -> dict[str, Any]:
-        agent_id = f"child:{delegation.id}"
-        draft = copy.deepcopy(document["elements"])
-        selection = list(document["selection"])
-        prepared: list[dict[str, Any]] = []
-        system = (
-            "You are a drawing child agent. Your only job is to prepare validated Excalidraw actions for the assigned goal. "
-            "Only the main agent can create child agents. You cannot create agents, delegate goals or request nested agent execution. "
-            "Call the provided drawing tools. For a composition, use create_elements once with all necessary shapes to reduce latency. "
-            "Use canvas coordinates, existing IDs from context, and readable names. "
-            "Keep tool arguments compact and omit default style properties. Text width and height are automatic; text needs x, y, text and fontSize only when required. "
-            "For paths, omit x and y for absolute points, or provide x and y with relative points. "
-            "For pen drawing, create freedraw elements with ordered points; use several strokes when needed. "
-            "Never use SVG. Never edit unrelated existing elements. "
-            "The runtime returns your validated tool actions as JSON to the main agent. "
-            "Your tool responses show created element IDs for any following edits."
-        )
-        content = {"goal": delegation.goal, "scene": scene_context(document), "relevant_ids": delegation.relevant_ids}
-        conversation: list[dict[str, Any]] = [
-            {"role": "system", "content": system},
-            {"role": "user", "content": json.dumps(content, ensure_ascii=False)},
-        ]
-        for round_number in range(1, 4):
-            started = time.perf_counter()
-            response = await self.gateway.complete(conversation, TOOL_DEFINITIONS, on_retry=lambda info: self.store.log_tool(
-                task_id, agent_id, round_number, "model_retry", info))
-            message = response.choices[0].message
-            self.store.log_tool(task_id, agent_id, round_number, "llm_response", {
-                "content": message.content,
-                "tool_calls": [{"id": call.id, "name": call.function.name, "arguments": call.function.arguments}
-                               for call in message.tool_calls or []],
-                "latency_ms": round((time.perf_counter() - started) * 1000, 1),
-                "usage": response.usage.model_dump() if response.usage else None,
-            })
-            conversation.append(message.model_dump(exclude_none=True))
-            if not message.tool_calls:
-                raise ValueError(f"Child agent {delegation.id} called no drawing tools")
-            had_error = False
-            for call in message.tool_calls:
-                name = call.function.name
-                try:
-                    validate_child_tool(name)
-                    args = json.loads(call.function.arguments)
-                    if name == "inspect_scene":
-                        result = {"scene": scene_context({**document, "elements": draft, "selection": selection})}
-                    elif name == "create_elements":
-                        draft, selection, batch, created_ids = prepare_creation_batch(args["items"], draft, selection)
-                        prepared.extend(batch)
-                        result = {"ok": True, "changed_ids": created_ids, "selected_ids": selection}
-                    else:
-                        action = validate_action({"kind": name, "args": args})
-                        current = {element["id"]: element for element in draft}
-                        expected = {element_id: {"version": int(current[element_id].get("version", 1)),
-                                                 "fingerprint": element_fingerprint(current[element_id])}
-                                    for element_id in args.get("ids", []) if element_id in current}
-                        draft, selection, changed_ids = apply_action(draft, selection, action)
-                        if name == "create_element":
-                            action["element_id"] = changed_ids[0]
-                        prepared.append({"action": action, "expected_elements": expected})
-                        result = {"ok": True, "changed_ids": changed_ids, "selected_ids": selection}
-                except (ValueError, KeyError, TypeError) as exc:
-                    result = {"ok": False, "error": validation_summary(exc)}
-                    had_error = True
-                self.store.log_tool(task_id, agent_id, round_number, name, {"arguments": call.function.arguments, "result": result})
-                conversation.append({"role": "tool", "tool_call_id": call.id,
-                                     "content": json.dumps(result, ensure_ascii=False)})
-            if prepared and not had_error:
-                names = [item["action"]["args"].get("name", item["action"]["kind"])
-                         for item in prepared]
-                return {"id": delegation.id, "goal": delegation.goal,
-                        "summary": f"Prepared {len(prepared)} actions: {', '.join(names[:12])}",
-                        "actions": prepared, "tool_call_count": len(prepared), "success": True}
-        raise RuntimeError(f"Child agent {delegation.id} did not prepare valid actions")
+    def child_messages(self, run: dict, agent: dict) -> list[dict]:
+        prompt = {
+            "agent_id": run["agent_id"], "input_id": run["input_id"], "run_id": run["id"],
+            "goal": run["message"], "previous_work_summary": agent["summary"],
+            "scene": scene_context({**run["document"], "elements": run["draft"], "selection": run["selection"]}),
+            "relevant_ids": run["relevant_ids"], "prepared_action_count": len(run["prepared"]),
+        }
+        if run["relevant_ids"]:
+            prompt["relevant_elements"] = scene_context(
+                {**run["document"], "elements": run["draft"], "selection": run["selection"]}, run["relevant_ids"],
+            )["elements"]
+        return [{"role": "system", "content": CHILD_SYSTEM},
+                {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
+                *copy.deepcopy(run["conversation"])]
 
-    async def review(self, task_id: str, request: str, reports: list[dict[str, Any]]) -> tuple[list[str], str]:
-        system = (
-            "You are the main drawing agent reviewing child agent JSON reports. "
-            "Each child prepared actions on an isolated scene. The executor will commit accepted reports one by one with version checks. "
-            "Return JSON with accepted_ids (ordered list of report IDs) and reply (brief user-facing summary). "
-            "Accept only successful reports relevant to the user's request. Do not request new drawing actions."
-        )
-        def action_outline(item: dict[str, Any]) -> dict[str, Any]:
-            action = item["action"]
-            args = action["args"]
-            if action["kind"] == "create_element":
-                fields = ("type", "name", "x", "y", "width", "height", "strokeColor", "backgroundColor")
-                outline = {field: args[field] for field in fields if field in args}
-                if "points" in args:
-                    outline["point_count"] = len(args["points"])
-            else:
-                outline = {field: args[field] for field in ("ids", "dx", "dy", "x", "y", "patch") if field in args}
-            return {"kind": action["kind"], "args": outline}
-
-        compact = [{"id": report["id"], "goal": report["goal"], "summary": report.get("summary", ""),
-                    "success": report.get("success", False), "error": report.get("error", ""),
-                    "actions": [action_outline(item) for item in report.get("actions", [])]}
-                   for report in reports]
+    async def respond(self, task_id: str, agent_id: str, round_number: int,
+                      messages: list[dict], *, child: bool = False) -> dict:
         started = time.perf_counter()
-        response = await self.gateway.complete([
-            {"role": "system", "content": system},
-            {"role": "user", "content": json.dumps({"request": request, "reports": compact}, ensure_ascii=False)},
-        ], on_retry=lambda info: self.store.log_tool(task_id, "main", 0, "model_retry", info))
-        content = response.choices[0].message.content or ""
-        self.store.log_tool(task_id, "main", 0, "review", {
-            "response": content, "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+        response = await self.gateway.complete(
+            messages, DRAWING_TOOLS if child else MAIN_TOOLS,
+            on_retry=lambda info: self.store.log_tool(task_id, agent_id, round_number, "model_retry", info),
+        )
+        message = response.choices[0].message.model_dump(exclude_none=True)
+        self.store.log_tool(task_id, agent_id, round_number, "llm_response", {
+            "message": message, "latency_ms": round((time.perf_counter() - started) * 1000, 1),
             "usage": response.usage.model_dump() if response.usage else None,
         })
-        parsed = json.loads(content)
-        ids = parsed["accepted_ids"]
-        available = {report["id"] for report in reports if report.get("success")}
-        if not isinstance(ids, list) or len(ids) != len(set(ids)) or set(ids) - available:
-            raise ValueError("Main agent selected invalid child results")
-        return ids, str(parsed.get("reply", ""))[:1000]
+        return message

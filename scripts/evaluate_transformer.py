@@ -53,7 +53,7 @@ def main():
                   "status": created["status"], "error": created["error"], "latency_ms": created["latency_ms"],
                   "element_count": len(scene["elements"]),
                   "committed_actions": sum(item["kind"] == "commit" for item in logs),
-                  "child_agents": sorted({item["agent_id"] for item in logs if item["agent_id"].startswith("child:")}),
+                  "child_agents": sorted({item["agent_id"] for item in logs if item["agent_id"].startswith("agent_")}),
                   "diagram_checks": checks}
         if created["status"] == "completed" and all(checks.values()):
             title = next(item for item in scene["elements"] if item["type"] == "text" and "transformer" in item.get("text", "").lower())
@@ -69,7 +69,7 @@ def main():
                 "same_object": len(after["elements"]) == len(scene["elements"]),
                 "title_updated": updated.get("text") == "Transformer 模型结构" and updated["strokeColor"] == "#1e40af",
                 "other_objects_preserved": unaffected == {item["id"]: element_fingerprint(item) for item in after["elements"] if item["id"] != title["id"]},
-                "real_model_edit": any(item["kind"] == "plan" for item in edit_logs),
+                "real_model_edit": any(item["kind"] == "llm_response" and item["agent_id"] == "main" for item in edit_logs),
             }
             commits = sum(item["kind"] == "commit" for item in edit_logs)
             for _ in range(commits):

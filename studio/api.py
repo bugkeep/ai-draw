@@ -46,7 +46,7 @@ def studio_store(request: Request) -> StudioStore:
 @router.get("/health")
 async def health(request: Request):
     config = request.app.state.model_settings.load()
-    return {"status": "ok", "api_revision": 2, "provider_configured": config.configured,
+    return {"status": "ok", "api_revision": 3, "provider_configured": config.configured,
             "model": config.model, "provider": config.provider}
 
 
@@ -105,6 +105,24 @@ async def get_session(request: Request, session_id: str):
 async def send_message(request: Request, session_id: str, body: SendMessage):
     try:
         return request.app.state.drawing_runtime.submit(session_id, body.message.strip())
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.get("/sessions/{session_id}/agents")
+async def list_session_agents(request: Request, session_id: str):
+    try:
+        store = studio_store(request)
+        store.get_session(session_id)
+        return store.agents.list_agents(session_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.get("/sessions/{session_id}/agents/{agent_id}")
+async def get_session_agent(request: Request, session_id: str, agent_id: str):
+    try:
+        return studio_store(request).agents.get_agent(session_id, agent_id)
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
 

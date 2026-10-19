@@ -1,6 +1,7 @@
 import argparse
 import json
 import time
+from collections import Counter
 from pathlib import Path
 
 import httpx
@@ -31,17 +32,22 @@ def main():
     parser.add_argument("--url", default="http://127.0.0.1:8000")
     parser.add_argument("--output", type=Path, default=Path("runs/studio-multiagent-evaluation.json"))
     parser.add_argument("--session-id")
+    parser.add_argument("--task-id")
     args = parser.parse_args()
+    if args.task_id and not args.session_id:
+        parser.error("--task-id requires --session-id")
     prompt = "在同一张画布上画一个完整的公园场景：左侧画一栋房子，右侧画两棵树，天空画太阳和云朵。请安排三个子 Agent 分别准备房子、两棵树和天空部分。"
     with httpx.Client(base_url=args.url, timeout=15) as client:
         if args.session_id:
             session_id = args.session_id
             session_response = client.get(f"/api/studio/sessions/{session_id}")
             session_response.raise_for_status()
-            task_id = session_response.json()["tasks"][0]["id"]
+            task_id = args.task_id or session_response.json()["tasks"][0]["id"]
             task_response = client.get(f"/api/studio/tasks/{task_id}")
             task_response.raise_for_status()
             task = task_response.json()
+            if task["session_id"] != session_id:
+                raise ValueError("The task belongs to a different canvas session")
         else:
             health = client.get("/api/studio/health")
             health.raise_for_status()
@@ -89,18 +95,26 @@ def main():
             and sun["y"] - 100 <= item["y"] <= sun["y"] + sun["height"] + 100
             for item in rays),
     }
-    child_ids = sorted({item["agent_id"] for item in logs if item["agent_id"].startswith("child:")})
-    reports = [item["payload"] for item in logs if item["kind"] == "child_report"]
+    child_ids = sorted({item["agent_id"] for item in logs if item["agent_id"].startswith("agent_")})
+    reports = [item["payload"] for item in logs if item["kind"] == "agent_result"]
     commits = [item for item in logs if item["kind"] == "commit"]
+    main_calls = Counter(item["payload"]["name"] for item in logs
+                         if item["agent_id"] == "main" and item["kind"] == "function_call")
     result = {"session_id": session_id, "task_id": task_id, "status": task["status"],
               "error": task["error"], "latency_ms": task["latency_ms"], "child_agents": child_ids,
               "child_count": len(child_ids), "child_reports": [
-                  {"id": item["id"], "success": item["success"], "error": item.get("error", "")}
+                  {"agent_id": item["agent_id"], "run_id": item["run_id"],
+                   "success": item["status"] == "completed", "error": item.get("error", "")}
                   for item in reports],
               "committed_actions": len(commits),
+              "first_canvas_update_ms": round((commits[0]["created_at"] - task["created_at"]) * 1000, 1) if commits else None,
+              "main_tool_calls": dict(main_calls),
+              "main_tool_errors": sum(item["agent_id"] == "main" and item["kind"] == "function_call_output"
+                                      and json.loads(item["payload"]["output"]).get("ok") is False for item in logs),
+              "model_retry_count": sum(item["kind"] == "model_retry" for item in logs),
               "element_count": len(elements), "scene_checks": scene_checks,
               "passed": task["status"] == "completed" and len(reports) >= 3
-              and all(item["success"] for item in reports) and len(commits) >= 8
+              and all(item["status"] == "completed" for item in reports) and len(commits) >= 8
               and all(scene_checks.values())}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
