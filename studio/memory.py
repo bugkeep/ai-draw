@@ -92,7 +92,7 @@ class AgentMemory:
                 'AND original.rowid<=current.rowid', (task_id, memory_ref, session_id, actor_id),
             ).fetchone()
         if row is None:
-            raise KeyError('Memory does not belong to this Agent and canvas, or comes from a later task')
+            raise KeyError(f'Memory {memory_ref} does not belong to this Agent and canvas, or comes from a later task')
         return dict(row)
 
     def register(self, task_id, actor_id, caller_id, call_id, name, arguments, output, state_key):

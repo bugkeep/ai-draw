@@ -1,4 +1,4 @@
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -53,9 +53,10 @@ class CanvasRegion(ToolInput):
 
 class InspectScene(ToolInput):
     ids: list[str] = Field(default_factory=list)
-    query: str = ""
+    query: str = Field(default='', description='Literal case-insensitive name/text substring. Use search_memory for multiple search terms.')
     region: CanvasRegion | None = None
-    include_geometry: bool = False
+    include_geometry: bool = Field(default=False, description='Save full geometry in the raw SQLite result. '
+        'The Agent receives a summary; use recall_memory with element_id to obtain current path points.')
 
 
 class FinishDrawing(ToolInput):
@@ -91,7 +92,11 @@ class CompactContext(ToolInput):
     completed: list[str] = Field(default_factory=list)
     pending: list[str] = Field(default_factory=list)
     object_ids: list[str] = Field(default_factory=list)
-    evidence_refs: list[str] = Field(default_factory=list)
+    evidence_refs: list[Annotated[str, Field(pattern=r'^memory_[a-f0-9]{32}$')]] = Field(
+        default_factory=list,
+        description='Optional exact memory_ref values returned to this Agent by memory or tool results. '
+                    'Record web reference_id and drawing result_id values in summary or constraints.',
+    )
 
 
 class SearchReferences(ToolInput):
@@ -150,14 +155,14 @@ DRAWING_TOOLS = [
     definition("view_canvas", "View the actual rendered PNG of your current canvas: the shared submitted drawing for the main Agent, your private draft for a child. Current images are already attached automatically after changes. Use this tool when you need a specific closer region x/y/width/height, with scene_bounds coordinate mapping. Do not repeat unchanged views already supplied. Before completing, inspect the current image and fix visible anatomy, overlaps, misplaced features and excessive strokes. Older images stay in SQLite rather than accumulating in context.", ViewCanvas),
     definition("erase_strokes", "Erase along absolute canvas points with a brush radius. points must be [[x,y]] even for one dab, or [[x1,y1],[x2,y2]] for a sweep. mode=segment removes touched portions of pen/line strokes and preserves editable fragments; mode=stroke deletes whole touched objects like Excalidraw. Optional ids limits targets. Locked/unrelated objects are preserved. One gesture is one undo step. Remove incorrect lines before redrawing instead of adding overlapping contours.", EraseStrokes),
     definition("draw_paths", "Draw a batch of smooth native editable pen strokes through named anchor points. Use for portraits, organic contours, hair, fingers, folds and hatching. Each path is separate; smooth defaults true, closed false. Shared origin/scale transform points. strokeWidth is the native Excalidraw brush unit: rendered base size=strokeWidth*4.25, so pencil strokes usually use 0.2..0.5. Default 0.4. Per-path style overrides shared style. Refine existing outlines with reshape_path or erase_strokes instead of adding duplicate contours.", DrawPaths),
-    definition("reshape_path", "Reshape an existing native pen/line stroke using absolute canvas anchor points, preserving its object ID, name, style and unrelated artwork. Smooth defaults true. Use for precise follow-up edits to a mouth, eyelid or contour. inspect_scene geometry points are relative to x/y and rotated by angle around the element center; your replacement points always use final absolute canvas coordinates.", ReshapePath),
+    definition("reshape_path", "Reshape an existing native pen/line stroke using absolute canvas anchor points, preserving its object ID, name, style and unrelated artwork. Smooth defaults true. Use for precise follow-up edits to a mouth, eyelid or contour. Current geometry from recall_memory has points relative to x/y and rotated by angle around the element center; your replacement points always use final absolute canvas coordinates.", ReshapePath),
     definition("create_elements", "Create a batch of native editable Excalidraw elements. Use one call for related shapes. Text only needs type, x, y and text. For line, arrow or freedraw, points are absolute when x and y are omitted; otherwise points are relative to that origin.", CreateElements),
     definition("create_element", "Create one native Excalidraw element. For paths use absolute points without x/y, or relative points with x/y. Give objects readable names.", CreateElement),
     definition("select_elements", "Select existing object IDs for subsequent edits or to show the user.", SelectElements),
     definition("move_elements", "Move objects by ids and dx/dy, or move one object to absolute x/y.", MoveElements),
     definition("update_elements", "Update existing ids using patch, including text, position, size and colors.", UpdateElements),
     definition("delete_elements", "Delete existing objects by ids.", DeleteElements),
-    definition("inspect_scene", "Read current objects, selection and canvas revision. Optional ids requests specific objects outside the overview. Optional query searches all names/text. Optional region x/y/width/height finds every object intersecting that canvas region, including older strokes; use the same coordinates as view_canvas to identify what needs correction. Filters combine. Set include_geometry=true to read actual stroke points and angle for precise editing.", InspectScene),
+    definition("inspect_scene", "Read current object metadata, selection and canvas revision as a compact summary with memory_ref. Optional ids requests specific objects outside the overview. query is a literal case-insensitive name/text substring; use search_memory for multiple search words. Optional region x/y/width/height finds objects intersecting the same coordinates as view_canvas. Filters combine. include_geometry=true saves full points in the raw SQLite record while context remains summarized. For precise current points, call recall_memory with element_id and follow its point pages.", InspectScene),
     definition("finish_drawing", "Finish after inspecting the latest actual canvas image, with a brief summary in the user's language. Any drawing changes since the last image require another visual inspection before completion. Put this last; preceding tools must succeed. Main Agents must settle child work and results. Tool errors always return to your context. Do not claim visual quality from object names or counts.", FinishDrawing),
 ]
 LIFECYCLE_TOOLS = [
@@ -172,7 +177,7 @@ LIFECYCLE_TOOLS = [
 MEMORY_TOOL_DEFINITIONS = [
     definition('search_memory', 'Search your scoped SQLite memory for old object names/IDs, completed tool records, working notes and earlier conversation. Returns current canvas/draft object metadata and historical memory_ref records. Use concrete query words or object_ids. Results have offset/limit pages; next_offset allows all records to be retrieved. Other Agents and canvases remain isolated, and later queued user messages are excluded.', SearchMemory),
     definition('recall_memory', 'Retrieve precisely what is needed. Pass element_id for CURRENT native geometry, with point_offset/point_limit pages and total point_count; all pages are available. Pass memory_ref for a saved summary, original tool arguments or full output, with offset/max_chars JSON text pages. Historical records do not prove current geometry. Prefer one object over a broad full-scene geometry query; delegate extensive geometry work to a child.', RecallMemory),
-    definition('compact_context', 'Save durable structured working memory before replacing conversational detail: goal, decisions/constraints, completed work, pending work, important object IDs and evidence memory_refs. Use the current working_memory revision. Successful calls replace earlier conversational detail with these notes; complete raw calls remain searchable in SQLite. Current errors still reach the next context in full. Notes are not a drawing commit or proof of completion.', CompactContext),
+    definition('compact_context', 'Save durable structured working memory before replacing conversational detail: goal, decisions/constraints, completed work, pending work, important object IDs and optional evidence_refs containing exact memory_ref values already returned to you. Put web reference_id and drawing result_id values in summary or constraints. Use the current working_memory revision. Successful calls replace earlier conversational detail with these notes; complete raw calls remain searchable in SQLite. Current errors still reach the next context in full. Notes are not a drawing commit or proof of completion.', CompactContext),
 ]
 CHILD_TOOLS = DRAWING_TOOLS + REFERENCE_TOOLS + MEMORY_TOOL_DEFINITIONS
 MAIN_TOOLS = CHILD_TOOLS + LIFECYCLE_TOOLS

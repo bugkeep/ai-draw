@@ -236,3 +236,29 @@ def test_search_indexes_objects_beyond_the_short_result_preview(tmp_path):
             await runtime.close()
             store.close()
     asyncio.run(check())
+
+
+def test_web_reference_in_memory_evidence_returns_field_error_then_valid_notes_can_be_saved(tmp_path):
+    async def check():
+        store, runtime, session, task, models = workspace(tmp_path / 'evidence.sqlite3')
+        try:
+            output = await call(runtime, models, session, task, 'compact_context', {
+                'goal': '绘制人物', 'summary': '准备继续绘图',
+                'evidence_refs': ['reference_10fef0495b235d6ba79c48db8d1e68d8'],
+            }, 'wrong-evidence')
+            assert output['ok'] is False and 'evidence_refs.0' in output['error']
+            assert store.connection.execute('SELECT count(*) FROM agent_working_memory').fetchone()[0] == 0
+            messages = runtime.memory.prepare_messages(task['id'], 'main', f"main:{task['id']}",
+                'state', session['document'], [])
+            assert any(item.get('tool_call_id') == 'wrong-evidence' and json.loads(item['content']) == output
+                       for item in messages)
+            saved = await call(runtime, models, session, task, 'compact_context', {
+                'goal': '绘制人物', 'summary': '准备继续绘图；来源 reference_10fef0495b235d6ba79c48db8d1e68d8',
+            }, 'correct-evidence')
+            assert saved['ok'] and saved['revision'] == 1
+            assert runtime.memory.snapshot(task['id'], 'main', f"main:{task['id']}", 'state',
+                session['document'])['working_memory']['notes']['goal'] == '绘制人物'
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())
