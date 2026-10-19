@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import os
 import socket
+import sys
 from pathlib import Path
 
 import uvicorn
@@ -14,6 +15,8 @@ async def verify(args):
     database = args.database.resolve()
     if database == (root / "runs/studio.sqlite3").resolve():
         raise ValueError("Use a separate browser evaluation database")
+    if any(Path(script).name == 'quality_evaluation.js' for script in args.scripts) and database.exists():
+        raise ValueError('Quality evaluation requires a new independent database; existing data will not be opened')
     os.environ["DRAW_AGENT_DB"] = str(database)
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
         listener.bind(("127.0.0.1", 0))
@@ -28,7 +31,7 @@ async def verify(args):
                     await worker
                     raise RuntimeError("Browser test server did not start")
                 await asyncio.sleep(0.05)
-            environment = {**os.environ, "DRAW_AGENT_URL": f"http://127.0.0.1:{port}"}
+            environment = {**os.environ, "DRAW_AGENT_URL": f"http://127.0.0.1:{port}", "DRAW_AGENT_PYTHON": sys.executable}
             for script in args.scripts:
                 path = (root / "frontend-app/scripts" / script).resolve()
                 if path.parent != (root / "frontend-app/scripts").resolve() or not path.is_file():

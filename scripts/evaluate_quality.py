@@ -34,9 +34,12 @@ def main():
     parser.add_argument("--recheck", action="store_true", help="Recheck saved evaluation tasks without requesting new drawings")
     args = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
-    implementation = {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in (
-        'studio/runtime.py', 'studio/agents.py', 'studio/actions.py', 'studio/result_review.py',
-        'studio/memory.py', 'studio/vision.py', 'studio/reference_images.py', 'studio/store.py', 'studio/quality.py')}
+    implementation_files = [path for package in ('studio', 'server')
+                            for path in sorted((root / package).rglob('*.py'))]
+    implementation_files.extend(root / name for name in ('requirements.txt', 'requirements-dev.txt',
+        'frontend-app/src/renderCanvas.js', 'frontend-app/package.json', 'frontend-app/package-lock.json'))
+    implementation = {path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+                      for path in implementation_files}
     dataset_hash = hashlib.sha256(args.dataset.read_bytes()).hexdigest()
     cases = json.loads(args.dataset.read_text(encoding="utf-8"))["cases"]
     selected = set(args.cases.split(",")) if args.cases else {case["id"] for case in cases}

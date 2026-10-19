@@ -44,6 +44,14 @@ class CreateElements(ToolInput):
     items: list[CreateElement] = Field(min_length=1)
 
 
+class MainCreateElement(CreateElement):
+    type: Literal['rectangle', 'ellipse', 'diamond', 'text', 'line', 'arrow']
+
+
+class MainCreateElements(ToolInput):
+    items: list[MainCreateElement] = Field(min_length=1)
+
+
 class CanvasRegion(ToolInput):
     x: float = Field(ge=-100000, le=100000, allow_inf_nan=False)
     y: float = Field(ge=-100000, le=100000, allow_inf_nan=False)
@@ -207,7 +215,10 @@ LIFECYCLE_INPUTS = {
 }
 CHILD_INPUTS = {**DRAWING_INPUTS, **REFERENCE_INPUTS, **MEMORY_INPUTS}
 CHILD_TOOL_NAMES = frozenset(CHILD_INPUTS)
-MAIN_TOOL_NAMES = CHILD_TOOL_NAMES | frozenset(LIFECYCLE_INPUTS)
+CHILD_PEN_TOOLS = frozenset({'draw_paths', 'reshape_path'})
+MAIN_INPUTS = {**{name: model for name, model in CHILD_INPUTS.items() if name not in CHILD_PEN_TOOLS},
+               **LIFECYCLE_INPUTS, 'create_element': MainCreateElement, 'create_elements': MainCreateElements}
+MAIN_TOOL_NAMES = frozenset(MAIN_INPUTS)
 
 
 def definition(name: str, description: str, model: type[BaseModel]) -> dict:
@@ -261,14 +272,28 @@ CHILD_TOOLS = [definition('finish_drawing',
     'before completing. Drawing changes since the last image require another inspection.', FinishDrawing)
     if item['function']['name'] == 'finish_drawing' else item for item in DRAWING_TOOLS
 ] + REFERENCE_TOOLS + MEMORY_TOOL_DEFINITIONS
-MAIN_TOOLS = DRAWING_TOOLS + REFERENCE_TOOLS + MEMORY_TOOL_DEFINITIONS + LIFECYCLE_TOOLS
+MAIN_TOOLS = [{**item, 'function': {**item['function'],
+    'parameters': MAIN_INPUTS[item['function']['name']].model_json_schema(),
+    **({'description': 'Create simple geometric shapes, labels or diagram connectors. '
+        'Pen strokes and organic curve geometry belong to drawing children; use spawn_agent/send_input for them. '
+        + item['function']['description']} if item['function']['name'] in {'create_element', 'create_elements'} else {})}}
+    for item in DRAWING_TOOLS + REFERENCE_TOOLS + MEMORY_TOOL_DEFINITIONS + LIFECYCLE_TOOLS
+    if item['function']['name'] in MAIN_INPUTS]
 
 
 def validate_tool(name: str, arguments: Any, *, child: bool = False) -> dict:
-    models = CHILD_INPUTS if child else {**CHILD_INPUTS, **LIFECYCLE_INPUTS}
+    models = CHILD_INPUTS if child else MAIN_INPUTS
     if name not in models:
         if child:
             raise ValueError("Child agents can only use drawing and reference tools and cannot create or delegate to other agents")
+        if name in CHILD_PEN_TOOLS:
+            raise ValueError('Fine pen geometry belongs to a drawing child Agent. Use spawn_agent or send_input '
+                             'with the region, current object IDs and desired visible result, then review and submit its result.')
         raise ValueError(f"Unknown main Agent tool: {name}")
+    if not child and isinstance(arguments, dict) and name in {'create_element', 'create_elements'}:
+        items = arguments.get('items', []) if name == 'create_elements' else [arguments]
+        if isinstance(items, list) and any(isinstance(item, dict) and item.get('type') == 'freedraw' for item in items):
+            raise ValueError('Hand-authored pen strokes belong to a drawing child Agent. Use spawn_agent or send_input '
+                             'with the region and desired visible result, then review and submit its result.')
     parsed = models[name].model_validate(arguments)
     return parsed.model_dump(exclude_unset=True)

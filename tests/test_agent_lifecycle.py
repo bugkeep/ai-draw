@@ -85,7 +85,7 @@ def test_child_context_continues_after_erasing_assigned_construction_object(tmp_
     store.close()
 
 
-def test_successful_geometry_context_keeps_actual_outputs_and_archived_arguments(tmp_path):
+def test_successful_geometry_context_keeps_actual_outputs_and_archived_arguments(tmp_path, native_drawing_child):
     async def check():
         store, runtime, session, task = workspace(tmp_path)
         models = DrawingAgents(store, ModelConfig(provider='ollama', model='llama3.1', api_base='http://localhost:11434'))
@@ -93,8 +93,10 @@ def test_successful_geometry_context_keeps_actual_outputs_and_archived_arguments
             'name': 'create_element', 'arguments': json.dumps({
                 'type': 'freedraw', 'name': '连续曲线', 'points': [[index, index % 20] for index in range(700)],
             })}}
-        output = await runtime.call_main_tool(models, task['id'], session['id'], session['document']['id'], call)
+        child = native_drawing_child(store, runtime, session, task)
+        output = child.call(call['function']['name'], json.loads(call['function']['arguments']), call['id'])
         assert output['ok']
+        assert store.get_document(session['document']['id'])['elements'] == []
         exchange = [{'role': 'assistant', 'tool_calls': [call]},
                     {'role': 'tool', 'tool_call_id': call['id'], 'content': json.dumps(output)}]
         compact = compact_drawing_exchange(exchange)
@@ -103,8 +105,9 @@ def test_successful_geometry_context_keeps_actual_outputs_and_archived_arguments
         assert json.loads(checkpoint['function_call_outputs'][0]['output']) == output
         assert checkpoint['function_call_outputs'][0]['call_id'] == call['id']
         recorded = store.connection.execute('SELECT arguments FROM agent_tool_calls WHERE caller_id=? AND call_id=?',
-                                            (f"main:{task['id']}", call['id'])).fetchone()[0]
+                                            (child.run['id'], call['id'])).fetchone()[0]
         assert recorded == call['function']['arguments']
+        await child.submit()
         assert len(store.get_document(session['document']['id'])['elements'][0]['points']) == 700
         invalid = {'id': 'invalid-edit', 'type': 'function', 'function': {
             'name': 'move_elements', 'arguments': json.dumps({'ids': ['missing'], 'dx': 10, 'dy': 0})}}

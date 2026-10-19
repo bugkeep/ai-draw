@@ -27,13 +27,15 @@ async def call(runtime, models, session, task, name, arguments, call_id):
         'id': call_id, 'type': 'function', 'function': {'name': name, 'arguments': json.dumps(arguments)}})
 
 
-def test_large_geometry_is_compressed_and_exact_points_and_raw_output_remain_retrievable(tmp_path):
+def test_large_geometry_is_compressed_and_exact_points_and_raw_output_remain_retrievable(tmp_path, native_drawing_child):
     async def check():
         store, runtime, session, task, models = workspace(tmp_path / 'geometry.sqlite3')
         try:
-            created = await call(runtime, models, session, task, 'create_element', {
+            child = native_drawing_child(store, runtime, session, task)
+            created = child.call('create_element', {
                 'type': 'freedraw', 'name': '较早的面部轮廓', 'points': [[index, index % 30] for index in range(900)],
             }, 'create')
+            await child.submit()
             element_id = created['changed_ids'][0]
             args = {'ids': [element_id], 'include_geometry': True}
             output = await call(runtime, models, session, task, 'inspect_scene', args, 'inspect')
@@ -159,7 +161,7 @@ def test_query_memory_survives_compaction_and_is_invalidated_by_canvas_changes(t
     asyncio.run(check())
 
 
-def test_mixed_exchange_archives_successful_parameters_and_preserves_full_error(tmp_path):
+def test_mixed_exchange_archives_successful_parameters_and_preserves_full_error(tmp_path, native_drawing_child):
     async def check():
         store, runtime, session, task, models = workspace(tmp_path / 'mixed.sqlite3')
         try:
@@ -167,7 +169,8 @@ def test_mixed_exchange_archives_successful_parameters_and_preserves_full_error(
                 'type': 'freedraw', 'points': [[index, index % 9] for index in range(700)]})}}
             bad = {'id': 'missing', 'type': 'function', 'function': {'name': 'move_elements', 'arguments': json.dumps({
                 'ids': ['missing'], 'dx': 10, 'dy': 0})}}
-            outputs = [await runtime.call_main_tool(models, task['id'], session['id'], session['document']['id'], item)
+            child = native_drawing_child(store, runtime, session, task)
+            outputs = [child.call(item['function']['name'], json.loads(item['function']['arguments']), item['id'])
                        for item in (good, bad)]
             exchange = [{'role': 'assistant', 'tool_calls': [good, bad]},
                         *[{'role': 'tool', 'tool_call_id': item['id'], 'content': json.dumps(output)}
@@ -267,36 +270,40 @@ def test_web_reference_in_memory_evidence_returns_field_error_then_valid_notes_c
     asyncio.run(check())
 
 
-def test_path_revision_history_survives_compaction_and_excludes_other_callers(tmp_path):
+def test_path_revision_history_survives_compaction_and_excludes_other_callers(tmp_path, native_drawing_child):
     async def check():
         store, runtime, session, task, models = workspace(tmp_path / 'revisions.sqlite3')
         try:
-            created = await call(runtime, models, session, task, 'create_element', {
+            child = native_drawing_child(store, runtime, session, task)
+            created = child.call('create_element', {
                 'type': 'freedraw', 'name': '面部轮廓', 'points': [[0, 0], [30, 40], [60, 0]],
             }, 'outline')
             element_id = created['changed_ids'][0]
             for index in range(4):
-                await call(runtime, models, session, task, 'reshape_path', {
+                child.call('reshape_path', {
                     'element_id': element_id, 'points': [[0, 0], [30, 40 + index], [60, 0]],
                 }, f'revise-{index}')
-            await call(runtime, models, session, task, 'compact_context', {
+            child.call('compact_context', {
                 'goal': '完成面部轮廓阶段', 'summary': '已调整轮廓，等待检查图像', 'object_ids': [element_id],
             }, 'save-stage')
-            document = store.get_document(session['document']['id'])
-            snapshot = runtime.memory.snapshot(task['id'], 'main', f"main:{task['id']}", 'new-state', document)
+            document = child.document
+            snapshot = runtime.memory.snapshot(task['id'], child.agent['agent_id'], child.run['id'], 'new-state', document)
             path = snapshot['execution_history']['recent_path_edits'][0]
             assert path['element_id'] == element_id and path['revisions'] == 4
             assert path['name'] == '面部轮廓' and path['exists']
             assert next(item for item in snapshot['execution_history']['tool_counts']
                         if item['tool_name'] == 'reshape_path')['calls'] == 4
             assert snapshot['known_queries_in_current_state'] == []
-            assert not runtime.memory.snapshot(task['id'], 'other-agent', f"main:{task['id']}", 'new-state',
+            assert not runtime.memory.snapshot(task['id'], 'other-agent', child.run['id'], 'new-state',
                 document)['execution_history']['tool_counts']
+            assert store.get_document(session['document']['id'])['elements'] == []
+            await child.submit()
             future = store.create_task(session['id'])
-            await call(runtime, models, session, future, 'reshape_path', {
+            continued = native_drawing_child(store, runtime, session, future, child.agent)
+            continued.call('reshape_path', {
                 'element_id': element_id, 'points': [[0, 0], [30, 50], [60, 0]],
             }, 'future-revision')
-            assert runtime.memory.snapshot(task['id'], 'main', f"main:{task['id']}", 'new-state',
+            assert runtime.memory.snapshot(task['id'], child.agent['agent_id'], child.run['id'], 'new-state',
                 document)['execution_history']['recent_path_edits'][0]['revisions'] == 4
         finally:
             await runtime.close()

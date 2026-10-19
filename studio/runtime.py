@@ -303,6 +303,11 @@ class DrawingRuntime:
         if existing is not None:
             return {**trace, **await self.apply_result(task_id, session_id, document_id, result_id)}
         document = self.store.get_document(document_id)
+        if name == 'update_elements' and 'points' in args.get('patch', {}):
+            targets = set(args['ids'])
+            if any(element['id'] in targets and element['type'] == 'freedraw' for element in document['elements']):
+                raise ValueError('Fine pen geometry belongs to a drawing child Agent. Use spawn_agent or send_input '
+                                 'with these object IDs for curve changes; direct moves and style updates remain available.')
         _, _, prepared, output = prepare_drawing_tool(preparation_name, preparation_args, document, document["elements"], document["selection"])
         output.update(trace)
         if prepared:
