@@ -63,9 +63,49 @@ class StudioStore:
                 id INTEGER PRIMARY KEY CHECK(id=1), config TEXT NOT NULL,
                 encrypted_key TEXT NOT NULL, revision INTEGER NOT NULL, updated_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS document_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                direction TEXT NOT NULL CHECK(direction IN ('undo','redo')),
+                snapshot TEXT NOT NULL CHECK(COALESCE(json_valid(snapshot)
+                    AND json_type(snapshot)='object'
+                    AND json_type(snapshot,'$.elements')='array'
+                    AND json_type(snapshot,'$.selection')='array',0))
+            );
+            CREATE INDEX IF NOT EXISTS idx_document_history_direction
+                ON document_history(document_id,direction,id);
         """)
         self.connection.commit()
+        try:
+            self._migrate_history()
+        except Exception:
+            self.connection.close()
+            raise
         self.agents = AgentStore(self)
+
+    def _migrate_history(self) -> None:
+        with self.connection:
+            self.connection.execute('BEGIN IMMEDIATE')
+            invalid = self.connection.execute(
+                "SELECT id FROM documents WHERE json_type(undo_history)<>'array' OR json_type(redo_history)<>'array' LIMIT 1",
+            ).fetchone()
+            if invalid:
+                raise ValueError('Canvas history must contain JSON arrays')
+            conflict = self.connection.execute(
+                'SELECT id FROM documents WHERE (json_array_length(undo_history)>0 OR '
+                'json_array_length(redo_history)>0) AND EXISTS '
+                '(SELECT 1 FROM document_history WHERE document_id=documents.id) LIMIT 1',
+            ).fetchone()
+            if conflict:
+                raise ValueError('Canvas history contains two storage formats; stop older servers before migration')
+            for direction in ('undo', 'redo'):
+                self.connection.execute(
+                    'INSERT INTO document_history(document_id,direction,snapshot) '
+                    f'SELECT d.id,?,j.value FROM documents d,json_each(d.{direction}_history) j '
+                    'ORDER BY d.id,CAST(j.key AS INTEGER)', (direction,),
+                )
+            self.connection.execute("UPDATE documents SET undo_history='[]',redo_history='[]' "
+                                    "WHERE undo_history<>'[]' OR redo_history<>'[]'")
 
     def close(self) -> None:
         with self.lock:
@@ -334,20 +374,32 @@ class StudioStore:
                 if not listeners:
                     self.listeners.pop(document_id)
 
-    @staticmethod
-    def _history_tail(expression: str, count: int) -> str:
-        # 表达式与数量仅由内部提供，用户数据继续使用 SQL 参数。
-        return (
-            f"CASE WHEN json_array_length({expression})<={count} THEN {expression} "
-            f"WHEN json_array_length({expression})={count + 1} THEN json_remove({expression},'$[0]') "
-            "ELSE (SELECT json_group_array(json(value)) FROM "
-            f"(SELECT value FROM json_each({expression}) WHERE key>=json_array_length({expression})-{count} ORDER BY key)) END"
+    def get_history(self, document_id: str, direction: str) -> list[dict[str, Any]]:
+        if direction not in {'undo', 'redo'}:
+            raise ValueError('Unknown history direction')
+        with self.lock:
+            if not self.connection.execute('SELECT 1 FROM documents WHERE id=?', (document_id,)).fetchone():
+                raise KeyError(f'Document not found: {document_id}')
+            rows = self.connection.execute(
+                'SELECT snapshot FROM document_history WHERE document_id=? AND direction=? ORDER BY id',
+                (document_id, direction),
+            ).fetchall()
+        return [json.loads(row['snapshot']) for row in rows]
+
+    def _trim_history(self, document_id: str, direction: str) -> None:
+        self.connection.execute(
+            'DELETE FROM document_history WHERE document_id=? AND direction=? AND id<='
+            '(SELECT id FROM document_history WHERE document_id=? AND direction=? ORDER BY id DESC LIMIT 1 OFFSET 50)',
+            (document_id, direction, document_id, direction),
         )
 
-    @classmethod
-    def _history_push(cls, column: str) -> str:
-        return (f"json_insert({cls._history_tail(column, 49)},'$[#]',"
-                "json_object('elements',json(elements),'selection',json(selection)))")
+    def _push_history(self, document_id: str, direction: str) -> None:
+        self.connection.execute(
+            'INSERT INTO document_history(document_id,direction,snapshot) '
+            "SELECT id,?,json_object('elements',json(elements),'selection',json(selection)) FROM documents WHERE id=?",
+            (direction, document_id),
+        )
+        self._trim_history(document_id, direction)
 
     def _save(self, row: sqlite3.Row, elements: list[dict], selection: list[str], record_undo: bool) -> dict[str, Any]:
         prior_elements = json.loads(row["elements"])
@@ -369,11 +421,12 @@ class StudioStore:
             )
             return {"id": row["id"], "title": row["title"], "version": row["version"],
                     "elements": elements, "selection": selection, "updated_at": now}
-        history = (f",undo_history={self._history_push('undo_history')},redo_history='[]'"
-                   if record_undo and prior_content != next_content else '')
+        if record_undo and prior_content != next_content:
+            self._push_history(row['id'], 'undo')
+            self.connection.execute("DELETE FROM document_history WHERE document_id=? AND direction='redo'", (row['id'],))
         now = time.time()
         self.connection.execute(
-            f"UPDATE documents SET version=?,elements=?,selection=?,updated_at=?{history} WHERE id=?",
+            "UPDATE documents SET version=?,elements=?,selection=?,updated_at=? WHERE id=?",
             (row["version"] + 1, self._json(elements), self._json(selection), now, row["id"]),
         )
         return {"id": row["id"], "title": row["title"], "version": row["version"] + 1,
@@ -388,6 +441,7 @@ class StudioStore:
         if set(selection) - set(ids):
             raise ValueError("Selection refers to missing elements")
         with self.lock, self.connection:
+            self.connection.execute('BEGIN IMMEDIATE')
             row = self.connection.execute(
                 'SELECT id,title,version,elements,selection,updated_at FROM documents WHERE id=?', (document_id,),
             ).fetchone()
@@ -403,6 +457,7 @@ class StudioStore:
     def commit_action(self, document_id: str, action: dict[str, Any], expected_elements: dict[str, Any],
                       receipt: tuple[str, int] | None = None) -> dict[str, Any]:
         with self.lock, self.connection:
+            self.connection.execute('BEGIN IMMEDIATE')
             row = self.connection.execute(
                 'SELECT id,title,version,elements,selection,updated_at FROM documents WHERE id=?', (document_id,),
             ).fetchone()
@@ -437,22 +492,27 @@ class StudioStore:
     def history_step(self, document_id: str, direction: str) -> dict[str, Any]:
         if direction not in {"undo", "redo"}:
             raise ValueError("Unknown history direction")
-        source, destination = ('undo_history', 'redo_history') if direction == 'undo' else ('redo_history', 'undo_history')
+        destination = 'redo' if direction == 'undo' else 'undo'
         with self.lock, self.connection:
+            self.connection.execute('BEGIN IMMEDIATE')
             row = self.connection.execute(
-                'SELECT id,title,version,elements,selection,updated_at,'
-                f"json_extract({source},'$[#-1]') target FROM documents WHERE id=?", (document_id,),
+                'SELECT id,title,version,elements,selection,updated_at FROM documents WHERE id=?', (document_id,),
             ).fetchone()
             if row is None:
                 raise KeyError(f"Document not found: {document_id}")
-            if row['target'] is None:
+            entry = self.connection.execute(
+                'SELECT id,snapshot FROM document_history WHERE document_id=? AND direction=? ORDER BY id DESC LIMIT 1',
+                (document_id, direction),
+            ).fetchone()
+            if entry is None:
                 return self._document(row)
-            target = json.loads(row['target'])
-            remaining = self._history_tail(f"json_remove({source},'$[#-1]')", 50)
+            target = json.loads(entry['snapshot'])
+            self._push_history(document_id, destination)
+            self.connection.execute('DELETE FROM document_history WHERE id=?', (entry['id'],))
+            self._trim_history(document_id, direction)
             now = time.time()
             self.connection.execute(
-                f"UPDATE documents SET {source}={remaining},{destination}={self._history_push(destination)},"
-                "version=?,elements=?,selection=?,updated_at=? WHERE id=?",
+                'UPDATE documents SET version=?,elements=?,selection=?,updated_at=? WHERE id=?',
                 (row["version"] + 1, self._json(target["elements"]), self._json(target["selection"]),
                  now, document_id),
             )

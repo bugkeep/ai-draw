@@ -83,8 +83,7 @@ def main():
         contexts = [entry['payload'] for entry in logs if entry['kind'] == 'model_context']
         checks['eraser_tool_used'] = calls['erase_strokes'] >= 2
         checks['actual_images_in_model_context'] = sum(len(item.get('image_observation_ids', [])) for item in contexts) >= 4
-        row = store.connection.execute('SELECT undo_history FROM documents WHERE id=?', (document_id,)).fetchone()
-        previous = json.loads(row['undo_history'])[-1]
+        previous = store.get_history(document_id, 'undo')[-1]
         checks['undo'] = store.history_step(document_id, 'undo')['elements'] == previous['elements']
         checks['redo'] = store.history_step(document_id, 'redo')['elements'] == after_second['elements']
         observations = [dict(row) for row in store.connection.execute(

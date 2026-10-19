@@ -107,6 +107,12 @@ python -m scripts.evaluate_history --source-database runs/studio.sqlite3 --datab
 
 命令要求新的评测数据库，原始数据库只读；报告保存实际采样耗时、SQLite 版本、存储代码标识和历史恢复检查。
 
+画布历史在 SQLite 中逐步保存，支持最近 50 步撤销和重做。已有历史在启动时自动迁移；升级前应备份数据库，并停止使用同一数据库的旧版服务。可通过以下命令在独立副本中核对当前画布、全部历史顺序和其他原有数据：
+
+```bash
+python -m scripts.verify_history_migration --source-database runs/studio.sqlite3 --database runs/history-migration.sqlite3 --output runs/history-migration.json
+```
+
 启动服务并在设置页配置真实模型后，可运行连接验证、多轮指代与并行子 Agent 评测：
 
 ```bash

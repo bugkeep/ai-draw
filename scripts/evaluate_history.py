@@ -38,12 +38,14 @@ def main():
     store = StudioStore(args.database)
     try:
         document_id = store.session_document_id(args.session_id) if args.session_id else store.connection.execute(
-            'SELECT id FROM documents ORDER BY length(undo_history) DESC LIMIT 1').fetchone()['id']
+            'SELECT d.id FROM documents d LEFT JOIN document_history h ON h.document_id=d.id '
+            'GROUP BY d.id ORDER BY COALESCE(SUM(length(CAST(h.snapshot AS BLOB))),0) DESC,d.id LIMIT 1').fetchone()['id']
         before = store.get_document(document_id)
         target = next(item['id'] for item in before['elements'] if not item.get('isDeleted'))
-        row = store.connection.execute('SELECT undo_history,length(CAST(elements AS BLOB)) scene_bytes,'
-            'length(CAST(undo_history AS BLOB)) history_bytes FROM documents WHERE id=?', (document_id,)).fetchone()
-        prior_undo = json.loads(row['undo_history'])
+        row = store.connection.execute('SELECT length(CAST(elements AS BLOB)) scene_bytes,'
+            '(SELECT COALESCE(SUM(length(CAST(snapshot AS BLOB))),0) FROM document_history WHERE document_id=d.id) '
+            'history_bytes FROM documents d WHERE id=?', (document_id,)).fetchone()
+        prior_undo = store.get_history(document_id, 'undo')
         unrelated = list(store.connection.execute('SELECT * FROM documents WHERE id<>? ORDER BY id', (document_id,)))
         profile = cProfile.Profile()
         profile.enable()
@@ -53,8 +55,7 @@ def main():
         after = values[-1]
         expected_undo = (prior_undo + [{'elements': item['elements'], 'selection': item['selection']}
             for item in [before, *values[:-1]]])[-50:]
-        actual_undo = json.loads(store.connection.execute('SELECT undo_history FROM documents WHERE id=?',
-                                                        (document_id,)).fetchone()['undo_history'])
+        actual_undo = store.get_history(document_id, 'undo')
         history_steps = min(args.steps, 50)
         expected_undone = [before, *values][args.steps - history_steps]
         undo, undone = measure(lambda: store.history_step(document_id, 'undo'), history_steps)

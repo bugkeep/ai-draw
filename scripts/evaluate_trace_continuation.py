@@ -65,8 +65,7 @@ def main():
         child_outputs = [outputs[(entry['agent_id'], entry['payload']['call_id'])] for entry in continuation]
         plan_id = parent_output.get('trace_plan_id')
         parent_ids = set(parent_output.get('changed_ids', []))
-        history = json.loads(store.connection.execute('SELECT undo_history FROM documents WHERE id=?',
-                                                     (document_id,)).fetchone()[0])
+        history = store.get_history(document_id, 'undo')
         original = next((state['elements'] for state in history
                          if {item['id'] for item in state['elements']} == parent_ids | {protected['id']}), [])
         errors = [(entry['agent_id'], entry['payload']['call_id']) for entry in logs if entry['kind'] == 'function_call_output'
