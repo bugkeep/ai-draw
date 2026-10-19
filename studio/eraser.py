@@ -7,7 +7,7 @@ from bisect import bisect_right
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from shapely import LineString, Point, Polygon, box
+from shapely import GeometryCollection, LineString, Point, Polygon, box, make_valid
 from shapely.affinity import rotate, scale
 
 
@@ -18,12 +18,39 @@ class EraseStrokes(BaseModel):
     radius: float = Field(default=8, gt=0, le=10000, allow_inf_nan=False)
     mode: Literal["segment", "stroke"] = "segment"
     ids: list[str] = Field(default_factory=list)
+    visible_only: bool = False
 
     @model_validator(mode="after")
     def check_coordinates(self):
         if not all(math.isfinite(value) and abs(value) <= 100000 for point in self.points for value in point):
             raise ValueError("Eraser coordinates must be finite and within the canvas")
         return self
+
+
+def fill_color_visible(color) -> bool:
+    if not isinstance(color, str) or not color or color == 'transparent':
+        return False
+    if color.startswith('#') and (len(color) == 5 and color[-1] == '0' or len(color) == 9 and color[-2:] == '00'):
+        return False
+    return True
+
+
+def filled_path(element: dict) -> bool:
+    if element.get('type') not in {'freedraw', 'line'} or not fill_color_visible(element.get('backgroundColor')):
+        return False
+    points = element.get('points') or []
+    # Excalidraw 0.18.1 uses LINE_CONFIRM_THRESHOLD=8 at zoom 1 for a closed path.
+    return len({tuple(point) for point in points}) >= 3 and math.dist(points[0], points[-1]) <= 8
+
+
+def opaque_fill(element: dict) -> bool:
+    color = element.get('backgroundColor')
+    if (element.get('opacity', 100) != 100 or element.get('fillStyle', 'solid') != 'solid'
+            or not fill_color_visible(color) or not color.startswith('#')):
+        return False
+    if len(color) == 5 and color[-1].lower() != 'f' or len(color) == 9 and color[-2:].lower() != 'ff':
+        return False
+    return element.get('type') in {'rectangle', 'ellipse', 'diamond'} or filled_path(element)
 
 
 def element_geometry(element: dict):
@@ -33,7 +60,8 @@ def element_geometry(element: dict):
     kind = element["type"]
     if kind in {"freedraw", "line", "arrow"}:
         points = [(x + point[0], y + point[1]) for point in element["points"]]
-        geometry = LineString(points) if len(set(points)) > 1 else Point(points[0])
+        geometry = (make_valid(Polygon(points)) if filled_path(element) else
+                    LineString(points) if len(set(points)) > 1 else Point(points[0]))
     elif kind == "ellipse":
         geometry = scale(Point(center).buffer(1, quad_segs=32), width / 2, height / 2, origin=center)
     elif kind == "diamond":
@@ -41,7 +69,7 @@ def element_geometry(element: dict):
                             (center[0], y + height), (x, center[1])])
     else:
         geometry = box(x, y, x + width, y + height)
-    if kind in {"rectangle", "ellipse", "diamond"} and element.get("backgroundColor") == "transparent":
+    if kind in {"rectangle", "ellipse", "diamond"} and not fill_color_visible(element.get('backgroundColor')):
         geometry = geometry.boundary
     return rotate(geometry, element.get("angle", 0), origin=center, use_radians=True)
 
@@ -88,24 +116,38 @@ def erase_elements(elements: list[dict], selection: list[str], arguments: dict,
         raise ValueError("An eraser target no longer exists")
     candidates = [live[element_id] for element_id in spec.ids] if spec.ids else list(live.values())
     if spec.mode == "segment" and spec.ids and any(
-        item["type"] not in {"freedraw", "line"} for item in candidates
+        item["type"] not in {"freedraw", "line"} or filled_path(item) for item in candidates
     ):
-        raise ValueError("Segment erasing supports pen and line objects; use mode=stroke for whole shapes or arrows")
+        raise ValueError("Segment erasing supports unfilled pen and line objects; use mode=stroke for filled shapes or arrows")
     trail = LineString(spec.points) if len(set(spec.points)) > 1 else Point(spec.points[0])
     brush = trail.buffer(spec.radius, quad_segs=16)
+    covered = {}
+    if (not spec.ids or spec.visible_only) and any(opaque_fill(element) for element in live.values()):
+        occluders = GeometryCollection()
+        for element in reversed(list(live.values())):
+            covered[element['id']] = occluders
+            if opaque_fill(element):
+                geometry = element_geometry(element)
+                if geometry.area:
+                    occluders = occluders.union(geometry)
     replacements, changed, removed = {}, [], set()
     for element in candidates:
-        if element.get("locked") or spec.mode == "segment" and element["type"] not in {"freedraw", "line"}:
+        if element.get("locked") or spec.mode == "segment" and (
+            element["type"] not in {"freedraw", "line"} or filled_path(element)
+        ):
             continue
         geometry = element_geometry(element)
         half_width = element.get("strokeWidth", 1) * (4.25 if element["type"] == "freedraw" else 1) / 2
-        if not geometry.intersects(brush.buffer(half_width)):
+        cut = brush.buffer(half_width)
+        if element['id'] in covered and not covered[element['id']].is_empty:
+            cut = cut.difference(covered[element['id']])
+        if not geometry.intersects(cut):
             continue
         if spec.mode == "stroke" or geometry.geom_type != "LineString":
             replacements[element["id"]] = [{**_revision(element), "isDeleted": True}]
             removed.add(element["id"])
         else:
-            remaining = geometry.difference(brush.buffer(half_width))
+            remaining = geometry.difference(cut)
             parts = ([remaining] if remaining.geom_type == "LineString" else list(remaining.geoms)
                      if remaining.geom_type in {"MultiLineString", "GeometryCollection"} else [])
             parts = [part for part in parts if part.geom_type == "LineString" and part.length > 1e-7]

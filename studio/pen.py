@@ -3,6 +3,7 @@ import math
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .actions import COLOR_PATTERN, Point
+from .eraser import fill_color_visible
 
 
 class PenPath(BaseModel):
@@ -14,6 +15,7 @@ class PenPath(BaseModel):
     closed: bool = False
     strokeWidth: float | None = Field(default=None, gt=0, le=32)
     strokeColor: str | None = None
+    backgroundColor: str | None = None
     opacity: int | None = Field(default=None, ge=0, le=100)
 
     @model_validator(mode="after")
@@ -22,6 +24,8 @@ class PenPath(BaseModel):
             raise ValueError("Path coordinates must be finite and within the canvas limit")
         if self.strokeColor is not None and not COLOR_PATTERN.fullmatch(self.strokeColor):
             raise ValueError("Invalid path color")
+        if self.backgroundColor is not None and not COLOR_PATTERN.fullmatch(self.backgroundColor):
+            raise ValueError('Invalid path fill color')
         if self.closed and len(set(self.points)) < 3:
             raise ValueError("A closed path requires three distinct points")
         return self
@@ -34,6 +38,7 @@ class DrawPaths(BaseModel):
     origin: Point = (0, 0)
     scale: float = Field(default=1, gt=0, allow_inf_nan=False)
     strokeColor: str = "#242424"
+    backgroundColor: str = 'transparent'
     strokeWidth: float = Field(default=0.4, gt=0, le=32)
     opacity: int = Field(default=100, ge=0, le=100)
 
@@ -41,6 +46,11 @@ class DrawPaths(BaseModel):
     def check_style(self):
         if not COLOR_PATTERN.fullmatch(self.strokeColor):
             raise ValueError("Invalid path color")
+        if not COLOR_PATTERN.fullmatch(self.backgroundColor):
+            raise ValueError('Invalid path fill color')
+        if any(fill_color_visible(path.backgroundColor if path.backgroundColor is not None else self.backgroundColor)
+               and not path.closed for path in self.paths):
+            raise ValueError('A filled pen contour must be closed; use backgroundColor=transparent for open strokes')
         if not all(math.isfinite(value) and abs(value) <= 100000 for value in self.origin):
             raise ValueError("Invalid path origin")
         return self
@@ -76,6 +86,8 @@ def interpolate_path(points: list[Point], smooth: bool, closed: bool) -> list[Po
                                 + (2 * p0[axis] - 5 * p1[axis] + 4 * p2[axis] - p3[axis]) * t * t
                                 + (-p0[axis] + 3 * p1[axis] - 3 * p2[axis] + p3[axis]) * t * t * t), 3)
                                 for axis in range(2)))
+    if closed:
+        result[-1] = result[0]
     return result
 
 
@@ -90,6 +102,7 @@ def path_elements(arguments: dict) -> list[dict]:
         items.append({"type": "freedraw", "name": path.name,
                       "points": interpolate_path(points, path.smooth, path.closed), "pointSpace": "absolute",
                       "strokeColor": path.strokeColor or drawing.strokeColor,
+                      'backgroundColor': path.backgroundColor if path.backgroundColor is not None else drawing.backgroundColor,
                       "strokeWidth": path.strokeWidth if path.strokeWidth is not None else drawing.strokeWidth,
                       "opacity": path.opacity if path.opacity is not None else drawing.opacity})
     return items

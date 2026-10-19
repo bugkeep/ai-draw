@@ -86,6 +86,11 @@ class DeleteElements(BaseModel):
     ids: list[str] = Field(min_length=1)
 
 
+class ReorderElements(BaseModel):
+    ids: list[str] = Field(min_length=1)
+    position: Literal['front', 'back']
+
+
 ACTION_MODELS = {
     "create_element": CreateElement,
     "select_elements": SelectElements,
@@ -93,6 +98,7 @@ ACTION_MODELS = {
     "update_elements": UpdateElements,
     "delete_elements": DeleteElements,
     "erase_strokes": EraseStrokes,
+    'reorder_elements': ReorderElements,
 }
 PATCH_FIELDS = {
     "x", "y", "width", "height", "angle", "strokeColor", "backgroundColor",
@@ -276,6 +282,17 @@ def apply_action(elements: list[dict[str, Any]], selection: list[str], action: d
             raise ValueError(f"Elements not found: {', '.join(sorted(missing))}")
         if kind == "select_elements":
             selected = ids
+        elif kind == 'reorder_elements':
+            targets = set(ids)
+            moving = [element for element in scene if element['id'] in targets and not element.get('locked')]
+            moved_ids = {element['id'] for element in moving}
+            remaining = [element for element in scene if element['id'] not in moved_ids]
+            reordered = remaining + moving if args['position'] == 'front' else moving + remaining
+            if [element['id'] for element in reordered] != [element['id'] for element in scene]:
+                changed = [element['id'] for element in moving]
+            scene = reordered
+            if moving:
+                selected = [element['id'] for element in moving]
         else:
             for element_id in ids:
                 element = by_id[element_id]
