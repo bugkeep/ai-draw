@@ -71,6 +71,7 @@ def commons_image_candidates(payload):
             continue
         results.append({'title': page['title'].removeprefix('File:'), 'url': info['descriptionurl'],
             'image': info.get('thumburl') or info['url'], 'mime': info.get('mime', ''),
+            'original_image': info.get('url', ''),
             'description': text('ImageDescription')[:1000], 'license': text('LicenseShortName') or 'unverified',
             'license_url': text('LicenseUrl'), 'artist': text('Artist')[:500]})
     return results
@@ -259,7 +260,7 @@ class ReferenceImages:
         metadata = {**metadata, 'reference_id': reference_id, 'title': candidate['title'][:240],
                     'url': candidate['url'], 'image_url': candidate['image'],
                     'license': candidate.get('license', 'unverified'),
-                    **{key: candidate[key] for key in ('license_url', 'artist') if candidate.get(key)},
+                    **{key: candidate[key] for key in ('license_url', 'artist', 'retrieval_fallback') if candidate.get(key)},
                     'description': candidate.get('description', '')[:1000], 'content_is_untrusted': True}
         with self.store.lock, self.store.connection:
             row = self.store.connection.execute('SELECT metadata FROM reference_images WHERE id=?',
@@ -298,10 +299,18 @@ class ReferenceImages:
         raise ValueError('Reference image has too many redirects')
 
     async def _candidate(self, client, candidate):
-        try:
-            return await self._download(client, candidate)
-        except (httpx.HTTPError, OSError, ValueError, Image.DecompressionBombError) as error:
-            return {'url': candidate['image'], 'error': str(error)[:300]}
+        errors = []
+        attempts = [candidate]
+        if candidate.get('original_image') and candidate['original_image'] != candidate['image']:
+            attempts.append({**candidate, 'image': candidate['original_image']})
+        for index, attempt in enumerate(attempts):
+            try:
+                if index:
+                    attempt = {**attempt, 'retrieval_fallback': errors}
+                return await self._download(client, attempt)
+            except (httpx.HTTPError, OSError, ValueError, Image.DecompressionBombError) as error:
+                errors.append({'url': attempt['image'], 'error': str(error)[:300]})
+        return {'url': candidate['image'], 'error': '; '.join(item['error'] for item in errors), 'attempts': errors}
 
     async def search(self, task_id, agent_id, arguments, caller_id=None):
         started = time.perf_counter()
@@ -370,8 +379,9 @@ class ReferenceImages:
                 if image not in seen:
                     query_matches = sum(word in f'{title} {source}'.casefold()
                         for word in arguments['query'].casefold().split() if len(word) >= 4)
-                    candidates.append({'title': title, 'url': source, 'image': image, 'rank': matches * 4 + query_matches,
-                        **{key: result[key] for key in ('description', 'license', 'license_url', 'artist')
+                    rank = matches * 4 + query_matches
+                    candidates.append({'title': title, 'url': source, 'image': image, 'rank': rank,
+                        **{key: result[key] for key in ('description', 'license', 'license_url', 'artist', 'original_image')
                            if source_kind == 'commons' and result.get(key)}})
                     seen.add(image)
             except (ValueError, KeyError) as error:
@@ -389,11 +399,14 @@ class ReferenceImages:
                         image_lists.append(page)
                 candidates = [candidate for batch in zip_longest(*image_lists) for candidate in batch if candidate]
             downloaded = await asyncio.gather(*(self._candidate(client, candidate) for candidate in candidates[:6]))
-        sources, hashes, source_pages = [], [], set()
+        verified = []
         for item in downloaded:
             if isinstance(item, dict):
                 excluded.append(item)
                 continue
+            verified.append(item)
+        sources, hashes, source_pages = [], [], set()
+        for item in verified:
             candidate, original, decoded = item
             metadata = decoded[1]
             similar = any((int(metadata['perceptual_hash'], 16) ^ int(prior['perceptual_hash'], 16)).bit_count() <= 5
@@ -409,6 +422,8 @@ class ReferenceImages:
                 break
         self.store.log_tool(task_id, agent_id, 0, 'reference_image_filter', {
             'query': arguments['query'], 'source': source_kind, 'candidates': results, 'excluded': excluded,
+            'verified_pixels': [{'url': item[0]['image'], 'width': item[2][1]['width'],
+                                 'height': item[2][1]['height']} for item in verified],
             'selected': [source['reference_id'] for source in sources]})
         if not sources:
             return {'ok': False, 'error': 'No useful reference image pixels were verified. Refine the query or try another page.',
