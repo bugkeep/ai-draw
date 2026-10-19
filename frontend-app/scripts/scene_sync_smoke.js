@@ -22,6 +22,8 @@ let patchBytes = 0
 let patchCount = 0
 let fullBytes = 0
 let sessionReads = 0
+let cancelOnStroke = false
+let cancelledStrokeTask
 page.on('request', (request) => {
   if (request.method() === 'GET' && /\/api\/studio\/sessions\/[^/]+$/.test(request.url())) sessionReads += 1
 })
@@ -84,6 +86,12 @@ try {
     connectionCount += 1
     server.onMessage((message) => {
       const event = JSON.parse(message.toString())
+      if (event.type === 'stroke_progress' && cancelOnStroke) {
+        cancelOnStroke = false
+        ws.send(message)
+        cancelledStrokeTask = request(`/api/studio/tasks/${event.payload.task_id}/cancel`, {})
+        return
+      }
       if (event.type === 'scene_patch') {
         patchCount += 1
         patchBytes += Buffer.byteLength(message)
@@ -141,11 +149,26 @@ try {
   await edit()
   await revision(viewer, document.version)
   assert.equal((await exported(page)).elements.length, 0, 'A previous canvas event crossed into another session')
+  cancelOnStroke = true
+  const interrupted = await request(`/api/studio/sessions/${other.id}/messages`, { message: '用画笔画一张笑脸' })
+  let cancelled = false
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const state = await request(`/api/studio/tasks/${interrupted.id}`)
+    if (state.status === 'cancelled') { cancelled = true; break }
+    await new Promise((resolve) => setTimeout(resolve, 30))
+  }
+  assert.ok(cancelled && cancelledStrokeTask, 'Task was not cancelled during its actual stroke animation')
+  await cancelledStrokeTask
+  await page.waitForFunction(() => !document.querySelector('.activity'))
+  const savedAfterCancel = (await request(`/api/studio/sessions/${other.id}`)).document
+  assert.deepEqual(geometry((await exported(page)).elements), geometry(savedAfterCancel.elements),
+    'An interrupted transient stroke remained visible after task cancellation')
   assert.equal(errors.length, 0, errors.join('\n'))
   assert.ok(patchCount >= 38 && patchBytes < fullBytes / 8, 'Scene events still repeat the full canvas')
   console.log(JSON.stringify({ continuous_updates: true, native_export_matches_both_windows: true,
     missing_revision_resync: true, reordered_revision_resync: true, reconnect_replay: true,
-    session_isolation: true, no_browser_errors: true, patch_count: patchCount, patch_bytes: patchBytes,
+    session_isolation: true, cancelled_stroke_restores_saved_scene: true,
+    no_browser_errors: true, patch_count: patchCount, patch_bytes: patchBytes,
     equivalent_full_document_bytes: fullBytes, native_object_count: document.elements.filter((element) => !element.isDeleted).length,
     connection_count: connectionCount }))
 } catch (error) {

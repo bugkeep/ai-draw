@@ -371,7 +371,7 @@ export default function App() {
       applyDocument(next, { showScene: !(value.source === 'manual' && value.client_id === CLIENT_ID),
         focus: value.source === 'agent' })
     } else if (event.type === 'scene') {
-      if (value.document.version <= docRef.current.version) return
+      if (value.document.version < docRef.current.version) return
       if (value.source === 'manual' && value.client_id === CLIENT_ID) return
       if (value.source !== 'manual') {
         clearTimeout(saveTimerRef.current)

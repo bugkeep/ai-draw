@@ -180,6 +180,8 @@ python -m scripts.verify_history_migration --source-database runs/studio.sqlite3
 
 同一幅人物作品还通过真实浏览器与生产 HTTP/WebSocket 服务进行了连续移动、丢消息、乱序、断线和画布切换检查。38 个收到的增量消息合计 76,582 字节，对应完整文档为 42,548,438 字节；两个窗口的原生导出均与当前服务端几何一致，浏览器错误为空。记录为 `runs/browser-scene-events-portrait-20261020.stdout.log`。这些字节数为 JSON 负载，不能直接当作模型耗时或压缩后的网络流量。长时间连接的保活稳定性仍需持续观察。
 
+补充真实画笔动画的中途取消检查：同一版本的恢复快照仍需应用，以移除尚未提交的临时笔画。取消后浏览器原生导出与服务端保存内容一致；记录为 `runs/browser-stroke-cancel-fixed-20261020.stdout.log`。
+
 ```bash
 python -m scripts.evaluate_scene_events --source-database ARCHIVE --output runs/scene-events.json
 python -m scripts.verify_browser --database runs/scene-sync-browser.sqlite3 --scripts scene_sync_smoke.js
