@@ -41,5 +41,5 @@ export const studioApi = {
 
 export function eventsUrl(documentId, after = 0) {
   const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${scheme}//${window.location.host}/api/studio/documents/${documentId}/events?after=${after}`
+  return `${scheme}//${window.location.host}/api/studio/documents/${documentId}/events?after=${after}&patches=true`
 }

@@ -170,6 +170,21 @@ python -m scripts.verify_history_migration --source-database runs/studio.sqlite3
 
 `evaluate_quality` 使用任务结束后的实际共享原生文档导出 PNG，候选图片不参与最终作品导出。模型看图的证据单独核对共享画布范围、当前内容标识和实际模型上下文中的图片编号。报告保存实现文件和题目数据的 SHA-256，分别记录候选图数量与最终共享画布的看图状态。
 
+## 连续作画事件与断线恢复
+
+画布、撤销历史、提交进度和增量事件使用同一事务。新增检查覆盖事件插入失败后的完整回滚、两个 SQLite 写入连接的版本顺序、会话文档与游标的一致读快照、503 条事件跨页回放、旧客户端快照兼容、删除通知，以及客户端文字消息与画布通知同时到达时的事件交付。
+
+该版本后端检查为 117/117 项通过，前端同步函数检查为 5/5 项通过；完整浏览器检查继续通过，并新增连续更新、双窗口原生导出一致、丢消息与乱序后的恢复、断线回放和画布切换检查。记录为 `runs/tests-scene-events-full-20261020.stdout.log` 和 `runs/browser-scene-events-full-20261020.stdout.log`。测试发现并修复 Excalidraw 自动规范化元数据被当成手工绘图保存的问题；规范化元数据不再使旧几何回写。
+
+读取已经完成的 1,323 对象人物作品归档，1,324 个完整画布事件的 JSON 负载合计为 764,807,027 字节；相同版本的增量负载为 2,529,465 字节，减少 99.67%。前端实际使用的处理函数逐版本回放后，最终对象内容、图层顺序和选择状态一致。记录为 `runs/portrait-scene-event-replay-20261020.json` 及其 `.replay.json`。这是已保存实际数据的回放，没有重新生成绘画或发送模型请求，也没有删除原归档。
+
+同一幅人物作品还通过真实浏览器与生产 HTTP/WebSocket 服务进行了连续移动、丢消息、乱序、断线和画布切换检查。38 个收到的增量消息合计 76,582 字节，对应完整文档为 42,548,438 字节；两个窗口的原生导出均与当前服务端几何一致，浏览器错误为空。记录为 `runs/browser-scene-events-portrait-20261020.stdout.log`。这些字节数为 JSON 负载，不能直接当作模型耗时或压缩后的网络流量。长时间连接的保活稳定性仍需持续观察。
+
+```bash
+python -m scripts.evaluate_scene_events --source-database ARCHIVE --output runs/scene-events.json
+python -m scripts.verify_browser --database runs/scene-sync-browser.sqlite3 --scripts scene_sync_smoke.js
+```
+
 ## 逐步作画耗时
 
 回放使用已经保存的真实模型动作，经过当前生产绘图执行器逐项提交，不发送模型请求。相同的 113 个对象及几何信息保持一致，112 条画笔轨迹全部具有有序的过程事件，撤销和重做检查通过。

@@ -215,7 +215,7 @@ async def cancel_task(request: Request, task_id: str):
 
 
 @router.websocket("/documents/{document_id}/events")
-async def document_events(websocket: WebSocket, document_id: str, after: int = 0):
+async def document_events(websocket: WebSocket, document_id: str, after: int = 0, patches: bool = False):
     store: StudioStore = websocket.app.state.studio_store
     try:
         store.get_document(document_id)
@@ -226,35 +226,57 @@ async def document_events(websocket: WebSocket, document_id: str, after: int = 0
     queue: asyncio.Queue = asyncio.Queue()
     store.subscribe(document_id, queue)
     seen = after
+    receive_task = asyncio.create_task(websocket.receive_text())
+    event_task = None
+
+    async def send(event):
+        if event['type'] == 'scene_patch' and not patches:
+            # Older editors still receive snapshots. New editors replay the exact saved patches.
+            event = {**event, 'type': 'scene', 'payload': {
+                **{key: value for key, value in event['payload'].items() if key != 'patch'},
+                'document': store.get_document(document_id),
+            }}
+        await websocket.send_json(event)
+
     try:
+        # Subscribe before reading so a concurrent commit cannot fall between replay and live delivery.
+        store.get_document(document_id)
         while True:
-            batch = store.events_after(document_id, seen)
-            for event in batch:
-                await websocket.send_json(event)
-                seen = event["seq"]
-            if len(batch) < 500:
-                break
-        while True:
-            event_task = asyncio.create_task(queue.get())
-            receive_task = asyncio.create_task(websocket.receive_text())
-            done, pending = await asyncio.wait({event_task, receive_task}, return_when=asyncio.FIRST_COMPLETED)
-            for task in pending:
-                task.cancel()
-            await asyncio.gather(*pending, return_exceptions=True)
+            # Queue notifications are wakeups; the database supplies the authoritative sequence.
+            while True:
+                batch = store.events_after(document_id, seen)
+                for event in batch:
+                    await send(event)
+                    seen = event['seq']
+                if len(batch) < 500:
+                    break
+            if event_task is None:
+                event_task = asyncio.create_task(queue.get())
+            done, _ = await asyncio.wait({event_task, receive_task}, return_when=asyncio.FIRST_COMPLETED)
             if receive_task in done:
                 await receive_task
-                continue
-            event = event_task.result()
-            if event["seq"] > seen:
-                await websocket.send_json(event)
-                seen = event["seq"]
-                if event["type"] == "session_deleted":
+                receive_task = asyncio.create_task(websocket.receive_text())
+            if event_task in done:
+                notifications = [event_task.result()]
+                event_task = None
+                while not queue.empty():
+                    notifications.append(queue.get_nowait())
+                # Deletion removes durable events, so its notification must be delivered directly.
+                deletion = next((event for event in notifications if event['type'] == 'session_deleted'), None)
+                if deletion:
+                    await send(deletion)
                     await websocket.close(code=1000)
                     return
     except WebSocketDisconnect:
         pass
+    except KeyError:
+        await websocket.close(code=1000)
     finally:
         store.unsubscribe(document_id, queue)
+        pending = [task for task in (receive_task, event_task) if task is not None]
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
 
 
 def create_store() -> StudioStore:

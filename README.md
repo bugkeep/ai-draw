@@ -180,6 +180,8 @@ node scripts/export_smoke.js
 node scripts/settings_smoke.js
 node scripts/sessions_smoke.js
 node scripts/deletion_smoke.js
+node scripts/scene_sync_smoke.js
+npm run test:sync
 ```
 
 检查覆盖真实 Excalidraw 手绘、撤销、重做、刷新恢复、多种格式导出，以及设置导航、配置保存、密钥不回传、任务期间禁止保存、画布切换和双窗口隔离。`settings_smoke.js` 会保留已有模型连接并保存一次配置；未配置模型的测试环境会保存本地服务预设，全部绘图检查使用应用内的明确指令。已配置真实模型时，可设置环境变量 `DRAW_AGENT_TEST_MODEL=1`，同时点击设置页“测试连接”并验证实际模型响应。
@@ -189,6 +191,8 @@ node scripts/deletion_smoke.js
 `deletion_smoke.js` 检查确认与取消、删除当前或其他画布、双窗口通知、运行任务保护、停止后删除和刷新恢复。在空白测试数据库中运行时，也会检查删除最后一个画布后的空白画布创建。`evaluate_transformer` 使用真实模型绘制 Transformer 流程图，再修改选中标题并检查其他对象、撤销和重做。
 
 也可以在仓库根目录运行 `python -m scripts.verify_browser --database runs/browser-verification.sqlite3`，自动使用空闲端口和独立数据库完成浏览器检查，结束后正常关闭测试服务。
+
+`scene_sync_smoke.js` 使用真实 HTTP 与 WebSocket 服务，检查连续修改、双窗口导出一致、丢失或乱序消息后的快照恢复、断线回放和画布切换。它会创建独立测试会话。已有完整作画事件归档时，可运行 `python -m scripts.evaluate_scene_events --source-database ARCHIVE --output runs/scene-events.json`，只读比较原有全量事件与增量数据量，并通过前端实际使用的增量处理函数重建最终对象、图层顺序与选择状态。该回放不发送模型请求，不衡量重新作画的总延迟。
 
 ## 当前边界
 

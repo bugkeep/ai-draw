@@ -28,6 +28,9 @@ jobs:
       - name: Build frontend
         working-directory: frontend-app
         run: npm run build
+      - name: Test scene patch recovery
+        working-directory: frontend-app
+        run: npm run test:sync
       - name: Install browser for editor test
         working-directory: frontend-app
         run: npx playwright install --with-deps chromium

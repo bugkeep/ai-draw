@@ -4,11 +4,13 @@ import sqlite3
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from .actions import apply_action, matches_fingerprint
 from .agent_store import AgentStore
+from .scene_patch import scene_patch
 
 
 class VersionConflict(Exception):
@@ -110,6 +112,18 @@ class StudioStore:
     def close(self) -> None:
         with self.lock:
             self.connection.close()
+
+    @contextmanager
+    def _read_snapshot(self):
+        with self.lock:
+            opened = not self.connection.in_transaction
+            if opened:
+                self.connection.execute('BEGIN')
+            try:
+                yield
+            finally:
+                if opened:
+                    self.connection.rollback()
 
     def get_model_settings(self) -> dict[str, Any] | None:
         with self.lock:
@@ -220,7 +234,7 @@ class StudioStore:
         return result
 
     def get_session(self, session_id: str) -> dict[str, Any]:
-        with self.lock:
+        with self._read_snapshot():
             session = self.connection.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
             if session is None:
                 raise KeyError(f"Session not found: {session_id}")
@@ -343,15 +357,22 @@ class StudioStore:
 
     def publish(self, document_id: str, event_type: str, payload: Any) -> dict[str, Any]:
         with self.lock, self.connection:
-            cursor = self.connection.execute(
-                "INSERT INTO events(document_id,type,payload,created_at) VALUES(?,?,?,?)",
-                (document_id, event_type, self._json(payload), time.time()),
-            )
-            event = {"seq": cursor.lastrowid, "document_id": document_id, "type": event_type, "payload": payload}
-            listeners = tuple(self.listeners.get(document_id, {}).items())
+            event, listeners = self._append_event(document_id, event_type, payload)
+        self._notify_event(event, listeners)
+        return event
+
+    def _append_event(self, document_id: str, event_type: str, payload: Any):
+        cursor = self.connection.execute(
+            'INSERT INTO events(document_id,type,payload,created_at) VALUES(?,?,?,?)',
+            (document_id, event_type, self._json(payload), time.time()),
+        )
+        event = {'seq': cursor.lastrowid, 'document_id': document_id, 'type': event_type, 'payload': payload}
+        return event, tuple(self.listeners.get(document_id, {}).items())
+
+    @staticmethod
+    def _notify_event(event, listeners):
         for queue, loop in listeners:
             loop.call_soon_threadsafe(queue.put_nowait, event)
-        return event
 
     def events_after(self, document_id: str, seq: int) -> list[dict[str, Any]]:
         with self.lock:
@@ -440,6 +461,7 @@ class StudioStore:
             raise ValueError("Unsupported Excalidraw element")
         if set(selection) - set(ids):
             raise ValueError("Selection refers to missing elements")
+        notification = None
         with self.lock, self.connection:
             self.connection.execute('BEGIN IMMEDIATE')
             row = self.connection.execute(
@@ -450,12 +472,16 @@ class StudioStore:
             if row["version"] != version:
                 raise VersionConflict(f"Canvas changed from revision {version} to {row['version']}")
             document = self._save(row, elements, selection, True)
-        if document["version"] != version:
-            self.publish(document_id, "scene", {"document": document, "source": "manual", "client_id": client_id})
+            if document['version'] != version:
+                notification = self._append_event(document_id, 'scene_patch', {
+                    'patch': scene_patch(self._document(row), document), 'source': 'manual', 'client_id': client_id})
+        if notification:
+            self._notify_event(*notification)
         return document
 
     def commit_action(self, document_id: str, action: dict[str, Any], expected_elements: dict[str, Any],
                       receipt: tuple[str, int] | None = None) -> dict[str, Any]:
+        notification = None
         with self.lock, self.connection:
             self.connection.execute('BEGIN IMMEDIATE')
             row = self.connection.execute(
@@ -486,7 +512,11 @@ class StudioStore:
             document = self._save(row, updated, selection, True)
             if receipt is not None:
                 self.agents.advance_commit(*receipt)
-        self.publish(document_id, "scene", {"document": document, "source": "agent", "action": action["kind"]})
+            if document['version'] != row['version']:
+                notification = self._append_event(document_id, 'scene_patch', {
+                    'patch': scene_patch(self._document(row), document), 'source': 'agent', 'action': action['kind']})
+        if notification:
+            self._notify_event(*notification)
         return {"document": document, "changed_ids": changed}
 
     def history_step(self, document_id: str, direction: str) -> dict[str, Any]:
@@ -518,5 +548,7 @@ class StudioStore:
             )
             document = {"id": document_id, "title": row["title"], "version": row["version"] + 1,
                         "elements": target["elements"], "selection": target["selection"], "updated_at": now}
-        self.publish(document_id, "scene", {"document": document, "source": direction})
+            notification = self._append_event(document_id, 'scene_patch', {
+                'patch': scene_patch(self._document(row), document), 'source': direction})
+        self._notify_event(*notification)
         return document

@@ -7,12 +7,9 @@ import SessionListItem from './SessionListItem.jsx'
 import DeleteSessionDialog from './DeleteSessionDialog.jsx'
 import TaskActivity, { activityPhase } from './TaskActivity.jsx'
 import ExportDialog from './ExportDialog.jsx'
+import { applyScenePatch, replayScenePatches, sceneSnapshotSignature as snapshotSignature } from './scenePatch.js'
 
 const CLIENT_ID = crypto.randomUUID()
-
-function snapshotSignature(elements, selection) {
-  return JSON.stringify({ elements, selection })
-}
 
 function selectedIds(appState) {
   return Object.entries(appState.selectedElementIds || {})
@@ -55,6 +52,8 @@ export default function App() {
   const wsRef = useRef(null)
   const reconnectRef = useRef(null)
   const lastSeqRef = useRef(0)
+  const pendingSceneEventsRef = useRef([])
+  const sceneSyncRef = useRef(null)
   const suppressRef = useRef(false)
   const suppressTimerRef = useRef(null)
   const lastSignatureRef = useRef('')
@@ -93,6 +92,7 @@ export default function App() {
   }, [updateSessionTitle])
 
   const applyDocument = useCallback((nextDocument, { showScene = true, focus = false } = {}) => {
+    if (docRef.current?.id === nextDocument.id && nextDocument.version < docRef.current.version) return
     docRef.current = nextDocument
     setDocument(nextDocument)
     lastSignatureRef.current = snapshotSignature(nextDocument.elements, nextDocument.selection)
@@ -100,7 +100,7 @@ export default function App() {
       suppressRef.current = true
       clearTimeout(suppressTimerRef.current)
       apiRef.current.updateScene({
-        elements: nextDocument.elements,
+        elements: structuredClone(nextDocument.elements),
         appState: { selectedElementIds: Object.fromEntries(nextDocument.selection.map((id) => [id, true])) },
         captureUpdate: CaptureUpdateAction.NEVER,
       })
@@ -115,6 +115,30 @@ export default function App() {
       suppressTimerRef.current = setTimeout(() => { suppressRef.current = false }, 180)
     }
   }, [])
+
+  const syncScene = useCallback(async (documentId) => {
+    if (sceneSyncRef.current || docRef.current?.id !== documentId) return
+    const token = { generation: generationRef.current }
+    sceneSyncRef.current = token
+    try {
+      do {
+        const latest = await studioApi.getSession(sessionRef.current)
+        if (!mountedRef.current || token.generation !== generationRef.current || docRef.current?.id !== documentId) return
+        applyDocument(latest.document)
+        const replayed = replayScenePatches(docRef.current, pendingSceneEventsRef.current)
+        pendingSceneEventsRef.current = replayed.pending
+        if (replayed.document !== docRef.current) applyDocument(replayed.document)
+      } while (pendingSceneEventsRef.current.length)
+    } catch (cause) {
+      if (mountedRef.current && token.generation === generationRef.current) {
+        if (cause.status === 404) setPendingDeletion(sessionRef.current)
+        else setError(`重新同步画布失败：${cause.message}`)
+        wsRef.current?.close()
+      }
+    } finally {
+      if (sceneSyncRef.current === token) sceneSyncRef.current = null
+    }
+  }, [applyDocument])
 
   const handleExcalidrawApi = useCallback((documentId, api) => {
     if (documentId !== docRef.current?.id) return
@@ -138,6 +162,8 @@ export default function App() {
     clearTimeout(reconnectRef.current)
     clearTimeout(saveTimerRef.current)
     pendingSnapshotRef.current = null
+    pendingSceneEventsRef.current = []
+    sceneSyncRef.current = null
     sessionRef.current = id
     setSessionId(id)
     setMessages(data.messages)
@@ -207,6 +233,8 @@ export default function App() {
     clearTimeout(reconnectRef.current)
     clearTimeout(saveTimerRef.current)
     pendingSnapshotRef.current = null
+    pendingSceneEventsRef.current = []
+    sceneSyncRef.current = null
     docRef.current = null
     sessionRef.current = ''
     apiRef.current = null
@@ -263,9 +291,7 @@ export default function App() {
     try {
       const saved = await request
       if (!mountedRef.current || generation !== generationRef.current || docRef.current?.id !== current.id) return
-      docRef.current = saved
-      setDocument(saved)
-      lastSignatureRef.current = snapshotSignature(saved.elements, saved.selection)
+      applyDocument(saved, { showScene: false })
     } catch (cause) {
       if (!mountedRef.current || generation !== generationRef.current) throw cause
       setError(`保存画布失败：${cause.message}`)
@@ -314,7 +340,7 @@ export default function App() {
     suppressRef.current = true
     clearTimeout(suppressTimerRef.current)
     apiRef.current.updateScene({
-      elements: [...current.elements, element],
+      elements: structuredClone([...current.elements, element]),
       captureUpdate: CaptureUpdateAction.NEVER,
     })
     suppressTimerRef.current = setTimeout(() => { suppressRef.current = false }, 180)
@@ -325,7 +351,27 @@ export default function App() {
     if (event.seq <= lastSeqRef.current) return
     lastSeqRef.current = event.seq
     const value = event.payload
-    if (event.type === 'scene') {
+    if (event.type === 'scene_patch') {
+      if (sceneSyncRef.current || pendingSceneEventsRef.current.length) {
+        pendingSceneEventsRef.current.push(event)
+        void syncScene(documentId)
+        return
+      }
+      const next = applyScenePatch(docRef.current, value.patch)
+      if (next === docRef.current) return
+      if (!next) {
+        pendingSceneEventsRef.current.push(event)
+        void syncScene(documentId)
+        return
+      }
+      if (value.source !== 'manual') {
+        clearTimeout(saveTimerRef.current)
+        pendingSnapshotRef.current = null
+      }
+      applyDocument(next, { showScene: !(value.source === 'manual' && value.client_id === CLIENT_ID),
+        focus: value.source === 'agent' })
+    } else if (event.type === 'scene') {
+      if (value.document.version <= docRef.current.version) return
       if (value.source === 'manual' && value.client_id === CLIENT_ID) return
       if (value.source !== 'manual') {
         clearTimeout(saveTimerRef.current)
@@ -356,7 +402,7 @@ export default function App() {
       const next = activityPhase(value)
       if (next) setPhase(next)
     }
-  }, [applyDocument, setTaskList, showStroke, updateSessionTitle])
+  }, [applyDocument, setTaskList, showStroke, syncScene, updateSessionTitle])
 
   useEffect(() => {
     if (!document?.id) return
@@ -370,7 +416,12 @@ export default function App() {
       const ws = new WebSocket(eventsUrl(documentId, lastSeqRef.current))
       socket = ws
       wsRef.current = ws
-      ws.onopen = () => { if (!closed && generation === generationRef.current) setConnected(true) }
+      ws.onopen = () => {
+        if (!closed && generation === generationRef.current) {
+          setConnected(true)
+          if (pendingSceneEventsRef.current.length) void syncScene(documentId)
+        }
+      }
       ws.onmessage = (message) => {
         if (!closed && generation === generationRef.current) handleEvent(documentId, JSON.parse(message.data))
       }
@@ -393,7 +444,7 @@ export default function App() {
       socket?.close()
       setConnected(false)
     }
-  }, [document?.id, handleEvent])
+  }, [document?.id, handleEvent, syncScene])
 
   useEffect(() => () => {
     mountedRef.current = false
