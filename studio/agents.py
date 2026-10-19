@@ -268,6 +268,8 @@ MAIN_SYSTEM = (
     "Do not repeatedly request unchanged views; either correct a concrete visible defect or finish when the requested composition is complete. "
     "Before finish_drawing, the latest changed canvas must have been presented to you as an image. "
     "Completion also runs an independent pixel review against the current user request and initial canvas. "
+    "After submitted child work settles, a stage checkpoint also reviews the shared drawing and attaches the current findings. "
+    "Use failed criteria to focus the next pass. If the current request passes and no work remains, finish promptly without unrelated polishing. "
     "If it returns blocking findings, repair those specific regions and inspect the result; repeating finish on the same image reuses the same review. "
     "For a local edit, preserve unrelated content. For an artwork, an approximate tangle with missing features is incomplete. "
     "Use view_canvas with a region for a close-up, and inspect_scene with that same region to identify the corresponding object IDs. "
@@ -354,6 +356,8 @@ CHILD_SYSTEM = (
     " For reference-guided recreation, establish matching source contours with trace_reference before inventing replacement anatomy. "
     "View the COMPLETE assigned reference first, then extract the assigned region using the common source_frame and target. "
     "Use draw_paths for original or missing contours and targeted hand-drawn refinements; batch related strokes in one call. "
+    "Supply sparse structural anchor points; the runtime samples each smooth curve. Do not copy long interpolated point arrays from recall_memory into reshape_path. "
+    "Use native ellipse/rectangle shapes for geometric round or rectangular objects and move_elements for translations instead of reconstructing their sampled outline. "
     "Keep the assigned anatomical bounds and attachment points exact. Make fingers, eyelids, hair strands and folds separate strokes. "
     "For pencil work, vary gray tone, width and opacity; use directional hatching sparingly and preserve white highlights. "
     "Inspect the actual private-draft image provided after your drawing changes before using finish_drawing. "
@@ -437,7 +441,8 @@ class DrawingAgents:
                       messages: list[dict], *, child: bool = False,
                       observation_ids: list[str] | None = None,
                       reference_image_ids: list[str] | None = None,
-                      result_observation_ids: list[str] | None = None) -> dict:
+                      result_observation_ids: list[str] | None = None,
+                      quality_review_keys: list[str] | None = None) -> dict:
         started = time.perf_counter()
         session_id = self.store.get_task(task_id)["session_id"]
         document_id = self.store.session_document_id(session_id)
@@ -456,6 +461,7 @@ class DrawingAgents:
             "message_count": len(messages), "character_count": len(json.dumps(text_messages, ensure_ascii=False)),
             "image_observation_ids": observation_ids or [],
             "result_observation_ids": result_observation_ids or [],
+            "quality_review_keys": quality_review_keys or [],
             "reference_image_view_ids": reference_image_ids or [],
             "tool_output_ids": [item["tool_call_id"] for item in outputs],
             "tool_error_ids": [item["tool_call_id"] for item in outputs

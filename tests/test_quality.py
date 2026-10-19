@@ -8,6 +8,8 @@ import pytest
 
 from studio.actions import apply_action, create_native_element
 from studio.quality import DrawingQuality, drawing_change_summary, parse_assessment_response, review_scene_key
+from studio.settings import ModelConfig, ModelSettings
+from studio.runtime import DrawingRuntime
 from studio.store import StudioStore
 from studio.vision import CanvasVision
 
@@ -84,3 +86,71 @@ def test_actual_recorded_reviewer_responses_cannot_turn_invalid_json_into_approv
     else:
         assert failure is None and assessment.goal_satisfied
         assert all(not criterion.applicable or criterion.passed for criterion in assessment.criteria)
+
+
+def test_current_review_context_survives_compaction_but_not_scene_config_or_task_changes(tmp_path):
+    async def check():
+        store = StudioStore(tmp_path / 'current-review.sqlite3')
+        runtime = DrawingRuntime(store, ModelSettings(store))
+        config = ModelConfig(provider='ollama', model='llama3.1', api_base='http://localhost:11434')
+        try:
+            session = store.create_session()
+            task = store.create_task(session['id'])
+            doc = store.save_snapshot(session['document']['id'], 0, document()['elements'], [])
+            runtime.quality.begin(task['id'], session['document'], '画图')
+            key, cached = runtime.quality.current_review(task['id'], config, doc)
+            assert cached is None
+            # Replay an actual recorded response to test cache/context transport,
+            # not to assert visual acceptance of this unrelated test canvas.
+            fixture = json.loads((Path(__file__).parent / 'fixtures/quality-local-edit-response.json').read_text(encoding='utf-8'))
+            assessment, failure = parse_assessment_response(fixture['response'])
+            assert failure is None
+            result = {'ok': True, 'review_key': key, 'scene_key': review_scene_key(doc), 'assessment': assessment.model_dump()}
+            store.log_tool(task['id'], 'quality', 0, 'quality_review', {'review_key': key, 'result': result})
+            compacted = runtime.memory.compact(task['id'], 'main', {'goal': '画图', 'expected_revision': 0}, doc)
+            assert compacted['ok']
+            messages, keys = runtime.quality.context(task['id'], config, doc)
+            prepared = runtime.memory.prepare_messages(task['id'], 'main', f"main:{task['id']}", 'state', doc, []) + messages
+            assert keys == [key] and json.loads(prepared[-1]['content'])['current_drawing_review']['assessment'] == assessment.model_dump()
+            assert runtime.quality.context(task['id'], config.model_copy(update={'model': 'another-model'}), doc) == ([], [])
+            assert runtime.quality.context(task['id'], config, {**doc, 'selection': [doc['elements'][0]['id']]}) == ([], [])
+            changed = store.commit_action(doc['id'], {'kind': 'move_elements', 'args': {
+                'ids': [doc['elements'][0]['id']], 'dx': 20, 'dy': 0}}, {})['document']
+            assert runtime.quality.context(task['id'], config, changed) == ([], [])
+            later = store.create_task(session['id'])
+            runtime.quality.begin(later['id'], doc, '继续画')
+            assert runtime.quality.context(later['id'], config, doc) == ([], [])
+            other = store.create_session()
+            with pytest.raises(ValueError, match='another session'):
+                runtime.quality.context(task['id'], config, other['document'])
+        finally:
+            await runtime.close()
+            store.close()
+
+    asyncio.run(check())
+
+
+def test_stage_review_waits_for_this_tasks_running_and_pending_children(tmp_path, native_drawing_child):
+    async def check():
+        store = StudioStore(tmp_path / 'settled.sqlite3')
+        runtime = DrawingRuntime(store, ModelSettings(store))
+        try:
+            session = store.create_session()
+            task = store.create_task(session['id'])
+            assert runtime._child_work_settled(session['id'], task['id'])
+            child = native_drawing_child(store, runtime, session, task)
+            assert not runtime._child_work_settled(session['id'], task['id'])
+            assert child.call('create_element', {'type': 'ellipse'}, 'circle')['ok']
+            ready = store.agents.complete_run(session['id'], child.run['id'], '已准备')
+            assert not runtime._child_work_settled(session['id'], task['id'])
+            store.agents.reject_result(session['id'], ready['result_id'], '本次不用')
+            assert runtime._child_work_settled(session['id'], task['id'])
+            later = store.create_task(session['id'])
+            native_drawing_child(store, runtime, session, later)
+            assert runtime._child_work_settled(session['id'], task['id'])
+            assert not runtime._child_work_settled(session['id'], later['id'])
+        finally:
+            await runtime.close()
+            store.close()
+
+    asyncio.run(check())

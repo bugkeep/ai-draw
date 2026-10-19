@@ -145,10 +145,10 @@ class DrawingQuality:
         self.vision._check(task_id, baseline['document'])
         return baseline
 
-    async def assess(self, task_id, config):
+    def current_review(self, task_id, config, document=None):
         baseline = self.baseline(task_id)
-        document_id = baseline['document']['id']
-        document = self.store.get_document(document_id)
+        document = document or self.store.get_document(baseline['document']['id'])
+        self.vision._check(task_id, document)
         scene_key = review_scene_key(document)
         key = hashlib.sha256(json.dumps([scene_key, baseline, REVIEW_SYSTEM,
             DrawingAssessment.model_json_schema(),
@@ -158,8 +158,29 @@ class DrawingQuality:
                 "SELECT payload FROM tool_logs WHERE task_id=? AND agent_id='quality' AND kind='quality_review' "
                 "AND json_extract(payload,'$.review_key')=? ORDER BY id DESC LIMIT 1", (task_id, key),
             ).fetchone()
+        return key, ({**json.loads(cached['payload'])['result'], 'cached': True} if cached else None)
+
+    def context(self, task_id, config, document):
+        key, result = self.current_review(task_id, config, document)
+        if result is None:
+            return [], []
+        instruction = ('The actual current drawing passed independent review for this user request. '
+                       'Settle any outstanding work and finish promptly; avoid introducing unrelated cosmetic changes.'
+                       if result['ok'] else
+                       'These findings refer to the actual current shared drawing. Address the concrete blocking defects '
+                       'or remaining requested work, use exact object IDs for focused child repairs, then inspect the changed image. '
+                       'Do not repeat unchanged views or invent additional requirements.')
+        return [{'role': 'user', 'content': json.dumps({'current_drawing_review': result,
+            'instruction': instruction}, ensure_ascii=False)}], [key]
+
+    async def assess(self, task_id, config):
+        baseline = self.baseline(task_id)
+        document_id = baseline['document']['id']
+        document = self.store.get_document(document_id)
+        scene_key = review_scene_key(document)
+        key, cached = self.current_review(task_id, config, document)
         if cached:
-            return {**json.loads(cached['payload'])['result'], 'cached': True}
+            return cached
         started = time.perf_counter()
         history = [item['content'] for item in self.store.context_messages(
             self.store.get_task(task_id)['session_id'], task_id) if item['role'] == 'user']

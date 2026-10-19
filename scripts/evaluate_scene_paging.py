@@ -66,6 +66,10 @@ def main():
                   if entry['kind'] == 'function_call_output' and json.loads(entry['payload']['output']).get('ok') is False]
         delivered = {(entry['agent_id'], call_id) for entry in logs if entry['kind'] == 'model_context'
                      for call_id in entry['payload'].get('tool_error_ids', [])}
+        quality_reviews = [(index, entry['payload']) for index, entry in enumerate(logs) if entry['kind'] == 'quality_review']
+        reviewed_contexts = [(index, entry['payload']) for index, entry in enumerate(logs)
+                             if entry['agent_id'] == 'main' and entry['kind'] == 'model_context'
+                             and entry['payload'].get('quality_review_keys')]
         undone = store.history_step(document_id, 'undo')
         redone = store.history_step(document_id, 'redo')
         checks = {
@@ -88,6 +92,12 @@ def main():
             'actual_draft_pixels_enter_child_context': any(entry['agent_id'] != 'main' and entry['kind'] == 'model_context'
                 and entry['payload'].get('image_observation_ids') for entry in logs),
             'tool_errors_reach_context': set(errors) <= delivered,
+            'independent_stage_review_reaches_actual_main_context': bool(quality_reviews) and any(
+                first_submission is not None and first_submission < review_index < context_index
+                and review['review_key'] in context['quality_review_keys']
+                for review_index, review in quality_reviews for context_index, context in reviewed_contexts),
+            'successful_stage_review_reused_at_completion': len(quality_reviews) == 1 and quality_reviews[0][1]['result']['ok']
+                and sum(entry['agent_id'] == 'quality' and entry['kind'] == 'llm_response' for entry in logs) == 2,
             'undo_restores_original_scene': undone['elements'] == before['elements'],
             'redo_restores_edited_scene': redone['elements'] == final['elements'],
         }

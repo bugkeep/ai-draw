@@ -143,20 +143,34 @@ class DrawingRuntime:
         self.quality.begin(task_id, self.store.get_document(document_id), message)
         turns: list[list[dict]] = []
         round_number = 0
+        review_pending, last_tools_failed = False, False
         self.store.publish(document_id, "phase", {"task_id": task_id, "phase": "thinking"})
         while True:
             round_number += 1
+            if review_pending and not last_tools_failed and self._child_work_settled(session_id, task_id):
+                try:
+                    checkpoint = await self.quality.assess(task_id, agents.settings)
+                except ValueError as error:
+                    checkpoint = {'ok': False, 'error': str(error)}
+                # Valid assessments are reattached below from SQLite. Preserve
+                # malformed responses and provider errors in full as well.
+                if not checkpoint.get('review_key'):
+                    turns.append([{'role': 'user', 'content': json.dumps({
+                        'quality_checkpoint_error': checkpoint}, ensure_ascii=False)}])
+                review_pending = False
             document = self.store.get_document(document_id)
             pictures, observations = await self.vision.context(task_id, 'main', f'main:{task_id}', document)
             references, reference_ids = await self.references.prepare_context(task_id, f'main:{task_id}')
             reviews, review_deliveries = await self.result_reviews.context(task_id)
+            quality_context, quality_keys = self.quality.context(task_id, agents.settings, document)
             messages = self.memory.prepare_messages(task_id, 'main', f'main:{task_id}',
                 f"{document_id}:{document['version']}", document, agents.main_messages(
                 task_id, message, document, history, recent_tool_exchanges(turns),
-            )) + references + pictures + reviews
+            )) + references + pictures + reviews + quality_context
             response = await agents.respond(task_id, "main", round_number, messages, observation_ids=observations,
                                             reference_image_ids=reference_ids,
-                                            result_observation_ids=[item for items in review_deliveries.values() for item in items])
+                                            result_observation_ids=[item for items in review_deliveries.values() for item in items],
+                                            quality_review_keys=quality_keys)
             self.vision.delivered(task_id, f'main:{task_id}', observations)
             self.references.delivered(task_id, f'main:{task_id}', reference_ids)
             self.result_reviews.delivered(task_id, review_deliveries)
@@ -207,14 +221,22 @@ class DrawingRuntime:
                 exchange.append({"role": "tool", "tool_call_id": call["id"],
                                  "content": json.dumps(context_output, ensure_ascii=False)})
                 errors = errors or output.get("ok") is False
+                if call['function']['name'] == 'apply_agent_result' and output.get('ok') and output.get('changed_ids'):
+                    review_pending = True
                 compacted = compacted or call['function']['name'] == 'compact_context' and output.get('ok') is True
                 if call["function"]["name"] == "finish_drawing" and output.get("ok"):
                     completed = output
             if compacted:
                 turns.clear()
             turns.append(exchange)
+            last_tools_failed = errors
             if completed is not None and not errors:
                 return completed["summary"], completed["partial"]
+
+    def _child_work_settled(self, session_id: str, task_id: str) -> bool:
+        return (not any(agent['owner_task_id'] == task_id and agent['state'] == 'Running'
+                        for agent in self.store.agents.list_agents(session_id))
+                and not self.store.agents.pending_results(session_id, task_id=task_id))
 
     async def call_main_tool(self, models: DrawingAgents, task_id: str, session_id: str,
                              document_id: str, call: dict, round_number: int = 0,
