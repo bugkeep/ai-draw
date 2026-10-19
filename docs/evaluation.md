@@ -1,12 +1,12 @@
 # 真实操作评测
 
-评测日期：2026 年 10 月 19 日。环境为 Windows、Python 3.13、Node.js 24、Chrome，实际模型为 Ark Agent Plan `ark-code-latest`。服务、SQLite 和浏览器均在本机运行。本页记录 API 4 的检查结果，完整工具过程及作品保存在本机 Git 忽略的 `runs/`。
+评测日期：2026 年 10 月 19 日。环境为 Windows、Python 3.13、Node.js 24、Chrome，实际模型为 Ark Agent Plan `ark-code-latest`。服务、SQLite 和浏览器均在本机运行。当前 API 5 加入实际画布图片检查与橡皮擦。完整工具过程及作品保存在本机 Git 忽略的 `runs/`；下文人物与多题材生成表保留 API 4 样本的版本背景，画面验收单独记录。
 
 ## 自动化与浏览器检查
 
 | 检查 | 结果 | 范围 |
 | --- | --- | --- |
-| 后端检查 | 51/51 通过，16.51 秒 | 实际 SQLite、原生曲线、路径修改、输入顺序、保存恢复、提交幂等、工具错误反馈、共享恢复队列、画布归属 |
+| 后端检查 | 60/60 通过，24.75 秒 | 实际 SQLite、原生渲染、全图与局部图片、检查归属、整条与局部擦除、旋转几何、路径修改、输入顺序、保存恢复、提交幂等、工具错误反馈、共享恢复队列 |
 | 浏览器完整检查 | 45/45 通过 | 编辑器 5 项、导出 13 项、设置 8 项、滚动与名称 9 项、删除 10 项 |
 | 运行状态与停止 | 6/6 通过 | 实际模型请求、用时更新、刷新恢复、停止及重复停止 |
 | 已读取来源展示 | 4/4 通过 | 实际研究任务的来源链接、刷新恢复及其他画布的资料归属 |
@@ -23,6 +23,28 @@ python -m scripts.verify_browser --database runs/activity-verification.sqlite3 -
 ```
 
 浏览器脚本使用生产应用、独立数据库和系统分配的本地端口，检查结束后正常关闭测试服务。`activity_smoke.js` 需要环境变量中配置的真实模型连接。
+
+## 看图修正与检查隔离
+
+API 5 使用当前模型和实际原生图形进行两轮连续修正。初始面部的对象名称均为普通编号，模型需要根据 PNG 找到多余眼睛；随后在相同画布添加穿过面部的横线，要求只擦除面部范围内的线段。
+
+| 操作 | 用时 | 检查结果 |
+| --- | --- | --- |
+| 查看人脸，擦除多余眼睛及瞳孔 | 12.81 秒 | 正常双眼、鼻子、嘴与脸部轮廓保留 |
+| 局部擦除穿过面部的横线 | 31.05 秒 | 左右两端保留，其他对象保持原样 |
+| 模型连接测试 | 5.32 秒 | 随机图形图片识别、工具调用和后续文本均通过 |
+
+两轮修正共 11 项检查通过，包含实际图片进入模型上下文、橡皮擦使用、对象保护、局部几何、撤销与重做。过程中一次坐标格式错误完整返回模型上下文，模型修正参数后完成。记录为 `runs/visual-edit-real-1.json`、`runs/visual-edit-real-1.sqlite3`、四张 `runs/visual-edit-real-1-view-*.png` 和 `runs/visual-model-connection.json`。
+
+真实子 Agent 检查为 18/18 项通过，用时 27.66 秒，包含擦除已分配参考线后继续执行、检查自己的当前草稿、保留其他图形、并发请求、连续输入、关闭恢复、原编号编辑与画布隔离。记录为 `runs/agent-lifecycle-vision-final.json`。这两类检查验证执行和反馈能力，不能单独证明复杂作品已达到用户要求的艺术质量。
+
+```bash
+python -m scripts.evaluate_visual_edit --database runs/visual-edit.sqlite3 --output runs/visual-edit.json
+python -m scripts.evaluate_agent_lifecycle --database runs/agent-lifecycle.sqlite3 --output runs/agent-lifecycle.json
+python -m scripts.evaluate_visual_quality runs/drawing-quality/cat-on-window.excalidraw --prompt "画一只蜷在窗台上睡觉的猫" --output runs/cat-visual-review.json
+```
+
+`evaluate_visual_quality` 对 PNG 或实际原生作品先进行不含题目与对象名称的图片描述，再给出各项画面标准及证据。评价模型使用已配置连接，原始响应和导出图片保存在 `runs/`。模型辅助评价仍需要与实际作品和用户验收结合。
 
 ## 人物素描与连续编辑
 

@@ -11,6 +11,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 import rfc8785
 
+from .eraser import EraseStrokes, erase_elements
+
 
 Number = float
 Point = tuple[Number, Number]
@@ -90,6 +92,7 @@ ACTION_MODELS = {
     "move_elements": MoveElements,
     "update_elements": UpdateElements,
     "delete_elements": DeleteElements,
+    "erase_strokes": EraseStrokes,
 }
 PATCH_FIELDS = {
     "x", "y", "width", "height", "angle", "strokeColor", "backgroundColor",
@@ -155,6 +158,11 @@ def validate_action(action: dict[str, Any]) -> dict[str, Any]:
     if kind == "move_elements" and not all(math.isfinite(value) for key, value in args.items() if key in {"dx", "dy", "x", "y"}):
         raise ValueError("Move distance must be finite")
     result = {"kind": kind, "args": args}
+    if kind == "erase_strokes":
+        operation_id = action.get("operation_id") or uuid.uuid4().hex
+        if not isinstance(operation_id, str) or not operation_id.isalnum() or len(operation_id) > 64:
+            raise ValueError("Invalid eraser operation ID")
+        result["operation_id"] = operation_id
     if kind == "create_element" and "element_id" in action:
         element_id = action["element_id"]
         if not isinstance(element_id, str) or not element_id.isalnum() or len(element_id) > 64:
@@ -247,6 +255,8 @@ def create_native_element(spec: dict[str, Any], element_id: str | None = None) -
 def apply_action(elements: list[dict[str, Any]], selection: list[str], action: dict[str, Any]) -> tuple[list[dict[str, Any]], list[str], list[str]]:
     action = validate_action(action)
     kind, args = action["kind"], action["args"]
+    if kind == "erase_strokes":
+        return erase_elements(elements, selection, args, action["operation_id"])
     scene = [dict(element) for element in elements]
     selected = list(selection)
     changed: list[str] = []

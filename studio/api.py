@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from .runtime import DrawingRuntime
@@ -46,7 +47,7 @@ def studio_store(request: Request) -> StudioStore:
 @router.get("/health")
 async def health(request: Request):
     config = request.app.state.model_settings.load()
-    return {"status": "ok", "api_revision": 4, "provider_configured": config.configured,
+    return {"status": "ok", "api_revision": 5, "provider_configured": config.configured,
             "model": config.model, "provider": config.provider}
 
 
@@ -76,7 +77,8 @@ async def save_settings(request: Request, body: SettingsUpdate):
 async def test_settings(request: Request, body: SettingsUpdate):
     try:
         config = request.app.state.model_settings.candidate(body)
-        return await probe_model_connection(config)
+        image, expected = await request.app.state.drawing_runtime.vision.connection_image()
+        return await probe_model_connection(config, image, expected)
     except ModelGatewayError as exc:
         raise HTTPException(400, str(exc)) from exc
     except ValueError as exc:
@@ -117,6 +119,15 @@ async def list_session_agents(request: Request, session_id: str):
         return store.agents.list_agents(session_id)
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+@router.get('/sessions/{session_id}/observations/{observation_id}')
+async def observation_image(request: Request, session_id: str, observation_id: str):
+    try:
+        image = request.app.state.drawing_runtime.vision.image(session_id, observation_id)
+        return Response(image, media_type='image/png', headers={'Cache-Control': 'private, no-store'})
+    except KeyError as error:
+        raise HTTPException(404, str(error)) from error
 
 
 @router.get("/sessions/{session_id}/agents/{agent_id}")

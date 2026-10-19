@@ -1,6 +1,6 @@
 # 模型连接配置
 
-点击画布右上角“设置”进入 `/settings`。选择厂商，填写模型 ID、需要的 Base URL 与 API Key，点击“测试连接”，确认文本响应和工具调用均通过后点击“保存配置”。测试使用当前表单进行实际请求，不修改已保存配置，会产生厂商计费调用。
+点击画布右上角“设置”进入 `/settings`。选择厂商，填写模型 ID、需要的 Base URL 与 API Key，点击“测试连接”，确认图片识别、文本响应和工具调用均通过后点击“保存配置”。测试使用当前表单进行实际请求，不修改已保存配置，会产生厂商计费调用。
 
 主 Agent、全部子 Agent 和任务重试共用一个模型连接及 API Key。各 Agent 的消息列表独立创建，子 Agent 的完整工具记录保存在 SQLite。任意画布有任务正在排队或运行时，保存按钮置灰，接口返回 HTTP 409；全部任务结束后可保存新配置。
 
@@ -23,11 +23,11 @@
 | 自定义 OpenAI 兼容接口 | 对应厂商的 Base URL、模型 ID 与 API Key |
 | 其他厂商 / LiteLLM | 模型使用 `provider/model` 格式，凭据按该厂商的服务端配置方式提供 |
 
-Base URL 不应附加 `chat/completions`、`responses` 或 `messages`。Azure 需要填写资源地址。模型必须支持 function calling；厂商提供文本 API 并不保证每个模型都能执行绘图工具。切换到需要 API Key 的新连接时，需要重新填写该连接的密钥；切换到可选密钥的连接时，可以留空使用本地服务或服务端云凭据。
+Base URL 不应附加 `chat/completions`、`responses` 或 `messages`。Azure 需要填写资源地址。模型必须同时支持图片输入和 function calling。设置页向模型提供实际随机图形图片，要求识别左侧图形及颜色并调用工具，随后验证收到工具结果后的文本响应；只有正确识别后才通过图片检查。厂商提供文本 API 并不保证每个模型具备这些能力。切换到需要 API Key 的新连接时，需要重新填写该连接的密钥；切换到可选密钥的连接时，可以留空使用本地服务或服务端云凭据。
 
 高级设置提供 API 类型、Azure API Version 和 JSON 扩展参数。扩展参数用于思考模式、地区等厂商选项；连接地址、凭据和回调设置由服务端专用字段管理。
 
-OpenAI 兼容的 Chat Completions 请求使用 OpenAI 官方异步 SDK `2.26.0`，其余厂商与 Responses 使用 LiteLLM `1.103.0`。主 Agent 与子 Agent 复用连接池。本项目已使用 Ark Agent Plan 的 `ark-code-latest` 完成真实文本、工具调用、多轮编辑与并行子 Agent 验证。其他预设已检查 SDK 路由映射，尚未使用对应厂商账户进行真实请求验证，使用前应运行设置页的连接测试。
+OpenAI 兼容的 Chat Completions 请求使用 OpenAI 官方异步 SDK `2.26.0`，其余厂商与 Responses 使用 LiteLLM `1.103.0`。主 Agent 与子 Agent 复用连接池。本项目已使用 Ark Agent Plan 的 `ark-code-latest` 完成实际图片输入、图形识别、看图擦除、文本、工具调用、多轮编辑与并行子 Agent 验证。其他预设已检查 SDK 路由映射，尚未使用对应厂商账户进行真实请求验证，使用前应运行设置页的连接测试。
 
 ## 保存与环境变量
 

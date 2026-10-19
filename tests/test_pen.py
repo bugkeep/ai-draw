@@ -2,7 +2,9 @@ import math
 
 import pytest
 
-from studio.agents import prepare_drawing_tool
+from studio.actions import create_native_element
+from studio.agents import prepare_drawing_tool, scene_context
+from studio.eraser import element_geometry
 from studio.pen import interpolate_path
 from studio.store import StudioStore
 
@@ -69,3 +71,31 @@ def test_path_batch_validation_preserves_canvas_when_any_stroke_is_invalid():
         "type": "freedraw", "points": points,
     }, document, [], [])
     assert len(actions[0]["action"]["args"]["points"]) == 1200
+
+
+def test_region_inspection_finds_older_rotated_strokes_and_combines_filters():
+    old = create_native_element({'type': 'freedraw', 'name': '面部参考线', 'points': [[0, 0], [200, 0]]})
+    old['angle'] = math.pi / 2
+    later = [create_native_element({'type': 'rectangle', 'x': 400 + index * 5, 'y': 300})
+             for index in range(75)]
+    scene = {'id': 'canvas', 'version': 0, 'elements': [old, *later], 'selection': []}
+    assert old['id'] not in {item['id'] for item in scene_context(scene)['elements']}
+    _, _, _, output = prepare_drawing_tool('inspect_scene', {
+        'region': {'x': 95, 'y': 70, 'width': 10, 'height': 10}, 'include_geometry': True,
+    }, scene, scene['elements'], [])
+    assert output['scene']['elements'] == scene_context(scene, ids=[old['id']], include_geometry=True)['elements']
+    assert scene_context(scene, ids=[old['id']], query='衣袖')['elements'] == []
+    assert scene_context(scene, query='面部', region={'x': -5, 'y': -5, 'width': 10, 'height': 10})['elements'] == []
+    assert not any(item['isDeleted'] for item in scene['elements'])
+
+
+def test_reshape_rotated_stroke_uses_final_canvas_coordinates():
+    target = create_native_element({'type': 'freedraw', 'name': '面部轮廓', 'points': [[0, 0], [200, 0]]})
+    target['angle'] = math.pi / 2
+    scene = {'id': 'canvas', 'version': 0, 'elements': [target], 'selection': []}
+    draft, _, _, _ = prepare_drawing_tool('reshape_path', {
+        'element_id': target['id'], 'points': [[100, -50], [100, 50]], 'smooth': False,
+    }, scene, scene['elements'], [])
+    assert list(element_geometry(draft[0]).coords) == [(100, -50), (100, 50)]
+    assert draft[0]['id'] == target['id'] and draft[0]['customData'] == target['customData']
+    assert target['angle'] == math.pi / 2

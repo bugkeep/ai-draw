@@ -51,7 +51,7 @@ def test_delete_session_removes_owned_data_and_notifies_viewers(tmp_path, monkey
     monkeypatch.setenv("DRAW_AGENT_DB", str(path))
     app = create_app()
     with TestClient(app) as client:
-        assert client.get("/api/studio/health").json()["api_revision"] == 4
+        assert client.get("/api/studio/health").json()["api_revision"] == 5
         first = client.post("/api/studio/sessions", json={"title": "要删除的画布"}).json()
         second = client.post("/api/studio/sessions", json={"title": "保留的画布"}).json()
         task = client.post(f"/api/studio/sessions/{first['id']}/messages", json={"message": "画一个蓝色圆形"}).json()

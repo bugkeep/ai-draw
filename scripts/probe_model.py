@@ -8,7 +8,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default="http://127.0.0.1:8000")
     args = parser.parse_args()
-    with httpx.Client(base_url=args.url, timeout=180) as client:
+    with httpx.Client(base_url=args.url, timeout=None) as client:
         response = client.get("/api/studio/settings")
         response.raise_for_status()
         settings = response.json()

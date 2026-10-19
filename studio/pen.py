@@ -34,7 +34,7 @@ class DrawPaths(BaseModel):
     origin: Point = (0, 0)
     scale: float = Field(default=1, gt=0, allow_inf_nan=False)
     strokeColor: str = "#242424"
-    strokeWidth: float = Field(default=1.5, gt=0, le=32)
+    strokeWidth: float = Field(default=0.4, gt=0, le=32)
     opacity: int = Field(default=100, ge=0, le=100)
 
     @model_validator(mode="after")

@@ -15,6 +15,7 @@ from .fast_path import fast_actions
 from .settings import ModelSettings
 from .research import DrawingResearch, RESEARCH_TOOLS
 from .store import StudioStore, VersionConflict
+from .vision import CanvasVision
 
 
 class DrawingRuntime:
@@ -24,7 +25,8 @@ class DrawingRuntime:
         self.running: dict[str, asyncio.Task] = {}
         self.document_locks: dict[str, asyncio.Lock] = {}
         self.cancel_requested: set[str] = set()
-        self.children = AgentManager(store, settings)
+        self.vision = CanvasVision(store)
+        self.children = AgentManager(store, settings, self.vision)
 
     @property
     def busy(self) -> bool:
@@ -69,6 +71,7 @@ class DrawingRuntime:
         if self.running:
             await asyncio.gather(*self.running.values(), return_exceptions=True)
         await self.children.close()
+        await self.vision.close()
 
     def _status(self, task_id: str, document_id: str, status: str,
                 summary: str = "", error: str = "", latency_ms: float = 0) -> None:
@@ -134,9 +137,12 @@ class DrawingRuntime:
         self.store.publish(document_id, "phase", {"task_id": task_id, "phase": "thinking"})
         while True:
             round_number += 1
+            document = self.store.get_document(document_id)
+            pictures, observations = await self.vision.context(task_id, 'main', f'main:{task_id}', document)
             response = await agents.respond(task_id, "main", round_number, agents.main_messages(
-                task_id, message, self.store.get_document(document_id), history, recent_tool_exchanges(turns),
-            ))
+                task_id, message, document, history, recent_tool_exchanges(turns),
+            ) + pictures, observation_ids=observations)
+            self.vision.delivered(task_id, f'main:{task_id}', observations)
             calls = response.get("tool_calls", [])
             if not calls:
                 active = [agent for agent in self.store.agents.list_agents(session_id)
@@ -152,6 +158,11 @@ class DrawingRuntime:
                 reply = str(response.get("content") or "").strip()
                 if not reply:
                     raise ValueError("主 Agent 未返回工具调用或完成说明。")
+                try:
+                    self.vision.require_review(task_id, f'main:{task_id}', self.store.get_document(document_id))
+                except ValueError as error:
+                    turns.append([response, {'role': 'user', 'content': str(error)}])
+                    continue
                 runs = self.store.agents.task_runs(session_id, task_id)
                 partial = any(run["status"] in {"failed", "paused", "queued", "running"} for run in runs)
                 return reply, partial
@@ -198,9 +209,13 @@ class DrawingRuntime:
                     if active or pending:
                         raise ValueError(f"Settle active Agents and pending results before completing: {active}, "
                                          f"{[item['id'] for item in pending]}")
+                    self.vision.require_review(task_id, caller_id, self.store.get_document(document_id))
                     runs = self.store.agents.task_runs(session_id, task_id)
                     output = {"ok": True, "summary": args["summary"], "partial": any(
                         run["status"] in {"failed", "paused", "queued", "running"} for run in runs)}
+                elif name == 'view_canvas':
+                    output = await self.vision.observe(task_id, 'main', caller_id,
+                                                       self.store.get_document(document_id), args.get('region'))
                 elif name in RESEARCH_TOOLS:
                     output = await DrawingResearch(self.store).call(task_id, "main", name, args)
                 elif name == "spawn_agent":

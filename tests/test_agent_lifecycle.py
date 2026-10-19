@@ -59,6 +59,32 @@ def test_input_queue_has_stable_ids_and_reuses_final_agent(tmp_path):
     store.close()
 
 
+def test_child_context_continues_after_erasing_assigned_construction_object(tmp_path):
+    store, runtime, session, task = workspace(tmp_path)
+    document_id = session['document']['id']
+    created = store.commit_action(document_id, {'kind': 'create_element', 'args': {
+        'type': 'freedraw', 'name': '待擦除参考线', 'points': [[0, 0], [100, 0]],
+    }}, {})
+    original_id = created['changed_ids'][0]
+    agent = store.agents.create_agent(session['id'], task['id'], 'refine', '擦除参考线并重画', 'Artist', [original_id])
+    run = start_run(store, runtime, session, task, agent)
+    native_tool(store, run, 'erase-construction', 'erase_strokes', {
+        'mode': 'stroke', 'ids': [original_id], 'points': [[50, 0]], 'radius': 5,
+    })
+    models = DrawingAgents(store, ModelConfig(provider='ollama', model='llama3.1', api_base='http://localhost:11434'))
+    prompt = json.loads(models.child_messages(run, store.agents.get_agent(session['id'], agent['agent_id']))[1]['content'])
+    assert prompt['relevant_elements'] == [] and prompt['removed_relevant_ids'] == [original_id]
+    assert prompt['prepared_action_count'] == 1 and prompt['run_id'] == run['id']
+    native_tool(store, run, 'redraw', 'draw_paths', {
+        'paths': [{'name': '修正轮廓', 'points': [[0, 0], [50, 20], [100, 0]]}],
+    })
+    result = store.agents.complete_run(session['id'], run['id'], '参考线已擦除，轮廓已重画')
+    asyncio.run(runtime.apply_result(task['id'], session['id'], document_id, result['result_id']))
+    live = [item for item in store.get_document(document_id)['elements'] if not item.get('isDeleted')]
+    assert len(live) == 1 and live[0]['id'] != original_id and live[0]['customData']['name'] == '修正轮廓'
+    store.close()
+
+
 def test_wait_only_observes_and_returns_on_first_ready_child(tmp_path):
     async def check():
         store, runtime, session, task = workspace(tmp_path)
@@ -282,7 +308,8 @@ def test_completion_validates_child_work_and_preserves_tool_errors(tmp_path):
         result = store.agents.complete_run(session["id"], run["id"], "房屋已准备")
         assert not (await call("finish-pending", "finish_drawing", {"summary": "完成"}))["ok"]
         await runtime.apply_result(task["id"], session["id"], session["document"]["id"], result["result_id"])
-        assert (await call("finish", "finish_drawing", {"summary": "完成"}))["ok"]
+        unreviewed = await call("finish", "finish_drawing", {"summary": "完成"})
+        assert not unreviewed['ok'] and 'visual observation' in unreviewed['error']
         errors = [json.loads(item["payload"]["output"]) for item in store.tool_logs(task["id"])
                   if item["kind"] == "function_call_output" and item["payload"]["call_id"] == "invalid"]
         assert errors == [invalid]

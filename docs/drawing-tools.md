@@ -6,9 +6,23 @@
 
 人像、动物、山水等曲线题材使用画笔；建筑边缘和流程连线可以使用原生直线及箭头。所有对象保留独立编号和可搜索名称，后续对话可以选择、移动、改变样式或修改曲线。
 
-`inspect_scene` 默认返回对象概况。需要修改已有轮廓时，可按名称或编号查询并设置 `include_geometry=true`，获取相对对象原点的路径点列。`reshape_path` 接收绝对关键点，替换指定路径的几何信息，保留对象编号、名称、样式和其他图形。修改经过已有内容检查与历史记录，支持撤销和重做。
+`inspect_scene` 默认返回最近对象与当前选择的概况。可以按名称、编号或 `region={x,y,width,height}` 查询全部对象，组合条件同时生效；区域查询包含较早创建和经过旋转的对象。设置 `include_geometry=true` 可以获取相对对象原点的路径点列，旋转角度 `angle` 以弧度表示，围绕对象中心旋转。`reshape_path` 接收最终画布中的绝对关键点，替换指定路径的几何信息，保留对象编号、名称、样式和其他图形。修改经过已有内容检查与历史记录，支持撤销和重做。
+
+`draw_paths` 的 `strokeWidth` 使用 Excalidraw 原生画笔单位，渲染基准尺寸为 `strokeWidth × 4.25`，默认值为 `0.4`。素描从较轻的参考线开始，统一比例与部位连接位置，轮廓清楚后添加适量阴影，并移除重复参考线。
 
 复杂作品由主 Agent 提供统一坐标、比例和部位连接位置。子 Agent 在自己的画布准备独立部分，返回简短说明和 `result_id`；完整工具记录及点列保存在 SQLite。主 Agent 审核结果并按顺序提交，也负责检查用户要求的主体、道具、背景和必要文字。
+
+## 图片检查与橡皮擦
+
+每次模型请求前，runtime 根据当前对象内容准备实际 PNG：主 Agent 看到共享画布，子 Agent 看到自己的私有草稿。图片通过与文字相同的模型连接发送，包含图片像素与画布坐标之间的映射。模型需要同时支持图片输入和 function calling。
+
+`view_canvas` 可以请求当前全图，或者通过 `region` 放大面部、双手等局部。图片由相同版本的 Excalidraw `exportToCanvas` 生成，最长边为 1280 像素，局部检查不会移动或修改作品。`inspect_scene` 使用相同区域查询对象编号，再由 `reshape_path`、`erase_strokes` 或其他绘图工具修正。
+
+`erase_strokes` 接收绝对坐标 `points=[[x,y],...]` 和画布单位的 `radius`。即使只擦除一个位置，仍需要使用包含一个点的数组。`mode=segment` 擦除画笔或线条中触及的部分，保留两端的原生对象、名称、样式和压力数据；`mode=stroke` 删除触及的完整对象。`ids` 可限定目标，锁定对象保留。每次手势生成一个绘图动作，支持一次撤销及重做。
+
+子 Agent 准备的擦除动作记录当时实际触及的对象编号和内容指纹。后续添加的其他笔画不会因为处在同一区域而受到该动作影响；已变化的对象通过提交检查返回冲突。子 Agent 擦除已分配参考线后，其上下文记录对象已经移除，可以继续重画。
+
+SQLite 的 `canvas_observations` 保存 PNG、画布内容标识、所属会话、任务、Agent、执行编号和已发送状态。相同调用者的相同作品与区域复用图片；模型上下文只附当前全图与最近需要的局部图片，历史 PNG 和完整工具记录不会持续加入对话。日志只记录图片编号与元信息。完成前必须已向相应 Agent 提供当前全图；图片之后发生内容修改时，需要再次检查，工具错误始终返回原 `call_id` 的上下文。
 
 ## 免费公共资料检索
 
@@ -60,5 +74,7 @@ node scripts/export_smoke.js
 检索检查使用真实公共搜索。绘图与 Agent 检查需要已配置模型的运行服务，可通过 `--url` 指定地址；浏览器检查使用 `DRAW_AGENT_URL`。数据与作品写入 Git 忽略的 `runs/`。批量题目和人工质量标准保存在 `evaluations/drawing-quality.json`；对象、延迟与画面质量分别记录。
 
 `evaluate_research_agent --database runs/research-agent.sqlite3` 可以在独立进程内加载生产 ASGI 应用，使用环境变量中的真实模型配置检查同样的 HTTP API 与 Agent 流程，无需额外监听端口。
+
+`evaluate_quality --database runs/quality.sqlite3 --output-dir runs/quality` 可以使用独立数据库在进程内运行同样的生产 API，并保存各题的原生作品及实际检查 PNG。`evaluate_visual_edit` 检查看图后擦除多余眼睛、局部擦除和连续编辑。`evaluate_visual_quality` 根据实际 PNG 或原生文档生成有证据的模型辅助评价，保留独立于结构检查的结果。
 
 `python -m scripts.verify_browser --database runs/browser-verification.sqlite3` 自动在空闲本地端口运行生产服务，依次执行浏览器检查，然后正常结束服务。`--scripts` 可选择检查脚本。已有真实研究任务时，设置 `DRAW_AGENT_SESSION` 后，可使用 `--database DATABASE --scripts references_smoke.js` 验证来源链接、刷新恢复及画布归属。

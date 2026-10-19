@@ -1,14 +1,19 @@
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 
 import httpx
+from fastapi.testclient import TestClient
+
+from server.app import create_app
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default="http://127.0.0.1:8000")
+    parser.add_argument('--database', type=Path, help='Run production ASGI in process with a separate database')
     parser.add_argument("--cases", default="")
     parser.add_argument("--dataset", type=Path, default=Path("evaluations/drawing-quality.json"))
     parser.add_argument("--output-dir", type=Path, default=Path("runs/drawing-quality"))
@@ -20,7 +25,14 @@ def main():
         raise ValueError("Unknown evaluation case")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     results = []
-    with httpx.Client(base_url=args.url, timeout=30) as client:
+    if args.database:
+        if args.database.resolve() == Path('runs/studio.sqlite3').resolve():
+            raise ValueError('Use a separate evaluation database')
+        os.environ['DRAW_AGENT_DB'] = str(args.database.resolve())
+        client_context = TestClient(create_app())
+    else:
+        client_context = httpx.Client(base_url=args.url, timeout=30)
+    with client_context as client:
         for case in cases:
             if case["id"] not in selected:
                 continue
@@ -53,6 +65,12 @@ def main():
             response = client.get(f"/api/studio/tasks/{task_id}/logs")
             response.raise_for_status()
             logs = response.json()
+            full_images = [item['payload'] for item in logs if item['kind'] == 'canvas_observation'
+                           and item['agent_id'] == 'main' and item['payload'].get('region') is None]
+            if full_images:
+                response = client.get(f"/api/studio/sessions/{session_id}/observations/{full_images[-1]['observation_id']}")
+                response.raise_for_status()
+                (args.output_dir / f"{case['id']}.png").write_bytes(response.content)
             checks = {key: any(any(word in (item.get("customData", {}).get("name", "") + " " + item.get("text", "")).casefold()
                                            for word in words) for item in elements
                                if item["type"] != "text" or case.get("min_arrows") or key == "sign")
@@ -74,6 +92,7 @@ def main():
                       "latency_ms": task["latency_ms"], "structural_checks": checks,
                       "first_canvas_update_ms": round((commits[0]["created_at"] - task["created_at"]) * 1000, 1) if commits else None,
                       "model_retry_count": sum(item["kind"] == "model_retry" for item in logs),
+                      'image_observation_count': sum(item['kind'] == 'canvas_observation' for item in logs),
                       "tool_error_count": sum(item["kind"] == "function_call_output" and
                                               json.loads(item["payload"]["output"]).get("ok") is False for item in logs),
                       "structural_checks_passed": task["status"] == "completed" and all(checks.values()),

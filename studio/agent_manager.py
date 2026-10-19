@@ -12,10 +12,11 @@ from .store import StudioStore, VersionConflict
 
 
 class AgentManager:
-    def __init__(self, store: StudioStore, settings: ModelSettings):
+    def __init__(self, store: StudioStore, settings: ModelSettings, vision):
         self.store = store
         self.records = store.agents
         self.settings = settings
+        self.vision = vision
         self.workers: dict[str, asyncio.Task] = {}
         self.controls: dict[str, asyncio.Lock] = {}
         self.changed = asyncio.Condition()
@@ -188,14 +189,22 @@ class AgentManager:
             run["conversation"] = history
             if message is None:
                 agent = self.records.get_agent(session_id, run["agent_id"])
+                document = {**run['document'], 'elements': run['draft'], 'selection': run['selection']}
+                pictures, observations = await self.vision.context(
+                    run['owner_task_id'], run['agent_id'], run['id'], document)
                 message = await models.respond(run["owner_task_id"], run["agent_id"], round_number,
-                                               models.child_messages(run, agent), child=True)
+                                               models.child_messages(run, agent) + pictures, child=True,
+                                               observation_ids=observations)
+                self.vision.delivered(run['owner_task_id'], run['id'], observations)
                 self.records.save_response(run, message)
             calls = message.get("tool_calls", [])
             if not calls:
                 summary = str(message.get("content") or "").strip()
                 if not summary:
                     raise AgentOutputError("子 Agent 未返回工具调用或完成说明。")
+                if run['prepared']:
+                    self.vision.require_review(run['owner_task_id'], run['id'], {
+                        **run['document'], 'elements': run['draft'], 'selection': run['selection']})
                 result = self.records.complete_run(session_id, run["id"], summary)
                 self.store.log_tool(run["owner_task_id"], run["agent_id"], round_number, "agent_result", result)
                 await self._notify(session_id, run["agent_id"], result)
@@ -219,7 +228,14 @@ class AgentManager:
                             args = validate_tool(name, args, child=True)
                             if errors or index != len(calls) - 1:
                                 raise ValueError("Read all tool errors before completing; finish_drawing must be last.")
+                            if run['prepared']:
+                                self.vision.require_review(run['owner_task_id'], run['id'], {
+                                    **run['document'], 'elements': run['draft'], 'selection': run['selection']})
                             output = {"ok": True, "summary": args["summary"]}
+                        elif name == 'view_canvas':
+                            args = validate_tool(name, args, child=True)
+                            output = await self.vision.observe(run['owner_task_id'], run['agent_id'], run['id'], {
+                                **run['document'], 'elements': run['draft'], 'selection': run['selection']}, args.get('region'))
                         elif name in RESEARCH_TOOLS:
                             args = validate_tool(name, args, child=True)
                             output = await DrawingResearch(self.store).call(run["owner_task_id"], run["agent_id"], name, args)

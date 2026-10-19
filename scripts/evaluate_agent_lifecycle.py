@@ -97,6 +97,26 @@ async def evaluate(database: Path) -> dict:
         final = store.get_document(document_id)
         updated = next(item for item in final["elements"] if item["id"] == rectangle["id"])
         checks["continuous_edit_preserves_object"] = updated["x"] == 140 and updated["y"] == 120 and len(final["elements"]) == 2
+        construction = store.commit_action(document_id, {'kind': 'create_element', 'args': {
+            'type': 'freedraw', 'name': '待擦除参考线', 'points': [[20, 400], [220, 400]], 'strokeWidth': 0.3,
+        }}, {})['changed_ids'][0]
+        erase_input = await call('send_input', {'agent_id': house['agent_id'],
+            'message': f'使用 erase_strokes，mode=stroke，擦除对象 {construction}。这是 y=400、x=20 到220的参考线。'
+                       '保留房屋和太阳，擦除后查看实际图片，确认参考线消失，再完成本轮。',
+            'relevant_ids': [construction]}, 'erase-relevant')
+        await wait_all([house['agent_id']])
+        erase_run = store.agents.get_run(session['id'], erase_input['run_id'])
+        checks['child_continues_after_erasing_relevant_object'] = erase_run['status'] == 'completed' and any(
+            item['action']['kind'] == 'erase_strokes' for item in erase_run['prepared'])
+        for result in store.agents.pending_results(session['id']):
+            await call('apply_agent_result', {'result_id': result['id']}, f"apply-erase-{result['id']}")
+        erased = store.get_document(document_id)
+        checks['child_eraser_preserves_other_parts'] = all(
+            any(item == preserved for item in erased['elements']) for preserved in final['elements']) and any(
+                item['id'] == construction and item.get('isDeleted') for item in erased['elements'])
+        images = store.connection.execute('SELECT count(*) FROM canvas_observations WHERE caller_id=? AND delivered_at IS NOT NULL',
+                                          (erase_run['id'],)).fetchone()[0]
+        checks['child_reviews_current_private_images'] = images >= 2
         await call("close_agent", {"agent_id": house["agent_id"]}, "close-final")
         idle = await call("resume_agent", {"agent_id": house["agent_id"]}, "resume-final")
         checks["resume_without_pending_work_is_final"] = idle["state"] == "Final" and idle["inputs"] == []

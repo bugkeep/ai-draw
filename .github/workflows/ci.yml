@@ -28,10 +28,10 @@ jobs:
       - name: Build frontend
         working-directory: frontend-app
         run: npm run build
-      - name: Run tests
-        run: python -m pytest -q
       - name: Install browser for editor test
         working-directory: frontend-app
         run: npx playwright install --with-deps chromium
+      - name: Run tests
+        run: python -m pytest -q
       - name: Test editor in browser
         run: python -m scripts.verify_browser --database runs/ci-browser.sqlite3

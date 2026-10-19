@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import copy
 import hashlib
 import json
@@ -186,29 +187,35 @@ class ModelGateway:
         return response
 
 
-async def test_connection(config: ModelConfig) -> dict[str, Any]:
+async def test_connection(config: ModelConfig, image: bytes, expected_image: dict) -> dict[str, Any]:
     started = time.perf_counter()
     gateway = ModelGateway(config)
     tools = [{"type": "function", "function": {
         "name": "check_drawing_connection", "description": "Check the drawing application's model connection.",
-        "parameters": {"type": "object", "properties": {"value": {"type": "string", "enum": ["draw-agent"]}},
-                       "required": ["value"], "additionalProperties": False},
+        "parameters": {"type": "object", "properties": {
+            "value": {"type": "string", "enum": ["draw-agent"]},
+            "left_shape": {"type": "string", "enum": ["circle", "rectangle", "diamond"]},
+            "left_color": {"type": "string", "enum": ["blue", "red", "green"]}},
+            "required": ["value", "left_shape", "left_color"], "additionalProperties": False},
     }}]
-    messages = [{"role": "system", "content": "Call check_drawing_connection with value draw-agent. After receiving the tool result, reply with the text connected."},
-                {"role": "user", "content": "Check the drawing tool connection."}]
+    messages = [{"role": "system", "content": "Look at the actual supplied image. Call check_drawing_connection with value draw-agent and the shape and color of the LEFT object. After receiving the tool result, reply connected."},
+                {"role": "user", "content": [
+                    {"type": "text", "text": "Check the model's image input and drawing tool connection."},
+                    {"type": "image_url", "image_url": {'url': 'data:image/png;base64,' + base64.b64encode(image).decode('ascii')}},
+                ]}]
     response = await gateway.complete(messages, tools)
     message = response.choices[0].message
     if not message.tool_calls:
         raise ModelGatewayError("模型返回了文本，但未完成工具调用。请确认该模型支持 function calling。")
     messages.append(message.model_dump(exclude_none=True))
     for call in message.tool_calls:
-        if call.function.name != "check_drawing_connection" or json.loads(call.function.arguments) != {"value": "draw-agent"}:
-            raise ModelGatewayError("模型返回的工具参数未通过校验。")
+        if call.function.name != "check_drawing_connection" or json.loads(call.function.arguments) != expected_image:
+            raise ModelGatewayError("模型没有正确识别测试图片中的左侧图形及颜色，或工具参数未通过校验。请确认模型支持图片输入和工具调用。")
         messages.append({"role": "tool", "tool_call_id": call.id, "content": '{"connected":true}'})
     final = await gateway.complete(messages)
     if not final.choices[0].message.content:
         raise ModelGatewayError("工具调用完成后，模型未返回文本响应。")
-    return {"ok": True, "text_response": True, "tool_calling": True,
+    return {"ok": True, "text_response": True, "tool_calling": True, "image_input": True,
             "model": config.model, "latency_ms": round((time.perf_counter() - started) * 1000, 1)}
 
 

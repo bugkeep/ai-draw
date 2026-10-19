@@ -4,17 +4,20 @@ Draw Agent Studio 是一个通过连续对话编辑同一张画布的开源绘�
 
 目前支持矩形、椭圆、菱形、文字、线条、箭头和画笔对象，以及选择、移动、修改、删除、撤销和重做。常见的明确指令由本地绘图命令处理；复杂场景由主 Agent 调用工具创建子 Agent，并行准备动作。子 Agent 可以复用、继续接收输入、关闭和恢复，每条输入具有独立编号。主 Agent 审阅结构化摘要，再接受结果并逐步提交。子 Agent 的完整工具记录和上下文保存在 SQLite。
 
+主 Agent 查看已提交画布的实际 PNG，子 Agent 查看自己的草稿；修改后自动提供当前图片，也可以放大指定区域。Agent 可以使用橡皮擦去除整条笔画或局部线段，检查修正后的图片再完成。历史图片与完整工具记录保存在 SQLite，上下文只提供当前全图及所需局部图片。
+
 绘图动作数量与模型请求持续时间由任务需要决定。用户可主动停止任务；子 Agent 可以执行绘图和资料检索，不能创建或控制其他 Agent。
 
 ## 运行
 
-需要 Python 3.11+ 和 Node.js 20.19+。建议创建独立 Python 环境后安装依赖：
+需要 Python 3.11+、Node.js 20.19+，以及支持图片输入和工具调用的模型。服务端使用原生 Excalidraw 导出器生成检查图片；Windows 默认使用本机 Chrome，其他系统需要安装 Playwright Chromium，也可以通过 `CHROME_PATH` 指定 Chromium 可执行文件。建议创建独立 Python 环境后安装依赖：
 
 ```bash
 python -m pip install -r requirements.txt
 cd frontend-app
 npm ci
 npm run build
+npx playwright install --with-deps chromium
 cd ..
 python -m uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8000
 ```
@@ -33,7 +36,7 @@ python -m uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8000
 4. 输入“用画笔画一张笑脸，展示作画过程”，观察轮廓、眼睛和嘴巴逐步出现。
 5. 在 Excalidraw 中直接选择、拖动或修改对象，再继续对话。
 
-人像和有机轮廓使用批量平滑画笔工具 `draw_paths`，Agent 提供关键点，执行器生成逐笔显示的原生曲线。`reshape_path` 可以修改已有轮廓并保留对象编号、名称和样式。复杂作品按统一构图分配给子 Agent，主 Agent 审核并依次提交；也可以直接输入“画一幅蒙娜丽莎素描图”检查完整人物、五官、双手、衣褶和背景的生成过程。
+人像和有机轮廓使用批量平滑画笔工具 `draw_paths`，Agent 提供关键点，执行器生成逐笔显示的原生曲线。`reshape_path` 可以修改已有轮廓并保留对象编号、名称和样式。`erase_strokes` 支持整条擦除和局部擦除，保留剩余曲线的可编辑性，一次擦除手势对应一次撤销。复杂作品按统一构图分配给子 Agent，主 Agent 审核并依次提交；也可以直接输入“画一幅蒙娜丽莎素描图”检查完整人物、五官、双手、衣褶和背景的生成过程。
 
 Agent 可以通过 `search_references` 使用免费的公共搜索查阅具体画法，使用 `read_reference` 阅读相关步骤。服务读取网页正文，检查主题与绘画步骤，过滤重复和无关内容，只返回少量来源及相关片段。较多的检索工作可以交给子 Agent；完整检索和网页记录保存在 SQLite，同一画布可以使用缓存。公共搜索可能遇到限流或连接失败，工具会返回实际错误，Agent 根据反馈继续处理。筛选方法与配置见[绘图工具及资料检索](docs/drawing-tools.md)。
 
@@ -54,6 +57,8 @@ Agent 可以通过 `search_references` 使用免费的公共搜索查阅具体�
 | `frontend-app/` | React、Excalidraw、绘图对话和实时事件展示 |
 | `studio/actions.py` | 绘图动作校验与原生 Excalidraw 对象构建 |
 | `studio/pen.py` | 平滑画笔曲线、共享坐标变换和路径修改参数 |
+| `studio/eraser.py` | 整条与局部擦除、旋转几何、剩余曲线和对象保护 |
+| `studio/vision.py`、`studio/renderer.py` | 当前全图与局部图片、SQLite 图片记录、原生 Excalidraw 渲染进程 |
 | `studio/research.py` | 免费公共检索、网页正文读取、相关步骤筛选和画布资料缓存 |
 | `studio/agents.py`、`studio/agent_tools.py` | 主 Agent 工具循环所用上下文、模型请求和工具定义 |
 | `studio/agent_manager.py` | 子 Agent 身份、输入排队、并发执行、等待和关闭恢复 |
@@ -76,6 +81,7 @@ python -m pip install -r requirements-dev.txt
 cd frontend-app
 npm ci
 npm run build
+npx playwright install --with-deps chromium
 npm audit --omit=dev
 cd ..
 python -m pytest -q
@@ -97,6 +103,7 @@ python -m scripts.evaluate_transformer
 python -m scripts.evaluate_portrait
 python -m scripts.evaluate_quality
 python -m scripts.evaluate_research_agent
+python -m scripts.evaluate_visual_edit
 ```
 
 生命周期评测从 `.env` 或 `DRAW_AGENT_*` 环境变量读取模型连接，在独立 SQLite 数据库中检查排队、关闭恢复、提交幂等和同一对象的后续编辑：
@@ -118,6 +125,12 @@ python -m scripts.evaluate_agent_reuse --session-id SESSION_ID
 `evaluate_portrait` 默认只发送“画一幅蒙娜丽莎素描图”，记录首次画布更新、总耗时、工具错误反馈及人物部位的结构检查，并导出 `.excalidraw` 文件。结构检查与画面相似程度分别记录；相似程度需要查看实际绘图结果。
 
 `evaluate_quality` 使用 `evaluations/drawing-quality.json` 中的山水、人物、动物、建筑和流程图指令，逐项记录必要对象、首次更新、总耗时、重试与工具错误，并保存原生作品。`--cases` 可选择题目，`--recheck --output-dir runs/drawing-quality` 可重新检查已保存的执行，无需请求模型重新作画。对象结构检查不能代替构图、比例和表达效果的人工评价。
+
+`evaluate_visual_edit` 使用实际模型查看一张包含多余眼睛的人脸，检查整条擦除、保留其他部位、局部擦除穿过面部的线段、图片反馈和撤销重做。`evaluate_visual_quality` 接收 PNG 或 Excalidraw 文件，先让模型描述图片，再按照提示词与画面标准给出有依据的评价。模型辅助评价与用户验收分别记录：
+
+```bash
+python -m scripts.evaluate_visual_quality runs/drawing-quality/cat-on-window.excalidraw --prompt "画一只蜷在窗台上睡觉的猫" --output runs/cat-visual-review.json
+```
 
 `python -m scripts.evaluate_research` 直接验证实际公共检索、正文读取、缓存和资料归属。`evaluate_research_agent` 验证实际主 Agent 派发检索、子 Agent 阅读来源、返回方案与来源引用，以及按方案绘图。公共搜索的连接情况会影响结果。
 

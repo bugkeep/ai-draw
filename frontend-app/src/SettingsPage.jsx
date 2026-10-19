@@ -101,7 +101,7 @@ export default function SettingsPage() {
     setTesting(true)
     try {
       const result = await studioApi.testSettings(payload())
-      setNotice(`连接成功：文本响应与工具调用均通过，用时 ${(result.latency_ms / 1000).toFixed(2)} 秒。`)
+      setNotice(`连接成功：图片识别、文本响应与工具调用均通过，用时 ${(result.latency_ms / 1000).toFixed(2)} 秒。`)
     } catch (cause) {
       setError(cause.message)
     } finally {

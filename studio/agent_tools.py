@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .actions import CreateElement, DeleteElements, MoveElements, SelectElements, UpdateElements
 from .pen import DrawPaths, ReshapePath
+from .eraser import EraseStrokes
 
 
 class ToolInput(BaseModel):
@@ -43,14 +44,26 @@ class CreateElements(ToolInput):
     items: list[CreateElement] = Field(min_length=1)
 
 
+class CanvasRegion(ToolInput):
+    x: float = Field(ge=-100000, le=100000, allow_inf_nan=False)
+    y: float = Field(ge=-100000, le=100000, allow_inf_nan=False)
+    width: float = Field(gt=0, le=200000, allow_inf_nan=False)
+    height: float = Field(gt=0, le=200000, allow_inf_nan=False)
+
+
 class InspectScene(ToolInput):
     ids: list[str] = Field(default_factory=list)
     query: str = ""
+    region: CanvasRegion | None = None
     include_geometry: bool = False
 
 
 class FinishDrawing(ToolInput):
     summary: str = Field(min_length=1)
+
+
+class ViewCanvas(ToolInput):
+    region: CanvasRegion | None = None
 
 
 class SearchReferences(ToolInput):
@@ -68,6 +81,7 @@ class ReadReference(ToolInput):
 DRAWING_INPUTS = {
     "draw_paths": DrawPaths,
     "reshape_path": ReshapePath,
+    "erase_strokes": EraseStrokes,
     "create_elements": CreateElements,
     "create_element": CreateElement,
     "select_elements": SelectElements,
@@ -76,6 +90,7 @@ DRAWING_INPUTS = {
     "delete_elements": DeleteElements,
     "inspect_scene": InspectScene,
     "finish_drawing": FinishDrawing,
+    "view_canvas": ViewCanvas,
 }
 REFERENCE_INPUTS = {
     "search_references": SearchReferences,
@@ -103,21 +118,23 @@ REFERENCE_TOOLS = [
     definition("read_reference", "Read additional relevant passages from a verified reference_id in this canvas. Provide focus_terms for the technique or structure you need. The source must have been successfully read by search_references. Returns excerpts, not a full web log.", ReadReference),
 ]
 DRAWING_TOOLS = [
-    definition("draw_paths", "Draw a batch of smooth native editable pen strokes through named anchor points. Use for portraits, organic contours, hair, fingers, folds and hatching. Each path is a separate stroke with points in drawing coordinates; smooth defaults true, closed defaults false. Shared origin and scale transform all paths. Optional per-path width/color/opacity overrides shared style. Batch related strokes, use precise anatomical names, and do not connect unrelated strokes.", DrawPaths),
-    definition("reshape_path", "Reshape an existing native pen/line stroke using absolute anchor points, preserving its object ID, name, style and unrelated artwork. Smooth defaults true. Use for precise follow-up edits to a mouth, eyelid or contour. inspect_scene geometry points are relative to each element's x/y; add that origin before editing.", ReshapePath),
+    definition("view_canvas", "View the actual rendered PNG of your current canvas: the shared submitted drawing for the main Agent, your private draft for a child. The image is attached to your next context, with its scene_bounds coordinate mapping. Optional region x/y/width/height requests a closer view without changing the canvas. Before completing, inspect the current image and fix visible anatomy, overlaps, misplaced features and excessive strokes. Older images stay in SQLite rather than accumulating in context.", ViewCanvas),
+    definition("erase_strokes", "Erase along absolute canvas points with a brush radius. points must be [[x,y]] even for one dab, or [[x1,y1],[x2,y2]] for a sweep. mode=segment removes touched portions of pen/line strokes and preserves editable fragments; mode=stroke deletes whole touched objects like Excalidraw. Optional ids limits targets. Locked/unrelated objects are preserved. One gesture is one undo step. Remove incorrect lines before redrawing instead of adding overlapping contours.", EraseStrokes),
+    definition("draw_paths", "Draw a batch of smooth native editable pen strokes through named anchor points. Use for portraits, organic contours, hair, fingers, folds and hatching. Each path is separate; smooth defaults true, closed false. Shared origin/scale transform points. strokeWidth is the native Excalidraw brush unit: rendered base size=strokeWidth*4.25, so pencil strokes usually use 0.2..0.5. Default 0.4. Per-path style overrides shared style. Refine existing outlines with reshape_path or erase_strokes instead of adding duplicate contours.", DrawPaths),
+    definition("reshape_path", "Reshape an existing native pen/line stroke using absolute canvas anchor points, preserving its object ID, name, style and unrelated artwork. Smooth defaults true. Use for precise follow-up edits to a mouth, eyelid or contour. inspect_scene geometry points are relative to x/y and rotated by angle around the element center; your replacement points always use final absolute canvas coordinates.", ReshapePath),
     definition("create_elements", "Create a batch of native editable Excalidraw elements. Use one call for related shapes. Text only needs type, x, y and text. For line, arrow or freedraw, points are absolute when x and y are omitted; otherwise points are relative to that origin.", CreateElements),
     definition("create_element", "Create one native Excalidraw element. For paths use absolute points without x/y, or relative points with x/y. Give objects readable names.", CreateElement),
     definition("select_elements", "Select existing object IDs for subsequent edits or to show the user.", SelectElements),
     definition("move_elements", "Move objects by ids and dx/dy, or move one object to absolute x/y.", MoveElements),
     definition("update_elements", "Update existing ids using patch, including text, position, size and colors.", UpdateElements),
     definition("delete_elements", "Delete existing objects by ids.", DeleteElements),
-    definition("inspect_scene", "Read current objects, selection and canvas revision. Optional ids requests specific objects outside the overview. Optional query searches all names/text. Set include_geometry=true to read actual stroke points for precise editing.", InspectScene),
-    definition("finish_drawing", "Signal completion with a brief summary in the user's language. Put this LAST after drawing tools in the same response to save an extra model round trip. Completion is accepted only after every preceding tool succeeded. Main Agents must first settle all child work and results. Any tool error is returned to your context and requires another response before completion.", FinishDrawing),
+    definition("inspect_scene", "Read current objects, selection and canvas revision. Optional ids requests specific objects outside the overview. Optional query searches all names/text. Optional region x/y/width/height finds every object intersecting that canvas region, including older strokes; use the same coordinates as view_canvas to identify what needs correction. Filters combine. Set include_geometry=true to read actual stroke points and angle for precise editing.", InspectScene),
+    definition("finish_drawing", "Finish after inspecting the latest actual canvas image, with a brief summary in the user's language. Any drawing changes since the last image require another visual inspection before completion. Put this last; preceding tools must succeed. Main Agents must settle child work and results. Tool errors always return to your context. Do not claim visual quality from object names or counts.", FinishDrawing),
 ]
 LIFECYCLE_TOOLS = [
     definition("spawn_agent", "Start a persistent child Agent asynchronously. Return agent_id, nickname, input_id and run_id immediately. Assign a self-contained drawing goal with shared layout bounds and connector positions, or a research goal with source requirements. Children return private drawing results or research summaries for your review.", SpawnAgent),
     definition("send_input", "Send new work to an existing Agent. Running Agents queue inputs in arrival order. Final Agents become Running. Each input gets its own input_id and run_id. Resume a Shutdown Agent before sending input.", SendInput),
-    definition("wait_agent", "Observe or wait for Agents in this canvas. Return when any requested Agent is Final/Shutdown or has a new completed run. For another wait, use only returned running_ids and their previous revisions in after. Final/Shutdown always return immediately. This tool never starts or resumes work and has no execution deadline.", WaitAgent),
+    definition("wait_agent", "Observe or wait for Agents in this canvas. Return when any requested Agent is Final/Shutdown or has a new completed run. For another wait, use only returned running_ids and their previous revisions in after, which must be a mapping such as {\"agent_123\":7}, never a single number. Final/Shutdown always return immediately. This tool never starts or resumes work and has no execution deadline.", WaitAgent),
     definition("close_agent", "Stop a child Agent and retain its context, pending inputs and prepared drawing progress. State becomes Shutdown. No drawing actions are submitted by closing.", AgentIdentity),
     definition("resume_agent", "Resume a Shutdown Agent with the same agent_id and saved progress. Continue unfinished inputs. An Agent without unfinished work becomes Final. Completed work is never restarted.", AgentIdentity),
     definition("apply_agent_result", "Approve and submit one saved child drawing result to this canvas, step by step. Review its summary first. Apply listed depends_on results first. Repeating this call skips actions already committed.", ApplyAgentResult),
