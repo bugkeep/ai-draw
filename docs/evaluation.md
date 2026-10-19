@@ -196,7 +196,9 @@ python -m scripts.evaluate_completion_review --rejected-artwork PATH.excalidraw 
 
 主 Agent 的精细画笔和曲线重塑现交给子 Agent，模型工具定义及运行时共同检查；简单几何、语义编辑与确定性描线计划保留。几何压缩与修订历史的自动检查使用真实私有草稿、原生准备动作及 SQLite 记录，随后通过主执行器提交，不伪造模型回复。对应完整后端检查为 128 项通过，真实模型分页与原对象编辑为 14/14 项通过，用时 67.77 秒；其中一次工具错误已进入后续模型上下文并恢复，不能写作零错误。记录为 `runs/tests-main-child-roles-full-20261020.stdout.log` 和 `runs/main-role-scene-paging-20261020.json`。新版整幅猫图已实际派发两个绘图子 Agent，完整画质与总耗时仍单独观察。
 
-`quality_evaluation.js` 通过隔离的生产 HTTP 服务执行题材评测，在输出目录写入 `server.json`，包含本次测试服务地址和独立数据库路径。需要停止某个无效修补案例时，可对该测试地址使用正常的 `/api/studio/tasks/{id}/cancel`，保存取消状态和当前作品后继续后续案例。它要求全新数据库，避免打开现有用户库。实现归档覆盖全部 `studio/`、`server/` Python 源码及渲染器、前端依赖锁定文件，包含实际角色工具定义。
+`quality_evaluation.js` 通过隔离的生产 HTTP 服务执行题材评测，在输出目录写入 `server.json`，包含本次测试服务地址和独立数据库路径。需要停止某个无效修补案例时，可对该测试地址使用正常的 `/api/studio/tasks/{id}/cancel`，保存取消状态和当前作品后继续后续案例。它要求全新数据库，避免打开现有用户库。实现归档覆盖全部 `studio/`、`server/` Python 源码、渲染器、前端依赖锁定文件以及评测和录制脚本，包含实际角色工具定义。
+
+该流程同时打开真实编辑器，为每题单独保存 `.webm`、`.browser.png` 和 `.recording.json`，并保存 Python 导出的最终原生文档及 PNG。录制信息包含任务、画布、开始时间、实际收到的增量与画笔过程事件数和浏览器错误。快速指令可能在页面打开前已经完成，此时事件数为零，不能把静止录像当作逐步绘图证明。取消或失败的任务保留其实际状态。`DRAW_AGENT_QUALITY_CASES` 可指定逗号分隔的案例编号，`DRAW_AGENT_QUALITY_DATASET` 可指定自定义数据集，`DRAW_AGENT_EVAL_DIR` 可指定独立输出目录。录制错误单独保存在 `recording-errors.json` 并使检查失败。
 
 ## 连续作画事件与断线恢复
 

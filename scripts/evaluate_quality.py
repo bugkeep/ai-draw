@@ -37,7 +37,8 @@ def main():
     implementation_files = [path for package in ('studio', 'server')
                             for path in sorted((root / package).rglob('*.py'))]
     implementation_files.extend(root / name for name in ('requirements.txt', 'requirements-dev.txt',
-        'frontend-app/src/renderCanvas.js', 'frontend-app/package.json', 'frontend-app/package-lock.json'))
+        'frontend-app/src/renderCanvas.js', 'frontend-app/package.json', 'frontend-app/package-lock.json',
+        'scripts/evaluate_quality.py', 'scripts/verify_browser.py', 'frontend-app/scripts/quality_evaluation.js'))
     implementation = {path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
                       for path in implementation_files}
     dataset_hash = hashlib.sha256(args.dataset.read_bytes()).hexdigest()
@@ -134,6 +135,7 @@ def main():
                       'image_observation_count': sum(item['kind'] == 'canvas_observation' for item in logs),
                       'final_shared_scene_hash': final_hash,
                       'final_model_canvas_observed': final_observed if contexts else None,
+                      'model_context_count': len(contexts),
                       'png_source': 'rendered_final_shared_native_document',
                       'result_preview_count': sum(len(context.get('result_observation_ids', [])) for context in contexts),
                       "tool_error_count": sum(item["kind"] == "function_call_output" and
@@ -148,7 +150,9 @@ def main():
                 "appState": {"viewBackgroundColor": "#ffffff"}, "files": {},
             }, ensure_ascii=False), encoding="utf-8")
             results.append(result)
-            print(json.dumps(result, ensure_ascii=False), flush=True)
+            print(json.dumps({key: result[key] for key in ('case', 'session_id', 'task_id', 'status', 'error',
+                'element_count', 'latency_ms', 'first_canvas_update_ms', 'model_context_count',
+                'structural_checks_passed')}, ensure_ascii=False), flush=True)
             (args.output_dir / "report.json").write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     if not all(result["structural_checks_passed"] for result in results):
         raise SystemExit(1)
