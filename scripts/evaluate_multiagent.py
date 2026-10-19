@@ -5,6 +5,26 @@ from pathlib import Path
 
 import httpx
 
+from .evaluate_agent_edit import is_green
+
+
+def tree_trunks_with_canopies(elements: list[dict]) -> list[dict]:
+    canopies = [item for item in elements if item["type"] in {"ellipse", "freedraw"}
+                and is_green(item.get("backgroundColor", ""))]
+    trunks = []
+    for item in elements:
+        color = item.get("backgroundColor", "")
+        if item["type"] != "rectangle" or item["x"] < 500 or item["height"] < item["width"] * 2 or len(color) != 7:
+            continue
+        red, green, blue = bytes.fromhex(color[1:])
+        center = item["x"] + item["width"] / 2
+        if red > green > blue and any(
+            leaf["x"] <= center <= leaf["x"] + leaf["width"] and leaf["y"] < item["y"]
+            and leaf["y"] + leaf["height"] >= item["y"] - item["width"] * 2 for leaf in canopies
+        ):
+            trunks.append(item)
+    return trunks
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -57,8 +77,7 @@ def main():
 
     sun = next((item for item in elements if item["type"] == "ellipse"
                 and named(item, "太阳", "sun") and item["y"] < 220), None)
-    trunks = [item for item in elements if item["type"] == "rectangle"
-              and named(item, "树干", "trunk") and item["x"] >= 500]
+    trunks = tree_trunks_with_canopies(elements)
     rays = [item for item in elements if named(item, "光芒", "ray")]
     scene_checks = {
         "house_left": any(named(item, "房", "屋", "house") and item["x"] < 500 for item in elements),
