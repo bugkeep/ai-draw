@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { CaptureUpdateAction, Excalidraw, exportToBlob } from '@excalidraw/excalidraw'
+import { CaptureUpdateAction, DefaultSidebar, Excalidraw, exportToBlob } from '@excalidraw/excalidraw'
 import { useNavigate } from 'react-router-dom'
 import '@excalidraw/excalidraw/index.css'
 import { eventsUrl, studioApi } from './studioApi.js'
@@ -502,7 +502,9 @@ export default function App() {
               UIOptions={{ tools: { image: false }, canvasActions: {
                 export: false, loadScene: false, saveToActiveFile: false, saveAsImage: false,
               } }}
-            />}
+            >
+              <DefaultSidebar.Trigger style={{ display: 'none' }} />
+            </Excalidraw>}
           </div>
           <div className="canvas-footnote">Agent 创建的每一步都会显示在画布上 · 你也可以用 Excalidraw 工具继续编辑</div>
         </section>
