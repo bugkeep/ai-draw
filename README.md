@@ -96,6 +96,14 @@ python -m pytest -q
 python -m scripts.evaluate_studio
 ```
 
+可在真实作品的独立数据库副本中测量连续移动、撤销与重做，同时核查历史内容及顺序：
+
+```bash
+python -m scripts.evaluate_history --source-database runs/studio.sqlite3 --database runs/history-evaluation.sqlite3 --output runs/history-evaluation.json
+```
+
+命令要求新的评测数据库，原始数据库只读；报告保存实际采样耗时、SQLite 版本、存储代码标识和历史恢复检查。
+
 启动服务并在设置页配置真实模型后，可运行连接验证、多轮指代与并行子 Agent 评测：
 
 ```bash

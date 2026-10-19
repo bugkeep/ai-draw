@@ -262,3 +262,40 @@ def test_web_reference_in_memory_evidence_returns_field_error_then_valid_notes_c
             await runtime.close()
             store.close()
     asyncio.run(check())
+
+
+def test_path_revision_history_survives_compaction_and_excludes_other_callers(tmp_path):
+    async def check():
+        store, runtime, session, task, models = workspace(tmp_path / 'revisions.sqlite3')
+        try:
+            created = await call(runtime, models, session, task, 'create_element', {
+                'type': 'freedraw', 'name': '面部轮廓', 'points': [[0, 0], [30, 40], [60, 0]],
+            }, 'outline')
+            element_id = created['changed_ids'][0]
+            for index in range(4):
+                await call(runtime, models, session, task, 'reshape_path', {
+                    'element_id': element_id, 'points': [[0, 0], [30, 40 + index], [60, 0]],
+                }, f'revise-{index}')
+            await call(runtime, models, session, task, 'compact_context', {
+                'goal': '完成面部轮廓阶段', 'summary': '已调整轮廓，等待检查图像', 'object_ids': [element_id],
+            }, 'save-stage')
+            document = store.get_document(session['document']['id'])
+            snapshot = runtime.memory.snapshot(task['id'], 'main', f"main:{task['id']}", 'new-state', document)
+            path = snapshot['execution_history']['recent_path_edits'][0]
+            assert path['element_id'] == element_id and path['revisions'] == 4
+            assert path['name'] == '面部轮廓' and path['exists']
+            assert next(item for item in snapshot['execution_history']['tool_counts']
+                        if item['tool_name'] == 'reshape_path')['calls'] == 4
+            assert snapshot['known_queries_in_current_state'] == []
+            assert not runtime.memory.snapshot(task['id'], 'other-agent', f"main:{task['id']}", 'new-state',
+                document)['execution_history']['tool_counts']
+            future = store.create_task(session['id'])
+            await call(runtime, models, session, future, 'reshape_path', {
+                'element_id': element_id, 'points': [[0, 0], [30, 50], [60, 0]],
+            }, 'future-revision')
+            assert runtime.memory.snapshot(task['id'], 'main', f"main:{task['id']}", 'new-state',
+                document)['execution_history']['recent_path_edits'][0]['revisions'] == 4
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())

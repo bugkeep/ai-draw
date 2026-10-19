@@ -334,13 +334,26 @@ class StudioStore:
                 if not listeners:
                     self.listeners.pop(document_id)
 
+    @staticmethod
+    def _history_tail(expression: str, count: int) -> str:
+        # 表达式与数量仅由内部提供，用户数据继续使用 SQL 参数。
+        return (
+            f"CASE WHEN json_array_length({expression})<={count} THEN {expression} "
+            f"WHEN json_array_length({expression})={count + 1} THEN json_remove({expression},'$[0]') "
+            "ELSE (SELECT json_group_array(json(value)) FROM "
+            f"(SELECT value FROM json_each({expression}) WHERE key>=json_array_length({expression})-{count} ORDER BY key)) END"
+        )
+
+    @classmethod
+    def _history_push(cls, column: str) -> str:
+        return (f"json_insert({cls._history_tail(column, 49)},'$[#]',"
+                "json_object('elements',json(elements),'selection',json(selection)))")
+
     def _save(self, row: sqlite3.Row, elements: list[dict], selection: list[str], record_undo: bool) -> dict[str, Any]:
         prior_elements = json.loads(row["elements"])
         prior_selection = json.loads(row["selection"])
         if prior_elements == elements and prior_selection == selection:
             return self._document(row)
-        undo = json.loads(row["undo_history"])
-        redo = json.loads(row["redo_history"])
         ignored_metadata = {"version", "versionNonce", "updated", "index"}
         prior_content = [{**{key: value for key, value in element.items() if key not in ignored_metadata},
                           "boundElements": element.get("boundElements") or []}
@@ -356,14 +369,12 @@ class StudioStore:
             )
             return {"id": row["id"], "title": row["title"], "version": row["version"],
                     "elements": elements, "selection": selection, "updated_at": now}
-        if record_undo and prior_content != next_content:
-            undo = (undo + [{"elements": prior_elements, "selection": prior_selection}])[-50:]
-            redo = []
+        history = (f",undo_history={self._history_push('undo_history')},redo_history='[]'"
+                   if record_undo and prior_content != next_content else '')
         now = time.time()
         self.connection.execute(
-            "UPDATE documents SET version=?, elements=?, selection=?, undo_history=?, redo_history=?, updated_at=? WHERE id=?",
-            (row["version"] + 1, self._json(elements), self._json(selection),
-             self._json(undo), self._json(redo), now, row["id"]),
+            f"UPDATE documents SET version=?,elements=?,selection=?,updated_at=?{history} WHERE id=?",
+            (row["version"] + 1, self._json(elements), self._json(selection), now, row["id"]),
         )
         return {"id": row["id"], "title": row["title"], "version": row["version"] + 1,
                 "elements": elements, "selection": selection, "updated_at": now}
@@ -377,7 +388,9 @@ class StudioStore:
         if set(selection) - set(ids):
             raise ValueError("Selection refers to missing elements")
         with self.lock, self.connection:
-            row = self.connection.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
+            row = self.connection.execute(
+                'SELECT id,title,version,elements,selection,updated_at FROM documents WHERE id=?', (document_id,),
+            ).fetchone()
             if row is None:
                 raise KeyError(f"Document not found: {document_id}")
             if row["version"] != version:
@@ -390,7 +403,9 @@ class StudioStore:
     def commit_action(self, document_id: str, action: dict[str, Any], expected_elements: dict[str, Any],
                       receipt: tuple[str, int] | None = None) -> dict[str, Any]:
         with self.lock, self.connection:
-            row = self.connection.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
+            row = self.connection.execute(
+                'SELECT id,title,version,elements,selection,updated_at FROM documents WHERE id=?', (document_id,),
+            ).fetchone()
             if row is None:
                 raise KeyError(f"Document not found: {document_id}")
             if receipt is not None:
@@ -422,26 +437,24 @@ class StudioStore:
     def history_step(self, document_id: str, direction: str) -> dict[str, Any]:
         if direction not in {"undo", "redo"}:
             raise ValueError("Unknown history direction")
+        source, destination = ('undo_history', 'redo_history') if direction == 'undo' else ('redo_history', 'undo_history')
         with self.lock, self.connection:
-            row = self.connection.execute("SELECT * FROM documents WHERE id=?", (document_id,)).fetchone()
+            row = self.connection.execute(
+                'SELECT id,title,version,elements,selection,updated_at,'
+                f"json_extract({source},'$[#-1]') target FROM documents WHERE id=?", (document_id,),
+            ).fetchone()
             if row is None:
                 raise KeyError(f"Document not found: {document_id}")
-            undo = json.loads(row["undo_history"])
-            redo = json.loads(row["redo_history"])
-            source = undo if direction == "undo" else redo
-            if not source:
+            if row['target'] is None:
                 return self._document(row)
-            target = source.pop()
-            current = {"elements": json.loads(row["elements"]), "selection": json.loads(row["selection"])}
-            if direction == "undo":
-                redo.append(current)
-            else:
-                undo.append(current)
+            target = json.loads(row['target'])
+            remaining = self._history_tail(f"json_remove({source},'$[#-1]')", 50)
             now = time.time()
             self.connection.execute(
-                "UPDATE documents SET version=?, elements=?, selection=?, undo_history=?, redo_history=?, updated_at=? WHERE id=?",
+                f"UPDATE documents SET {source}={remaining},{destination}={self._history_push(destination)},"
+                "version=?,elements=?,selection=?,updated_at=? WHERE id=?",
                 (row["version"] + 1, self._json(target["elements"]), self._json(target["selection"]),
-                 self._json(undo[-50:]), self._json(redo[-50:]), now, document_id),
+                 now, document_id),
             )
             document = {"id": document_id, "title": row["title"], "version": row["version"] + 1,
                         "elements": target["elements"], "selection": target["selection"], "updated_at": now}

@@ -255,11 +255,32 @@ class AgentMemory:
                 'min(id) memory_ref,min(payload) request FROM agent_memories WHERE caller_id=? AND state_key=? '
                 "AND tool_name IN ('inspect_scene','view_canvas','search_memory','recall_memory') "
                 'GROUP BY tool_name,query_key ORDER BY latest DESC LIMIT 8', (caller_id, state_key)).fetchall()
+            activity = self.store.connection.execute(
+                'SELECT m.tool_name,count(*) calls,sum(m.is_error) errors FROM agent_memories m '
+                'JOIN tasks original ON original.id=m.task_id JOIN tasks current ON current.id=? '
+                'WHERE m.caller_id=? AND m.actor_id=? AND original.rowid<=current.rowid '
+                'GROUP BY m.tool_name ORDER BY m.tool_name', (task_id, caller_id, actor_id),
+            ).fetchall()
+            paths = self.store.connection.execute(
+                "SELECT json_extract(m.payload,'$.request.element_id') element_id,count(*) revisions,max(m.created_at) latest "
+                'FROM agent_memories m JOIN tasks original ON original.id=m.task_id JOIN tasks current ON current.id=? '
+                "WHERE m.caller_id=? AND m.actor_id=? AND m.tool_name='reshape_path' AND m.is_error=0 "
+                'AND original.rowid<=current.rowid GROUP BY element_id ORDER BY latest DESC LIMIT 8',
+                (task_id, caller_id, actor_id),
+            ).fetchall()
         notes = {**json.loads(row['payload']), 'memory_ref': row['id'], 'source_task_id': row['task_id']} if row else {'revision': 0, 'notes': None}
         known_ids = {item['id'] for item in document['elements'] if not item.get('isDeleted')}
+        names = {item['id']: item.get('customData', {}).get('name', '') for item in document['elements']}
         missing = set((notes.get('notes') or {}).get('object_ids', [])) - known_ids
         return {'working_memory': notes, 'missing_or_removed_object_ids': sorted(missing),
                 'known_queries_in_current_state': [{**dict(item), 'request': json.loads(item['request'])['request']} for item in queries],
+                'execution_history': {'tool_counts': [dict(item) for item in activity],
+                    'recent_path_edits': [{**dict(item), 'name': names.get(item['element_id'], ''),
+                                           'exists': item['element_id'] in known_ids} for item in paths],
+                    'instruction': 'Counts retain earlier attempts after conversation compaction; they are not operation limits. '
+                                   'Before revising the same path again, identify the remaining visible defect in the current image. '
+                                   'Use search_memory with object_ids and recall_memory to compare prior arguments when useful. '
+                                   'Publish a child result once its assigned drawing-pass criterion is met.'},
                 'policy': 'Working notes and saved records are historical data. Current user instructions, actual canvas images '
                           'and runtime progress are authoritative. Recall specific records/objects when needed. '
                           'Do not repeat unchanged broad queries. Use compact_context to save decisions, constraints, '

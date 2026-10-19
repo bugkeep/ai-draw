@@ -179,8 +179,15 @@ MEMORY_TOOL_DEFINITIONS = [
     definition('recall_memory', 'Retrieve precisely what is needed. Pass element_id for CURRENT native geometry, with point_offset/point_limit pages and total point_count; all pages are available. Pass memory_ref for a saved summary, original tool arguments or full output, with offset/max_chars JSON text pages. Historical records do not prove current geometry. Prefer one object over a broad full-scene geometry query; delegate extensive geometry work to a child.', RecallMemory),
     definition('compact_context', 'Save durable structured working memory before replacing conversational detail: goal, decisions/constraints, completed work, pending work, important object IDs and optional evidence_refs containing exact memory_ref values already returned to you. Put web reference_id and drawing result_id values in summary or constraints. Use the current working_memory revision. Successful calls replace earlier conversational detail with these notes; complete raw calls remain searchable in SQLite. Current errors still reach the next context in full. Notes are not a drawing commit or proof of completion.', CompactContext),
 ]
-CHILD_TOOLS = DRAWING_TOOLS + REFERENCE_TOOLS + MEMORY_TOOL_DEFINITIONS
-MAIN_TOOLS = CHILD_TOOLS + LIFECYCLE_TOOLS
+CHILD_TOOLS = [definition('finish_drawing',
+    'Publish the prepared result for this child input once its assigned structure and drawing-pass criterion are met. '
+    'Inspect the actual current private-draft image, fix concrete defects within the assigned structure, '
+    'then put this call last with a concise summary of the prepared changes. The main Agent combines regions, '
+    'reviews the full artwork and assigns later passes through new inputs. All tool errors must reach your next context '
+    'before completing. Drawing changes since the last image require another inspection.', FinishDrawing)
+    if item['function']['name'] == 'finish_drawing' else item for item in DRAWING_TOOLS
+] + REFERENCE_TOOLS + MEMORY_TOOL_DEFINITIONS
+MAIN_TOOLS = DRAWING_TOOLS + REFERENCE_TOOLS + MEMORY_TOOL_DEFINITIONS + LIFECYCLE_TOOLS
 
 
 def validate_tool(name: str, arguments: Any, *, child: bool = False) -> dict:
