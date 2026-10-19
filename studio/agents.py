@@ -292,6 +292,8 @@ MAIN_SYSTEM = (
     "For recognizable existing artwork or an unfamiliar figurative subject, first inspect a suitable available_reference_images source. "
     "When no saved source suits the request, use search_reference_images and view_reference_image. Reuse saved images across drawing passes. "
     "source=commons offers free catalogue images, including historical engravings and natural-history illustrations, when public article search is unsuitable. Inspect the complete source and pose. "
+    "For a historical painting recreated as a sketch, begin reference research with source=commons and the work or artist plus engraving or drawing. "
+    "Choose a source with the complete characteristic pose, expression, hands and setting; line-work clarity matters as well as image resolution. "
     "Prefer source=pages with a concise query: the subject name plus drawing tutorial or line art. Put the full pose requirements in goal. "
     "A successful search includes labelled candidate previews in your next context. Compare their actual poses and completeness before choosing a reference_id. "
     "Inspect actual source pixels, verify the complete subject/pose and choose one consistent composition before drawing contours. "
