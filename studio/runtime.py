@@ -5,17 +5,23 @@ import uuid
 from typing import Any
 
 from .actions import create_native_element, element_fingerprint, validate_action
-from .agents import AgentSettings, DrawingAgents
+from .agents import DrawingAgents
 from .fast_path import fast_actions
+from .settings import ModelSettings
 from .store import StudioStore, VersionConflict
 
 
 class DrawingRuntime:
-    def __init__(self, store: StudioStore):
+    def __init__(self, store: StudioStore, settings: ModelSettings):
         self.store = store
+        self.settings = settings
         self.running: dict[str, asyncio.Task] = {}
         self.document_locks: dict[str, asyncio.Lock] = {}
         self.cancel_requested: set[str] = set()
+
+    @property
+    def busy(self) -> bool:
+        return bool(self.running)
 
     def submit(self, session_id: str, message: str) -> dict[str, Any]:
         session = self.store.get_session(session_id)
@@ -76,12 +82,8 @@ class DrawingRuntime:
                             {"action": validate_action(action), "expected_elements": None} for action in actions
                         ])
                     else:
-                        settings = AgentSettings.from_environment()
-                        agents = DrawingAgents(self.store, settings)
-                        try:
-                            reply, partial = await self._draw(agents, task_id, session_id, document_id, message)
-                        finally:
-                            await agents.close()
+                        agents = DrawingAgents(self.store, self.settings.load())
+                        reply, partial = await self._draw(agents, task_id, session_id, document_id, message)
                 assistant_message = self.store.add_message(session_id, "assistant", reply, task_id)
                 self.store.publish(document_id, "message", assistant_message)
                 self._status(task_id, document_id, "partial" if partial else "completed", reply,
@@ -103,7 +105,7 @@ class DrawingRuntime:
                     document_id: str, message: str) -> tuple[str, bool]:
         session = self.store.get_session(session_id)
         base_document = session["document"]
-        plan = await agents.plan(task_id, message, base_document, session["messages"])
+        plan = await agents.plan(task_id, message, base_document, self.store.context_messages(session_id, task_id))
         self.store.publish(document_id, "phase", {"task_id": task_id, "phase": "planned",
                                                    "delegations": len(plan.delegations)})
         reports: list[dict[str, Any]] = []
@@ -118,11 +120,10 @@ class DrawingRuntime:
                                                            "count": len(retry_indices)})
                 self.store.log_tool(task_id, "main", 0, "retry_children", {
                     "ids": [plan.delegations[index].id for index in retry_indices],
-                    "model": agents.settings.recovery_model,
+                    "model": agents.settings.model,
                 })
                 retries = await asyncio.gather(
-                    *(agents.child(task_id, plan.delegations[index], base_document,
-                                   model=agents.settings.recovery_model) for index in retry_indices),
+                    *(agents.child(task_id, plan.delegations[index], base_document) for index in retry_indices),
                     return_exceptions=True,
                 )
                 results = list(results)

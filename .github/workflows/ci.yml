@@ -43,3 +43,4 @@ jobs:
             sleep 1
           done
           node frontend-app/scripts/browser_smoke.js
+          node frontend-app/scripts/settings_smoke.js

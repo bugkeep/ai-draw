@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CaptureUpdateAction, Excalidraw, exportToBlob } from '@excalidraw/excalidraw'
+import { useNavigate } from 'react-router-dom'
+import '@excalidraw/excalidraw/index.css'
 import { eventsUrl, studioApi } from './studioApi.js'
 
 const CLIENT_ID = crypto.randomUUID()
@@ -24,17 +26,19 @@ function taskLabel(task) {
 }
 
 export default function App() {
+  const navigate = useNavigate()
   const [sessions, setSessions] = useState([])
   const [sessionId, setSessionId] = useState('')
   const [document, setDocument] = useState(null)
   const [messages, setMessages] = useState([])
   const [tasks, setTasks] = useState([])
-  const [phase, setPhase] = useState('')
+  const [phase, setPhase] = useState(null)
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
   const [providerReady, setProviderReady] = useState(false)
   const [connected, setConnected] = useState(false)
   const [changingSession, setChangingSession] = useState(false)
+  const [sending, setSending] = useState(false)
   const [canvasKey, setCanvasKey] = useState('')
   const apiRef = useRef(null)
   const docRef = useRef(null)
@@ -50,8 +54,13 @@ export default function App() {
   const savePromiseRef = useRef(null)
   const messageEndRef = useRef(null)
   const taskRef = useRef([])
+  const generationRef = useRef(0)
+  const loadRequestRef = useRef(0)
+  const transitionRef = useRef(false)
+  const mountedRef = useRef(true)
+  const sendingRef = useRef(false)
 
-  const activeTask = tasks.find((task) => task.status === 'running' || task.status === 'queued')
+  const activeTask = tasks.find((task) => task.status === 'running') || tasks.find((task) => task.status === 'queued')
   const busy = Boolean(activeTask)
 
   const setTaskList = useCallback((next) => {
@@ -72,31 +81,45 @@ export default function App() {
         captureUpdate: CaptureUpdateAction.NEVER,
       })
       if (focus && nextDocument.elements.some((item) => !item.isDeleted)) {
-        requestAnimationFrame(() => apiRef.current?.scrollToContent(
-          nextDocument.elements.filter((item) => !item.isDeleted),
-          { fitToViewport: true, viewportZoomFactor: 0.75, animate: false },
-        ))
+        const generation = generationRef.current
+        requestAnimationFrame(() => {
+          if (generation !== generationRef.current || docRef.current?.id !== nextDocument.id) return
+          apiRef.current?.scrollToContent(nextDocument.elements.filter((item) => !item.isDeleted),
+            { fitToViewport: true, viewportZoomFactor: 0.75, animate: false })
+        })
       }
       suppressTimerRef.current = setTimeout(() => { suppressRef.current = false }, 180)
     }
   }, [])
 
-  const handleExcalidrawApi = useCallback((api) => {
+  const handleExcalidrawApi = useCallback((documentId, api) => {
+    if (documentId !== docRef.current?.id) return
     apiRef.current = api
     if (api && docRef.current?.elements.some((item) => !item.isDeleted)) {
-      setTimeout(() => api.scrollToContent(
-        docRef.current.elements.filter((item) => !item.isDeleted),
-        { fitToViewport: true, viewportZoomFactor: 0.75, animate: false },
-      ), 300)
+      const generation = generationRef.current
+      setTimeout(() => {
+        if (generation !== generationRef.current || apiRef.current !== api) return
+        api.scrollToContent(docRef.current.elements.filter((item) => !item.isDeleted),
+          { fitToViewport: true, viewportZoomFactor: 0.75, animate: false })
+      }, 300)
     }
   }, [])
 
   const loadSession = useCallback(async (id, replaceCanvas = false) => {
+    const requestId = ++loadRequestRef.current
     const data = await studioApi.getSession(id)
+    if (!mountedRef.current || requestId !== loadRequestRef.current) return
+    generationRef.current += 1
+    wsRef.current?.close()
+    clearTimeout(reconnectRef.current)
+    clearTimeout(saveTimerRef.current)
+    pendingSnapshotRef.current = null
     sessionRef.current = id
     setSessionId(id)
     setMessages(data.messages)
     setTaskList(data.tasks)
+    lastSeqRef.current = data.event_seq || 0
+    setDraft('')
     if (replaceCanvas) {
       apiRef.current = null
       setCanvasKey(id)
@@ -142,6 +165,8 @@ export default function App() {
     if (!snapshot || !docRef.current) return
     pendingSnapshotRef.current = null
     const current = docRef.current
+    if (snapshot.documentId !== current.id) return
+    const generation = generationRef.current
     const request = studioApi.saveScene(current.id, {
       version: current.version,
       elements: snapshot.elements,
@@ -151,15 +176,17 @@ export default function App() {
     savePromiseRef.current = request
     try {
       const saved = await request
+      if (!mountedRef.current || generation !== generationRef.current || docRef.current?.id !== current.id) return
       docRef.current = saved
       setDocument(saved)
       lastSignatureRef.current = snapshotSignature(saved.elements, saved.selection)
     } catch (cause) {
+      if (!mountedRef.current || generation !== generationRef.current) throw cause
       setError(`保存画布失败：${cause.message}`)
       pendingSnapshotRef.current = null
-      if (cause.message.includes('revision')) {
+      if (cause.status === 409) {
         const latest = await studioApi.getSession(sessionRef.current)
-        applyDocument(latest.document)
+        if (generation === generationRef.current) applyDocument(latest.document)
       }
       throw cause
     } finally {
@@ -168,15 +195,18 @@ export default function App() {
     if (pendingSnapshotRef.current) await flushSnapshot()
   }, [applyDocument])
 
-  const handleCanvasChange = useCallback((elements, appState) => {
-    if (!docRef.current || suppressRef.current) return
-    const snapshot = { elements: JSON.parse(JSON.stringify(elements)), selection: selectedIds(appState) }
+  const handleCanvasChange = useCallback((documentId, elements, appState) => {
+    if (documentId !== docRef.current?.id || suppressRef.current || transitionRef.current) return
+    const snapshot = { documentId: docRef.current.id, elements: JSON.parse(JSON.stringify(elements)), selection: selectedIds(appState) }
     const signature = snapshotSignature(snapshot.elements, snapshot.selection)
     if (signature === lastSignatureRef.current) return
     pendingSnapshotRef.current = snapshot
     clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(() => { void flushSnapshot().catch(() => {}) }, 260)
   }, [flushSnapshot])
+
+  const onExcalidrawApi = useCallback((api) => handleExcalidrawApi(document?.id, api), [document?.id, handleExcalidrawApi])
+  const onCanvasChange = useCallback((elements, appState) => handleCanvasChange(document?.id, elements, appState), [document?.id, handleCanvasChange])
 
   const showStroke = useCallback((element) => {
     const current = docRef.current
@@ -190,7 +220,8 @@ export default function App() {
     suppressTimerRef.current = setTimeout(() => { suppressRef.current = false }, 180)
   }, [])
 
-  const handleEvent = useCallback((event) => {
+  const handleEvent = useCallback((documentId, event) => {
+    if (docRef.current?.id !== documentId || event.document_id !== documentId) return
     if (event.seq <= lastSeqRef.current) return
     lastSeqRef.current = event.seq
     const value = event.payload
@@ -213,40 +244,60 @@ export default function App() {
       ...current.filter((item) => item.id !== value.task_id)].slice(0, 20)
       setTaskList(next)
       if (value.status === 'failed') setError(value.error)
-      if (value.status === 'completed' || value.status === 'partial') setPhase('')
+      if (['completed', 'partial', 'failed', 'cancelled'].includes(value.status)) {
+        setPhase((current) => current?.taskId === value.task_id ? null : current)
+      }
     } else if (event.type === 'phase') {
-      if (value.phase === 'planned') setPhase(value.delegations ? `正在安排 ${value.delegations} 个子 Agent` : '正在准备绘图')
-      if (value.phase === 'child_ready') setPhase(`子 Agent ${value.child_id} 已准备动作`)
-      if (value.phase === 'recovering') setPhase(`正在重新准备 ${value.count} 个绘图部分`)
-      if (value.phase === 'drawing') setPhase(`正在绘制 ${value.completed}/${value.total}`)
+      let text = ''
+      if (value.phase === 'planned') text = value.delegations ? `正在安排 ${value.delegations} 个子 Agent` : '正在准备绘图'
+      if (value.phase === 'child_ready') text = `子 Agent ${value.child_id} 已准备动作`
+      if (value.phase === 'recovering') text = `正在重新准备 ${value.count} 个绘图部分`
+      if (value.phase === 'drawing') text = `正在绘制 ${value.completed}/${value.total}`
+      if (text) setPhase({ taskId: value.task_id, text })
     }
   }, [applyDocument, setTaskList, showStroke])
 
   useEffect(() => {
     if (!document?.id) return
     const documentId = document.id
+    const generation = generationRef.current
     let closed = false
-    lastSeqRef.current = 0
+    let socket
+    let reconnectTimer
     function connect() {
-      if (closed) return
+      if (closed || generation !== generationRef.current) return
       const ws = new WebSocket(eventsUrl(documentId, lastSeqRef.current))
+      socket = ws
       wsRef.current = ws
-      ws.onopen = () => { setConnected(true) }
-      ws.onmessage = (message) => handleEvent(JSON.parse(message.data))
+      ws.onopen = () => { if (!closed && generation === generationRef.current) setConnected(true) }
+      ws.onmessage = (message) => {
+        if (!closed && generation === generationRef.current) handleEvent(documentId, JSON.parse(message.data))
+      }
       ws.onclose = () => {
+        if (closed || generation !== generationRef.current) return
         setConnected(false)
-        if (!closed) reconnectRef.current = setTimeout(connect, 1200)
+        reconnectTimer = setTimeout(connect, 1200)
+        reconnectRef.current = reconnectTimer
       }
       ws.onerror = () => { ws.close() }
     }
     connect()
     return () => {
       closed = true
-      clearTimeout(reconnectRef.current)
-      wsRef.current?.close()
+      clearTimeout(reconnectTimer)
+      socket?.close()
       setConnected(false)
     }
   }, [document?.id, handleEvent])
+
+  useEffect(() => () => {
+    mountedRef.current = false
+    generationRef.current += 1
+    clearTimeout(saveTimerRef.current)
+    clearTimeout(suppressTimerRef.current)
+    clearTimeout(reconnectRef.current)
+    wsRef.current?.close()
+  }, [])
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -255,63 +306,103 @@ export default function App() {
   const send = useCallback(async (event) => {
     event.preventDefault()
     const text = draft.trim()
-    if (!text || !sessionRef.current) return
+    if (!text || !sessionRef.current || transitionRef.current || sendingRef.current) return
+    const targetSession = sessionRef.current
+    const generation = generationRef.current
+    sendingRef.current = true
+    setSending(true)
     setError('')
     try {
       await flushSnapshot()
-      const task = await studioApi.sendMessage(sessionRef.current, text)
+      if (generation !== generationRef.current || transitionRef.current) return
+      const task = await studioApi.sendMessage(targetSession, text)
+      if (!mountedRef.current || generation !== generationRef.current || targetSession !== sessionRef.current) return
       setDraft('')
       setMessages((current) => [...current, { id: `local-${task.id}`, role: 'user', content: text, task_id: task.id }])
-      setTaskList([{ ...task }, ...taskRef.current.filter((item) => item.id !== task.id)].slice(0, 20))
+      const prior = taskRef.current.find((item) => item.id === task.id)
+      setTaskList([{ ...task, ...prior }, ...taskRef.current.filter((item) => item.id !== task.id)].slice(0, 20))
     } catch (cause) {
-      setError(cause.message)
+      if (mountedRef.current && generation === generationRef.current) setError(cause.message)
+    } finally {
+      sendingRef.current = false
+      if (mountedRef.current) setSending(false)
     }
   }, [draft, flushSnapshot, setTaskList])
 
   const createSession = useCallback(async () => {
-    if (!docRef.current || changingSession) return
+    if (!docRef.current || transitionRef.current) return
+    transitionRef.current = true
     setChangingSession(true)
     try {
       await flushSnapshot()
       const created = await studioApi.createSession('新的画布')
       setSessions((current) => [{ id: created.id, document_id: created.document.id, title: created.title }, ...current])
       await loadSession(created.id, true)
-      lastSeqRef.current = 0
-      setPhase('')
+      setPhase(null)
       setError('')
     } catch (cause) {
       setError(cause.message)
     } finally {
+      transitionRef.current = false
       setChangingSession(false)
     }
   }, [changingSession, flushSnapshot, loadSession])
 
   const switchSession = useCallback(async (id) => {
-    if (id === sessionRef.current || changingSession) return
+    if (id === sessionRef.current || transitionRef.current) return
+    transitionRef.current = true
     setChangingSession(true)
     try {
       await flushSnapshot()
       await loadSession(id, true)
-      lastSeqRef.current = 0
-      setPhase('')
+      setPhase(null)
       setError('')
     } catch (cause) {
       setError(cause.message)
     } finally {
+      transitionRef.current = false
       setChangingSession(false)
     }
   }, [changingSession, flushSnapshot, loadSession])
 
   const history = useCallback(async (direction) => {
-    if (!docRef.current || activeTask) return
+    if (!docRef.current || activeTask || transitionRef.current) return
+    const documentId = docRef.current.id
+    const generation = generationRef.current
     try {
       await flushSnapshot()
-      const result = await studioApi.history(docRef.current.id, direction)
-      applyDocument(result)
+      if (generation !== generationRef.current) return
+      const result = await studioApi.history(documentId, direction)
+      if (mountedRef.current && generation === generationRef.current) applyDocument(result)
     } catch (cause) {
-      setError(cause.message)
+      if (mountedRef.current && generation === generationRef.current) setError(cause.message)
     }
   }, [activeTask, applyDocument, flushSnapshot])
+
+  const openSettings = useCallback(async () => {
+    if (transitionRef.current) return
+    transitionRef.current = true
+    setChangingSession(true)
+    try {
+      await flushSnapshot()
+      navigate('/settings')
+    } catch (cause) {
+      setError(cause.message)
+    } finally {
+      transitionRef.current = false
+      if (mountedRef.current) setChangingSession(false)
+    }
+  }, [flushSnapshot, navigate])
+
+  const cancelActiveTask = useCallback(async () => {
+    if (!activeTask || transitionRef.current) return
+    const generation = generationRef.current
+    try {
+      await studioApi.cancelTask(activeTask.id)
+    } catch (cause) {
+      if (mountedRef.current && generation === generationRef.current) setError(cause.message)
+    }
+  }, [activeTask])
 
   useEffect(() => {
     function onKeyDown(event) {
@@ -355,6 +446,7 @@ export default function App() {
           <button type="button" onClick={() => history('undo')} disabled={!document || busy} title="撤销 Ctrl+Z">↶ 撤销</button>
           <button type="button" onClick={() => history('redo')} disabled={!document || busy} title="重做 Ctrl+Y">↷ 重做</button>
           <button type="button" onClick={exportPng} disabled={!document}>导出 PNG</button>
+          <button type="button" onClick={openSettings} disabled={changingSession} aria-label="模型设置">⚙ 设置</button>
         </div>
       </header>
       <main className="workspace">
@@ -363,7 +455,7 @@ export default function App() {
           <div className="session-list">
             {sessions.map((item) => (
               <button key={item.id} type="button" className={`session-item ${sessionId === item.id ? 'selected' : ''}`}
-                onClick={() => switchSession(item.id)}>
+                onClick={() => switchSession(item.id)} disabled={changingSession} data-session-id={item.id}>
                 <span className="session-icon">◇</span><span>{item.title}</span>
               </button>
             ))}
@@ -374,12 +466,12 @@ export default function App() {
           <div className="canvas-heading"><span>{sessions.find((item) => item.id === sessionId)?.title || '画布'}</span>
             <span className="revision">版本 {document?.version ?? 0} · {document?.elements.filter((item) => !item.isDeleted).length ?? 0} 个对象</span></div>
           <div className="editor-host">
-            {document && <Excalidraw key={canvasKey} excalidrawAPI={handleExcalidrawApi}
+            {document && <Excalidraw key={canvasKey} excalidrawAPI={onExcalidrawApi}
               initialData={{ elements: document.elements, appState: {
                 selectedElementIds: Object.fromEntries(document.selection.map((id) => [id, true])),
                 viewBackgroundColor: '#ffffff',
               } }}
-              onChange={handleCanvasChange}
+              onChange={onCanvasChange}
               onPaste={(data) => {
                 if (Object.keys(data.files || {}).length > 0 || data.mixedContent?.some((item) => item.type === 'imageUrl')) {
                   setError('当前画布支持原生绘图对象；请使用画笔、图形或文字工具。')
@@ -387,7 +479,7 @@ export default function App() {
                 }
                 return false
               }}
-              viewModeEnabled={busy}
+              viewModeEnabled={busy || changingSession}
               UIOptions={{ tools: { image: false }, canvasActions: {
                 export: false, loadScene: false, saveToActiveFile: false, saveAsImage: false,
               } }}
@@ -408,8 +500,8 @@ export default function App() {
               <span className="bubble-role">{item.role === 'user' ? '你' : 'Agent'}</span>
               <p>{item.content}</p>
             </div>)}
-            {busy && <div className="activity"><span className="pulse" />{phase || taskLabel(activeTask)}
-              <button type="button" onClick={() => studioApi.cancelTask(activeTask.id).catch((cause) => setError(cause.message))}>停止</button></div>}
+            {busy && <div className="activity"><span className="pulse" />{phase?.taskId === activeTask.id ? phase.text : taskLabel(activeTask)}
+              <button type="button" onClick={cancelActiveTask}>停止</button></div>}
             {error && <div className="error-message" role="alert">{error}</div>}
             <div ref={messageEndRef} />
           </div>
@@ -417,9 +509,9 @@ export default function App() {
             <textarea aria-label="绘图指令" placeholder="描述你想创建或修改的内容…" value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form.requestSubmit() } }} />
-            <div className="composer-bottom"><span>Enter 发送 · Shift+Enter 换行</span><button type="submit" disabled={!draft.trim() || !document}>发送 ↑</button></div>
+            <div className="composer-bottom"><span>Enter 发送 · Shift+Enter 换行</span><button type="submit" disabled={!draft.trim() || !document || changingSession || sending}>发送 ↑</button></div>
           </form>
-          {!providerReady && <div className="config-note">请在服务端配置 ARK_API_KEY 后使用 Agent。</div>}
+          {!providerReady && <div className="config-note">请前往<button type="button" onClick={openSettings}>模型设置</button>配置模型连接。</div>}
         </aside>
       </main>
     </div>

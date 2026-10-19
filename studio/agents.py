@@ -1,14 +1,13 @@
 import copy
 import json
-import os
 import time
-from dataclasses import dataclass
 from typing import Any
 
-from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
 
 from .actions import apply_action, element_fingerprint, validate_action
+from .llm import ModelGateway
+from .settings import ModelConfig
 from .store import StudioStore
 
 
@@ -120,38 +119,11 @@ def scene_context(document: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@dataclass
-class AgentSettings:
-    api_key: str
-    base_url: str
-    model: str
-    child_model: str
-    recovery_model: str
-    thinking: str
-
-    @classmethod
-    def from_environment(cls) -> "AgentSettings":
-        key = os.getenv("ARK_API_KEY") or os.getenv("DRAW_AGENT_API_KEY")
-        if not key:
-            raise RuntimeError("Set ARK_API_KEY in the server environment")
-        return cls(
-            api_key=key,
-            base_url=os.getenv("DRAW_AGENT_BASE_URL", "https://ark.cn-beijing.volces.com/api/plan/v3"),
-            model=os.getenv("DRAW_AGENT_MODEL", "ark-code-latest"),
-            child_model=os.getenv("DRAW_AGENT_CHILD_MODEL", os.getenv("DRAW_AGENT_MODEL", "ark-code-latest")),
-            recovery_model=os.getenv("DRAW_AGENT_RECOVERY_MODEL", os.getenv("DRAW_AGENT_MODEL", "ark-code-latest")),
-            thinking=os.getenv("DRAW_AGENT_THINKING", "disabled"),
-        )
-
-
 class DrawingAgents:
-    def __init__(self, store: StudioStore, settings: AgentSettings):
+    def __init__(self, store: StudioStore, settings: ModelConfig):
         self.store = store
         self.settings = settings
-        self.client = AsyncOpenAI(api_key=settings.api_key, base_url=settings.base_url, timeout=35, max_retries=0)
-
-    async def close(self) -> None:
-        await self.client.close()
+        self.gateway = ModelGateway(settings)
 
     async def plan(self, task_id: str, user_text: str, document: dict, messages: list[dict]) -> Plan:
         system = (
@@ -181,10 +153,7 @@ class DrawingAgents:
                         {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)}]
         for attempt in range(2):
             started = time.perf_counter()
-            response = await self.client.chat.completions.create(
-                model=self.settings.model, messages=conversation, temperature=0.2,
-                extra_body={"thinking": {"type": self.settings.thinking}},
-            )
+            response = await self.gateway.complete(conversation)
             content = response.choices[0].message.content or ""
             self.store.log_tool(task_id, "main", attempt, "plan", {
                 "response": content, "latency_ms": round((time.perf_counter() - started) * 1000, 1),
@@ -208,8 +177,7 @@ class DrawingAgents:
                 ])
         raise RuntimeError("Main agent did not produce a valid plan")
 
-    async def child(self, task_id: str, delegation: Delegation, document: dict,
-                    model: str | None = None) -> dict[str, Any]:
+    async def child(self, task_id: str, delegation: Delegation, document: dict) -> dict[str, Any]:
         agent_id = f"child:{delegation.id}"
         draft = copy.deepcopy(document["elements"])
         selection = list(document["selection"])
@@ -231,11 +199,7 @@ class DrawingAgents:
         ]
         for round_number in range(1, 4):
             started = time.perf_counter()
-            response = await self.client.chat.completions.create(
-                model=model or self.settings.child_model, messages=conversation, tools=TOOL_DEFINITIONS,
-                tool_choice="auto", temperature=0.2,
-                extra_body={"thinking": {"type": self.settings.thinking}},
-            )
+            response = await self.gateway.complete(conversation, TOOL_DEFINITIONS)
             message = response.choices[0].message
             self.store.log_tool(task_id, agent_id, round_number, "llm_response", {
                 "content": message.content,
@@ -323,13 +287,10 @@ class DrawingAgents:
                     "actions": [action_outline(item) for item in report.get("actions", [])]}
                    for report in reports]
         started = time.perf_counter()
-        response = await self.client.chat.completions.create(
-            model=self.settings.model,
-            messages=[{"role": "system", "content": system},
-                      {"role": "user", "content": json.dumps({"request": request, "reports": compact}, ensure_ascii=False)}],
-            temperature=0,
-            extra_body={"thinking": {"type": self.settings.thinking}},
-        )
+        response = await self.gateway.complete([
+            {"role": "system", "content": system},
+            {"role": "user", "content": json.dumps({"request": request, "reports": compact}, ensure_ascii=False)},
+        ])
         content = response.choices[0].message.content or ""
         self.store.log_tool(task_id, "main", 0, "review", {
             "response": content, "latency_ms": round((time.perf_counter() - started) * 1000, 1),

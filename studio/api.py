@@ -7,6 +7,8 @@ from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisco
 from pydantic import BaseModel, Field
 
 from .runtime import DrawingRuntime
+from .llm import ModelGatewayError, test_connection as probe_model_connection
+from .settings import ModelSettings, SettingsUpdate
 from .store import StudioStore, VersionConflict
 
 
@@ -37,9 +39,43 @@ def studio_store(request: Request) -> StudioStore:
 
 
 @router.get("/health")
-async def health():
-    return {"status": "ok", "provider_configured": bool(os.getenv("ARK_API_KEY") or os.getenv("DRAW_AGENT_API_KEY")),
-            "model": os.getenv("DRAW_AGENT_MODEL", "ark-code-latest")}
+async def health(request: Request):
+    config = request.app.state.model_settings.load()
+    return {"status": "ok", "provider_configured": config.configured,
+            "model": config.model, "provider": config.provider}
+
+
+def settings_view(request: Request) -> dict[str, Any]:
+    return {**request.app.state.model_settings.view(), "busy": request.app.state.drawing_runtime.busy}
+
+
+@router.get("/settings")
+async def get_settings(request: Request):
+    return settings_view(request)
+
+
+@router.put("/settings")
+async def save_settings(request: Request, body: SettingsUpdate):
+    if request.app.state.drawing_runtime.busy:
+        raise HTTPException(409, "绘图任务正在排队或运行，请等待全部任务结束后保存配置。")
+    try:
+        request.app.state.model_settings.save(body)
+        return settings_view(request)
+    except VersionConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/settings/test")
+async def test_settings(request: Request, body: SettingsUpdate):
+    try:
+        config = request.app.state.model_settings.candidate(body)
+        return await probe_model_connection(config)
+    except ModelGatewayError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("/sessions")
@@ -159,5 +195,5 @@ def create_store() -> StudioStore:
     return StudioStore(path)
 
 
-def create_runtime(store: StudioStore) -> DrawingRuntime:
-    return DrawingRuntime(store)
+def create_runtime(store: StudioStore, settings: ModelSettings) -> DrawingRuntime:
+    return DrawingRuntime(store, settings)

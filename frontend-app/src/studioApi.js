@@ -4,12 +4,21 @@ async function request(path, options = {}) {
     ...options,
   })
   const data = await response.json()
-  if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : `HTTP ${response.status}`)
+  if (!response.ok) {
+    const message = typeof data.detail === 'string' ? data.detail :
+      Array.isArray(data.detail) ? data.detail.map((item) => item.msg).join('；') : `HTTP ${response.status}`
+    const error = new Error(message)
+    error.status = response.status
+    throw error
+  }
   return data
 }
 
 export const studioApi = {
   health: () => request('/health'),
+  getSettings: () => request('/settings'),
+  saveSettings: (settings) => request('/settings', { method: 'PUT', body: JSON.stringify(settings) }),
+  testSettings: (settings) => request('/settings/test', { method: 'POST', body: JSON.stringify(settings) }),
   listSessions: () => request('/sessions'),
   createSession: (title) => request('/sessions', { method: 'POST', body: JSON.stringify({ title }) }),
   getSession: (id) => request(`/sessions/${id}`),

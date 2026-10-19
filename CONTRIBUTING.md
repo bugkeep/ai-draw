@@ -13,6 +13,6 @@ cd ..
 python -m pytest -q
 ```
 
-涉及编辑器交互的修改，还应启动服务并运行 `node frontend-app/scripts/browser_smoke.js`。涉及 Agent 执行的修改，应运行 `python -m scripts.evaluate_studio`；具备 Ark 凭据时，再运行 `python -m scripts.evaluate_agent_edit` 和 `python -m scripts.evaluate_multiagent`。在 Pull Request 中说明实际执行的检查和结果。
+涉及编辑器交互的修改，还应启动服务并运行 `node frontend-app/scripts/browser_smoke.js` 和 `node frontend-app/scripts/settings_smoke.js`。设置检查会创建独立会话并保存一次当前配置，在专用测试服务执行。涉及 Agent 执行的修改，应运行 `python -m scripts.evaluate_studio`；配置真实模型后，运行 `python -m scripts.probe_model`、`python -m scripts.evaluate_agent_edit` 和 `python -m scripts.evaluate_multiagent`。在 Pull Request 中说明实际执行的检查和结果。
 
 Pull Request 合并后及时删除对应的本地和远端任务分支，保持工作分支数量较少。

@@ -26,7 +26,7 @@ def main():
             health = client.get("/api/studio/health")
             health.raise_for_status()
             if not health.json()["provider_configured"]:
-                raise RuntimeError("ARK_API_KEY is required for this evaluation")
+                raise RuntimeError("Configure a model in the settings page before running this evaluation")
             session_response = client.post("/api/studio/sessions", json={"title": "并行 Agent 评测"})
             session_response.raise_for_status()
             session_id = session_response.json()["id"]

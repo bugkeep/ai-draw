@@ -17,6 +17,7 @@ class VersionConflict(Exception):
 class StudioStore:
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
+        self.database_path = path
         self.connection = sqlite3.connect(path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         self.connection.execute("PRAGMA journal_mode=WAL")
@@ -57,12 +58,34 @@ class StudioStore:
             CREATE INDEX IF NOT EXISTS idx_tasks_session ON tasks(session_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_events_document ON events(document_id, seq);
             CREATE INDEX IF NOT EXISTS idx_tool_logs_task ON tool_logs(task_id, id);
+            CREATE TABLE IF NOT EXISTS model_settings (
+                id INTEGER PRIMARY KEY CHECK(id=1), config TEXT NOT NULL,
+                encrypted_key TEXT NOT NULL, revision INTEGER NOT NULL, updated_at REAL NOT NULL
+            );
         """)
         self.connection.commit()
 
     def close(self) -> None:
         with self.lock:
             self.connection.close()
+
+    def get_model_settings(self) -> dict[str, Any] | None:
+        with self.lock:
+            row = self.connection.execute("SELECT * FROM model_settings WHERE id=1").fetchone()
+        return {**dict(row), "config": json.loads(row["config"])} if row else None
+
+    def save_model_settings(self, config: dict, encrypted_key: str, expected_revision: int) -> None:
+        with self.lock, self.connection:
+            row = self.connection.execute("SELECT revision FROM model_settings WHERE id=1").fetchone()
+            revision = row["revision"] if row else 0
+            if revision != expected_revision:
+                raise VersionConflict("模型设置已在其他页面更新，请刷新后重试。")
+            self.connection.execute(
+                "INSERT INTO model_settings VALUES(1,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                "config=excluded.config, encrypted_key=excluded.encrypted_key, "
+                "revision=excluded.revision, updated_at=excluded.updated_at",
+                (self._json(config), encrypted_key, revision + 1, time.time()),
+            )
 
     @staticmethod
     def _json(value: Any) -> str:
@@ -120,9 +143,13 @@ class StudioStore:
                 "FROM tasks WHERE session_id=? ORDER BY created_at DESC LIMIT 20",
                 (session_id,),
             ).fetchall()
+            document = self.get_document(session["document_id"])
+            event_seq = self.connection.execute(
+                "SELECT COALESCE(MAX(seq),0) FROM events WHERE document_id=?", (session["document_id"],),
+            ).fetchone()[0]
         return {
             "id": session_id, "title": session["title"],
-            "document": self.get_document(session["document_id"]),
+            "document": document, "event_seq": event_seq,
             "messages": [dict(row) for row in messages],
             "tasks": [dict(row) for row in tasks],
         }
@@ -138,6 +165,19 @@ class StudioStore:
                 (message["id"], session_id, role, content, task_id, message["created_at"]),
             )
         return message
+
+    def context_messages(self, session_id: str, task_id: str) -> list[dict[str, Any]]:
+        with self.lock:
+            task = self.connection.execute("SELECT rowid,session_id FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if task is None or task["session_id"] != session_id:
+                raise KeyError("Task does not belong to this session")
+            rows = self.connection.execute(
+                "SELECT m.role,m.content FROM messages m JOIN tasks t ON t.id=m.task_id "
+                "WHERE m.session_id=? AND t.session_id=? AND t.rowid<=? "
+                "ORDER BY t.rowid DESC,m.created_at DESC,m.rowid DESC LIMIT 10",
+                (session_id, session_id, task["rowid"]),
+            ).fetchall()
+        return [dict(row) for row in reversed(rows)]
 
     def create_task(self, session_id: str) -> dict[str, Any]:
         task = {"id": uuid.uuid4().hex, "status": "queued", "summary": "", "error": "",
@@ -186,7 +226,7 @@ class StudioStore:
                 "INSERT INTO events(document_id,type,payload,created_at) VALUES(?,?,?,?)",
                 (document_id, event_type, self._json(payload), time.time()),
             )
-            event = {"seq": cursor.lastrowid, "type": event_type, "payload": payload}
+            event = {"seq": cursor.lastrowid, "document_id": document_id, "type": event_type, "payload": payload}
             listeners = tuple(self.listeners.get(document_id, {}).items())
         for queue, loop in listeners:
             loop.call_soon_threadsafe(queue.put_nowait, event)
@@ -198,7 +238,8 @@ class StudioStore:
                 "SELECT seq,type,payload FROM events WHERE document_id=? AND seq>? ORDER BY seq LIMIT 500",
                 (document_id, seq),
             ).fetchall()
-        return [{"seq": row["seq"], "type": row["type"], "payload": json.loads(row["payload"])} for row in rows]
+        return [{"seq": row["seq"], "document_id": document_id, "type": row["type"],
+                 "payload": json.loads(row["payload"])} for row in rows]
 
     def subscribe(self, document_id: str, queue: Any) -> None:
         with self.lock:

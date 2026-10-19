@@ -6,7 +6,7 @@ Draw Agent Studio 是一个通过连续对话编辑同一张画布的开源绘�
 
 ## 运行
 
-需要 Python 3.11+、Node.js 20.19+ 和 Ark Agent Plan API Key。将 `.env.example` 复制为项目根目录的 `.env`，填写 `ARK_API_KEY`。API Key 只由服务端读取；`.env` 已被 Git 忽略。
+需要 Python 3.11+ 和 Node.js 20.19+。建议创建独立 Python 环境后安装依赖：
 
 ```bash
 python -m pip install -r requirements.txt
@@ -17,7 +17,11 @@ cd ..
 python -m uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
-打开 <http://127.0.0.1:8000>。前端开发时运行 `cd frontend-app && npm run dev`，Vite 会代理 `/api` 和 WebSocket。面向其他用户部署时，请参考 [部署说明](docs/deployment.md)。
+打开 <http://127.0.0.1:8000>，点击右上角“设置”，填写模型厂商、模型名称、API 地址和 API Key，测试连接后点击“保存配置”。主 Agent 和全部子 Agent 共用该连接，各自拥有独立的会话与上下文。任意画布有任务正在运行或排队时，保存按钮置灰，服务端同时拒绝修改配置。
+
+设置页提供 OpenAI、Anthropic、Gemini、Azure OpenAI、Ark、DeepSeek、百炼、Kimi、智谱、MiniMax、硅基流动、OpenRouter 等厂商预设，以及 Ollama、本地服务和自定义 OpenAI 兼容接口。接入方法与验证范围见[模型配置说明](docs/model-settings.md)。API Key 在服务端加密保存，读取设置时仅返回是否已配置。
+
+前端开发时运行 `cd frontend-app && npm run dev`，Vite 会代理 `/api` 和 WebSocket。面向其他用户部署时，请参考[部署说明](docs/deployment.md)。
 
 ## 试用
 
@@ -27,7 +31,7 @@ python -m uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8000
 4. 输入“用画笔画一张笑脸，展示作画过程”，观察轮廓、眼睛和嘴巴逐步出现。
 5. 在 Excalidraw 中直接选择、拖动或修改对象，再继续对话。
 
-每个会话有独立画布。服务重启后，画布、对话、任务状态和工具记录仍保存在 `runs/studio.sqlite3`。该路径可通过 `DRAW_AGENT_DB` 配置。
+每个会话有独立画布、消息、任务、实时事件和撤销历史。切换画布或打开多个窗口时，各自显示所属会话的内容；同一会话内的指令按顺序执行，当前 Agent 上下文不包含后续排队任务的指令。服务重启后，数据仍保存在 `runs/studio.sqlite3`，该路径可通过 `DRAW_AGENT_DB` 配置。
 
 ## 结构
 
@@ -36,6 +40,7 @@ python -m uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8000
 | `frontend-app/` | React、Excalidraw、绘图对话和实时事件展示 |
 | `studio/actions.py` | 绘图动作校验与原生 Excalidraw 对象构建 |
 | `studio/agents.py` | 主 Agent 规划、子 Agent 工具调用和结果审阅 |
+| `studio/llm.py`、`studio/settings.py` | 多厂商模型请求、连接验证和加密配置 |
 | `studio/runtime.py` | 任务队列、逐项提交、画笔过程和取消操作 |
 | `studio/store.py` | SQLite 会话、画布版本、历史记录和工具记录 |
 | `studio/api.py` | HTTP API 与画布 WebSocket 事件 |
@@ -58,15 +63,16 @@ cd ..
 python -m pytest -q
 ```
 
-使用已配置的真实 Ark 服务运行连续编辑评测：
+运行连续编辑评测：
 
 ```bash
 python -m scripts.evaluate_studio
 ```
 
-启动服务后可运行并行子 Agent 评测：
+启动服务并在设置页配置真实模型后，可运行连接验证、多轮指代与并行子 Agent 评测：
 
 ```bash
+python -m scripts.probe_model
 python -m scripts.evaluate_agent_edit
 python -m scripts.evaluate_multiagent
 ```
@@ -85,8 +91,16 @@ node scripts/record_demo.js
 
 脚本使用本机 Chrome，依次创建、移动图形并展示画笔轨迹，输出 `runs/draw-agent-demo.webm`。其他平台可安装 Playwright 浏览器，或设置 `CHROME_PATH` 指向 Chromium 可执行文件。
 
-浏览器端检查可运行 `cd frontend-app && node scripts/browser_smoke.js`。脚本在真实 Excalidraw 画布上手绘矩形，检查保存、撤销、重做、刷新恢复和 PNG 导出。
+浏览器端检查需要运行中的服务：
+
+```bash
+cd frontend-app
+node scripts/browser_smoke.js
+node scripts/settings_smoke.js
+```
+
+检查覆盖真实 Excalidraw 手绘、撤销、重做、刷新恢复、PNG 导出，以及设置导航、配置保存、密钥不回传、任务期间禁止保存、画布切换和双窗口隔离。`settings_smoke.js` 会保留已有模型连接并保存一次配置；未配置模型的测试环境会保存本地服务预设，全部绘图检查使用应用内的明确指令。已配置真实模型时，可设置环境变量 `DRAW_AGENT_TEST_MODEL=1`，同时点击设置页“测试连接”并验证实际模型响应。
 
 ## 当前边界
 
-服务端按单用户画布设计。对外开放时需要在反向代理设置身份验证和 HTTPS。文本对话、原生 Excalidraw 图形以及 PNG 导出可用；语音输入和多人实时协作尚未接入此编辑器。
+服务端按单用户使用方式设计。对外开放时需要在反向代理设置身份验证和 HTTPS。会话之间提供应用内的数据隔离；多人账户权限与实时协作需要独立设计。
