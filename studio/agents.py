@@ -353,6 +353,8 @@ CHILD_SYSTEM = (
     "Use compact_context to save decisions, constraints, completed work and pending work before clearing conversational detail. "
     "Use search_memory for prior records and recall_memory with element_id for precise current geometry. "
     "Large successful results have memory_ref summaries; read specific objects or text pages as needed, rather than repeating broad geometry queries. "
+    "For dense curves, recall_memory with point_tolerance=1 returns a compact shape overview with bounded geometric error. "
+    "Use those sparse anchors for shape understanding; point_tolerance=0 retrieves exact original samples when needed. "
     "Correct invalid tool parameters using the returned error. Reply in the user's language."
     " For reference-guided recreation, establish matching source contours with trace_reference before inventing replacement anatomy. "
     "View the COMPLETE assigned reference first, then extract the assigned region using the common source_frame and target. "

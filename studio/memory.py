@@ -4,6 +4,8 @@ import time
 import uuid
 
 from .agent_store import stable_id
+from .actions import element_fingerprint
+from .path_recall import recall_path_geometry
 
 
 MEMORY_TOOLS = {'search_memory', 'recall_memory', 'compact_context'}
@@ -162,14 +164,19 @@ class AgentMemory:
         memory_ref = self.register(task_id, actor_id, caller_id, call_id, name, arguments, output, state_key)
         if output.get('ok') is False:
             return {**output, 'memory_ref': memory_ref}
-        if name in MEMORY_TOOLS:
-            return {**output, 'memory_ref': output.get('memory_ref', memory_ref)}
         with self.store.lock:
             repeated = self.store.connection.execute(
                 'SELECT count(*) FROM agent_memories WHERE session_id=? AND actor_id=? AND state_key=? '
                 'AND query_key=(SELECT query_key FROM agent_memories WHERE id=?)',
                 (self._session(task_id), actor_id, state_key, memory_ref),
             ).fetchone()[0]
+        if name in MEMORY_TOOLS:
+            return {**output, 'memory_ref': output.get('memory_ref', memory_ref),
+                    **({'same_state_query_count': repeated,
+                        'retrieval_guidance': 'This successful query has already returned the same current data. '
+                            'Follow next_page for unread points, or use point_tolerance=1 for a compact whole-curve view. '
+                            'Exact original geometry remains available with point_tolerance=0.'}
+                       if name == 'recall_memory' and repeated > 1 else {})}
         if len(json.dumps(output, ensure_ascii=False)) > 5000 or name == 'inspect_scene':
             return {'ok': True, 'memory_ref': memory_ref, 'compressed': True, 'summary': tool_summary(name, output),
                     'same_state_query_count': repeated,
@@ -245,12 +252,23 @@ class AgentMemory:
             if element is None:
                 raise KeyError('Requested object does not exist in this canvas/draft')
             offset, limit = arguments.get('point_offset', 0), arguments.get('point_limit', 128)
-            points = element.get('points', [])
+            tolerance = float(arguments.get('point_tolerance', 0))
+            path_state = hashlib.sha256(json.dumps([element_fingerprint(element), tolerance]).encode()).hexdigest()
+            if arguments.get('expected_path_state') and arguments['expected_path_state'] != path_state:
+                raise ValueError('The path or sampling options changed; recall again from point_offset=0')
+            points, pressures, indices = recall_path_geometry(element, tolerance)
+            next_offset = offset + limit if offset + limit < len(points) else None
             return {'ok': True, 'source': 'current_canvas', 'document_version': document['version'],
                     'element': {**element, 'points': points[offset:offset + limit],
-                                'pressures': element.get('pressures', [])[offset:offset + limit]},
+                                'pressures': pressures[offset:offset + limit]},
                     'point_offset': offset, 'point_count': len(points),
-                    'next_point_offset': offset + limit if offset + limit < len(points) else None}
+                    'source_point_count': len(element.get('points', [])), 'point_tolerance': tolerance,
+                    'geometry_exact': tolerance == 0, 'path_state': path_state,
+                    'source_point_indices': indices[offset:offset + limit],
+                    'next_point_offset': next_offset,
+                    'next_page': {'element_id': element_id, 'point_offset': next_offset, 'point_limit': limit,
+                                  'point_tolerance': tolerance, 'expected_path_state': path_state}
+                                 if next_offset is not None else None}
         if row is None:
             raise ValueError('Provide a memory_ref or an element_id')
         section = arguments.get('section', 'summary')

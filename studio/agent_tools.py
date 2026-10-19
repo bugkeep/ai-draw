@@ -98,6 +98,13 @@ class RecallMemory(ToolInput):
     max_chars: int = Field(default=4000, ge=1, le=12000)
     point_offset: int = Field(default=0, ge=0)
     point_limit: int = Field(default=128, ge=1, le=256)
+    point_tolerance: float = Field(default=0, ge=0, le=100000, allow_inf_nan=False,
+        description='Optional geometric simplification error in canvas units for current path points. '
+                    'Use 1 to understand a dense curve compactly; 0 preserves every original sample. '
+                    'Pages index the returned sequence; source_point_indices map samples back to the original path. '
+                    'This only changes the read result, never the drawing.')
+    expected_path_state: str = Field(default='', pattern=r'^(?:[0-9a-f]{64})?$',
+        description='Follow the returned next_page unchanged. If the object or sampling options changed, restart at point_offset=0.')
 
 
 class CompactContext(ToolInput):
