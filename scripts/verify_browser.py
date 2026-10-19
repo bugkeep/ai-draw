@@ -50,7 +50,7 @@ def main():
     parser.add_argument("--database", type=Path, default=Path("runs/browser-verification.sqlite3"))
     parser.add_argument("--scripts", nargs="+", default=[
         "deletion_smoke.js", "browser_smoke.js", "export_smoke.js", "settings_smoke.js", "sessions_smoke.js",
-        "scene_sync_smoke.js",
+        "scene_sync_smoke.js", "manual_edit_smoke.js",
     ])
     asyncio.run(verify(parser.parse_args()))
 

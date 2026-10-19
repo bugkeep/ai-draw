@@ -105,6 +105,9 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .pulse { width: 7px; height: 7px; border-radius: 50%; background: #8877e2; animation: pulse 1.3s infinite; }
 @keyframes pulse { 50% { opacity: .25; transform: scale(.7); } }
 .error-message { border-radius: 9px; background: #fff2f2; color: #b94c4c; padding: 10px 12px; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.save-notice { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 0 12px 10px; padding: 9px 12px; border: 1px solid #ecdab8; border-radius: 8px; background: #fff8eb; color: #805d27; font-size: 12px; }
+.save-notice span { flex: 1; min-width: 160px; overflow-wrap: anywhere; }
+.save-notice button { border: 1px solid #ddc9a4; border-radius: 6px; background: white; padding: 5px 8px; color: inherit; }
 .composer { flex: none; margin: 10px 12px 12px; border: 1px solid #dfe3eb; border-radius: 12px; box-shadow: 0 3px 13px rgba(45, 55, 75, .04); overflow: hidden; }
 .composer:focus-within { border-color: #a599ec; box-shadow: 0 0 0 3px #f3f0ff; }
 .composer textarea { width: 100%; min-height: 77px; max-height: 180px; display: block; padding: 12px; border: 0; outline: 0; resize: vertical; background: transparent; color: #29364d; font-size: 12px; line-height: 1.5; }

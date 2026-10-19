@@ -26,4 +26,4 @@ Windows 图片服务默认使用本机 Chrome；其他系统使用 Playwright Ch
 
 `GET /api/studio/health` 返回模型是否已配置。服务启动后运行 `python -m scripts.probe_model` 验证实际文本与工具调用；运行 `python -m scripts.evaluate_multiagent` 检查子 Agent 并行准备与逐项提交。模型评测会创建新会话并产生计费调用。`python -m scripts.evaluate_studio` 检查明确指令的连续编辑行为。
 
-更新代码并构建前端后，需要停止当前 Uvicorn 进程并重新启动。页面会核查 `/api/studio/health` 的 `api_revision`；服务尚未加载匹配版本时显示提示，暂时禁止新建、发送指令、重命名和删除，重新连接后自动恢复这些操作。
+更新代码并构建前端后，需要停止当前 Uvicorn 进程并重新启动，然后刷新页面。页面会核查 `/api/studio/health` 的 `api_revision`；服务尚未加载匹配版本时显示提示，暂时禁止手动绘图、新建、发送指令、重命名和删除，重新连接后自动恢复这些操作。当前版本为 API 7，新增手动对象变更与幂等收据；数据库启动时自动创建相关表，已有文档和历史继续保留。

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test:sync": "node --test src/scenePatch.test.js",
+    "test:sync": "node --test src/scenePatch.test.js src/manualEdits.test.js",
     "preview": "vite preview"
   },
   "dependencies": {

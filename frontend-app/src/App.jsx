@@ -8,6 +8,8 @@ import DeleteSessionDialog from './DeleteSessionDialog.jsx'
 import TaskActivity, { activityPhase } from './TaskActivity.jsx'
 import ExportDialog from './ExportDialog.jsx'
 import { applyScenePatch, replayScenePatches, sceneSnapshotSignature as snapshotSignature } from './scenePatch.js'
+import { ManualEdits } from './manualEdits.js'
+import { StrokeScene } from './strokeScene.js'
 
 const CLIENT_ID = crypto.randomUUID()
 
@@ -46,8 +48,12 @@ export default function App() {
   const [sending, setSending] = useState(false)
   const [canvasKey, setCanvasKey] = useState('')
   const [exportSnapshot, setExportSnapshot] = useState(null)
+  const [saveIssue, setSaveIssue] = useState(null)
   const apiRef = useRef(null)
   const docRef = useRef(null)
+  const displayRef = useRef(null)
+  const manualRef = useRef(new ManualEdits())
+  const strokeSceneRef = useRef(new StrokeScene())
   const sessionRef = useRef('')
   const wsRef = useRef(null)
   const reconnectRef = useRef(null)
@@ -56,8 +62,8 @@ export default function App() {
   const sceneSyncRef = useRef(null)
   const suppressRef = useRef(false)
   const suppressTimerRef = useRef(null)
+  const captureManualRef = useRef(() => {})
   const lastSignatureRef = useRef('')
-  const pendingSnapshotRef = useRef(null)
   const saveTimerRef = useRef(null)
   const savePromiseRef = useRef(null)
   const messageEndRef = useRef(null)
@@ -93,17 +99,32 @@ export default function App() {
 
   const applyDocument = useCallback((nextDocument, { showScene = true, focus = false } = {}) => {
     if (docRef.current?.id === nextDocument.id && nextDocument.version < docRef.current.version) return
+    if (showScene && apiRef.current && displayRef.current?.id === nextDocument.id) {
+      captureManualRef.current(nextDocument.id, apiRef.current.getSceneElementsIncludingDeleted(), apiRef.current.getAppState(), true)
+    }
     docRef.current = nextDocument
     setDocument(nextDocument)
-    lastSignatureRef.current = snapshotSignature(nextDocument.elements, nextDocument.selection)
+    const displayed = manualRef.current.project(nextDocument)
+    displayRef.current = displayed
+    lastSignatureRef.current = snapshotSignature(displayed.elements, displayed.selection)
     if (showScene && apiRef.current) {
       suppressRef.current = true
       clearTimeout(suppressTimerRef.current)
-      apiRef.current.updateScene({
-        elements: structuredClone(nextDocument.elements),
-        appState: { selectedElementIds: Object.fromEntries(nextDocument.selection.map((id) => [id, true])) },
-        captureUpdate: CaptureUpdateAction.NEVER,
-      })
+      try {
+        apiRef.current.updateScene({
+          elements: strokeSceneRef.current.base(displayed.elements, true),
+          appState: { selectedElementIds: Object.fromEntries(displayed.selection.map((id) => [id, true])) },
+          captureUpdate: CaptureUpdateAction.NEVER,
+        })
+      } finally {
+        const api = apiRef.current, generation = generationRef.current
+        suppressTimerRef.current = setTimeout(() => {
+          suppressRef.current = false
+          if (generation === generationRef.current && apiRef.current === api) {
+            captureManualRef.current(nextDocument.id, api.getSceneElementsIncludingDeleted(), api.getAppState())
+          }
+        }, 180)
+      }
       if (focus && nextDocument.elements.some((item) => !item.isDeleted)) {
         const generation = generationRef.current
         requestAnimationFrame(() => {
@@ -112,7 +133,6 @@ export default function App() {
             { fitToViewport: true, viewportZoomFactor: 0.75, animate: false })
         })
       }
-      suppressTimerRef.current = setTimeout(() => { suppressRef.current = false }, 180)
     }
   }, [])
 
@@ -161,7 +181,12 @@ export default function App() {
     wsRef.current?.close()
     clearTimeout(reconnectRef.current)
     clearTimeout(saveTimerRef.current)
-    pendingSnapshotRef.current = null
+    clearTimeout(suppressTimerRef.current)
+    suppressRef.current = false
+    manualRef.current = new ManualEdits()
+    strokeSceneRef.current.reset()
+    savePromiseRef.current = null
+    setSaveIssue(null)
     pendingSceneEventsRef.current = []
     sceneSyncRef.current = null
     sessionRef.current = id
@@ -232,10 +257,16 @@ export default function App() {
     wsRef.current?.close()
     clearTimeout(reconnectRef.current)
     clearTimeout(saveTimerRef.current)
-    pendingSnapshotRef.current = null
+    clearTimeout(suppressTimerRef.current)
+    suppressRef.current = false
+    manualRef.current = new ManualEdits()
+    strokeSceneRef.current.reset()
+    savePromiseRef.current = null
+    setSaveIssue(null)
     pendingSceneEventsRef.current = []
     sceneSyncRef.current = null
     docRef.current = null
+    displayRef.current = null
     sessionRef.current = ''
     apiRef.current = null
     setDocument(null)
@@ -271,79 +302,99 @@ export default function App() {
   const flushSnapshot = useCallback(async () => {
     clearTimeout(saveTimerRef.current)
     if (savePromiseRef.current) {
-      await savePromiseRef.current
-      if (pendingSnapshotRef.current) return flushSnapshot()
+      await savePromiseRef.current.promise
+      if (manualRef.current.hasChanges) return flushSnapshot()
       return
     }
-    const snapshot = pendingSnapshotRef.current
-    if (!snapshot || !docRef.current) return
-    pendingSnapshotRef.current = null
+    const journal = manualRef.current
+    if (!journal.hasChanges || !docRef.current) return
+    if (journal.conflicted) throw new Error('请先处理保留的本地修改。')
     const current = docRef.current
-    if (snapshot.documentId !== current.id) return
     const generation = generationRef.current
-    const request = studioApi.saveScene(current.id, {
-      version: current.version,
-      elements: snapshot.elements,
-      selection: snapshot.selection,
-      client_id: CLIENT_ID,
-    })
-    savePromiseRef.current = request
+    const edits = journal.start(CLIENT_ID)
+    const token = { promise: studioApi.saveEdits(current.id, edits) }
+    savePromiseRef.current = token
     try {
-      const saved = await request
+      const saved = await token.promise
       if (!mountedRef.current || generation !== generationRef.current || docRef.current?.id !== current.id) return
-      applyDocument(saved, { showScene: false })
+      journal.acknowledge(saved.mutation_id)
+      setSaveIssue(null)
+      applyDocument(saved.document.version < docRef.current.version ? docRef.current : saved.document)
     } catch (cause) {
-      if (!mountedRef.current || generation !== generationRef.current) throw cause
-      setError(`保存画布失败：${cause.message}`)
-      pendingSnapshotRef.current = null
+      if (!mountedRef.current || generation !== generationRef.current) return
       if (cause.status === 409) {
-        const latest = await studioApi.getSession(sessionRef.current)
-        if (generation === generationRef.current) applyDocument(latest.document)
+        journal.conflicted = true
+        setSaveIssue({ kind: 'conflict', message: cause.message, conflicts: cause.conflicts || [] })
+        if (cause.document) applyDocument(cause.document)
+      } else {
+        setSaveIssue({ kind: 'network', message: `尚未保存，本地修改已保留：${cause.message}` })
       }
       throw cause
     } finally {
-      savePromiseRef.current = null
+      if (savePromiseRef.current === token) savePromiseRef.current = null
     }
-    if (pendingSnapshotRef.current) await flushSnapshot()
+    if (journal.hasChanges) await flushSnapshot()
   }, [applyDocument])
+
+  const resolveLocalEdits = useCallback(async (keep) => {
+    if (!docRef.current || savePromiseRef.current) return
+    if (keep) manualRef.current.keepLocal(docRef.current)
+    else manualRef.current.reset()
+    setSaveIssue(null)
+    applyDocument(docRef.current)
+    if (keep) await flushSnapshot().catch(() => {})
+  }, [applyDocument, flushSnapshot])
 
   const deleteSession = useCallback(async (id) => {
     if (transitionRef.current) throw new Error('正在切换画布，请稍后重试。')
     transitionRef.current = true
     setChangingSession(true)
     try {
-      if (sessionRef.current === id) await flushSnapshot()
       await studioApi.deleteSession(id)
       await recoverDeletedSession(id)
     } finally {
       transitionRef.current = false
       if (mountedRef.current) setChangingSession(false)
     }
-  }, [flushSnapshot, recoverDeletedSession])
+  }, [recoverDeletedSession])
 
-  const handleCanvasChange = useCallback((documentId, elements, appState) => {
-    if (documentId !== docRef.current?.id || suppressRef.current || transitionRef.current) return
-    const snapshot = { documentId: docRef.current.id, elements: JSON.parse(JSON.stringify(elements)), selection: selectedIds(appState) }
-    const signature = snapshotSignature(snapshot.elements, snapshot.selection)
+  const handleCanvasChange = useCallback((documentId, elements, appState, collectCurrent = false) => {
+    if (!apiReady || documentId !== docRef.current?.id || (!collectCurrent && suppressRef.current) || transitionRef.current) return
+    if (taskRef.current.some((item) => ['running', 'queued'].includes(item.status))) return
+    const selection = selectedIds(appState)
+    const signature = snapshotSignature(elements, selection)
     if (signature === lastSignatureRef.current) return
-    pendingSnapshotRef.current = snapshot
+    const previous = displayRef.current
+    if (!previous || !manualRef.current.capture(previous, elements, selection)) return
+    displayRef.current = { ...docRef.current, elements: structuredClone(elements), selection }
+    lastSignatureRef.current = signature
     clearTimeout(saveTimerRef.current)
-    saveTimerRef.current = setTimeout(() => { void flushSnapshot().catch(() => {}) }, 260)
-  }, [flushSnapshot])
+    if (!manualRef.current.conflicted) saveTimerRef.current = setTimeout(() => { void flushSnapshot().catch(() => {}) }, 260)
+  }, [apiReady, flushSnapshot])
+  captureManualRef.current = handleCanvasChange
 
   const onExcalidrawApi = useCallback((api) => handleExcalidrawApi(document?.id, api), [document?.id, handleExcalidrawApi])
   const onCanvasChange = useCallback((elements, appState) => handleCanvasChange(document?.id, elements, appState), [document?.id, handleCanvasChange])
 
   const showStroke = useCallback((element) => {
-    const current = docRef.current
+    const current = displayRef.current
     if (!current || !apiRef.current) return
     suppressRef.current = true
     clearTimeout(suppressTimerRef.current)
-    apiRef.current.updateScene({
-      elements: structuredClone([...current.elements, element]),
-      captureUpdate: CaptureUpdateAction.NEVER,
-    })
-    suppressTimerRef.current = setTimeout(() => { suppressRef.current = false }, 180)
+    try {
+      apiRef.current.updateScene({
+        elements: strokeSceneRef.current.frame(current.elements, element),
+        captureUpdate: CaptureUpdateAction.NEVER,
+      })
+    } finally {
+      const api = apiRef.current, generation = generationRef.current
+      suppressTimerRef.current = setTimeout(() => {
+        suppressRef.current = false
+        if (generation === generationRef.current && apiRef.current === api) {
+          captureManualRef.current(current.id, api.getSceneElementsIncludingDeleted(), api.getAppState())
+        }
+      }, 180)
+    }
   }, [])
 
   const handleEvent = useCallback((documentId, event) => {
@@ -364,19 +415,9 @@ export default function App() {
         void syncScene(documentId)
         return
       }
-      if (value.source !== 'manual') {
-        clearTimeout(saveTimerRef.current)
-        pendingSnapshotRef.current = null
-      }
-      applyDocument(next, { showScene: !(value.source === 'manual' && value.client_id === CLIENT_ID),
-        focus: value.source === 'agent' })
+      applyDocument(next, { focus: value.source === 'agent' })
     } else if (event.type === 'scene') {
       if (value.document.version < docRef.current.version) return
-      if (value.source === 'manual' && value.client_id === CLIENT_ID) return
-      if (value.source !== 'manual') {
-        clearTimeout(saveTimerRef.current)
-        pendingSnapshotRef.current = null
-      }
       applyDocument(value.document, { focus: value.source === 'agent' })
     } else if (event.type === 'stroke_progress') {
       showStroke(value.element)
@@ -387,6 +428,9 @@ export default function App() {
     } else if (event.type === 'message') {
       setMessages((current) => current.some((item) => item.id === value.id) ? current : [...current, value])
     } else if (event.type === 'task') {
+      if (['running', 'queued'].includes(value.status) && apiRef.current) {
+        captureManualRef.current(documentId, apiRef.current.getSceneElementsIncludingDeleted(), apiRef.current.getAppState(), true)
+      }
       const current = taskRef.current
       const prior = current.find((item) => item.id === value.task_id)
       const next = [{ ...prior, id: value.task_id, status: value.status,
@@ -609,6 +653,11 @@ export default function App() {
         <section className="canvas-panel" aria-label="Excalidraw 画布">
           <div className="canvas-heading"><span className="canvas-title" title={document?.title}>{document?.title || '画布'}</span>
             <span className="revision">版本 {document?.version ?? 0} · {document?.elements.filter((item) => !item.isDeleted).length ?? 0} 个对象</span></div>
+          {saveIssue && <div className="save-notice" role="alert"><span>{saveIssue.message}</span>
+            {saveIssue.kind === 'conflict' ? <><button onClick={() => void resolveLocalEdits(true)}>保留本地修改</button>
+              <button onClick={() => void resolveLocalEdits(false)}>采用最新画布</button></> :
+              <button onClick={() => void flushSnapshot().catch(() => {})}>重试保存</button>}
+          </div>}
           <div className="editor-host">
             {document && <Excalidraw key={canvasKey} excalidrawAPI={onExcalidrawApi}
               initialData={{ elements: document.elements, appState: {
@@ -623,7 +672,7 @@ export default function App() {
                 }
                 return false
               }}
-              viewModeEnabled={busy || changingSession}
+              viewModeEnabled={busy || changingSession || !apiReady || saveIssue?.kind === 'conflict'}
               UIOptions={{ tools: { image: false }, canvasActions: {
                 export: false, loadScene: false, saveToActiveFile: false, saveAsImage: false,
               } }}

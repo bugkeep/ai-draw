@@ -11,6 +11,7 @@ from .runtime import DrawingRuntime
 from .llm import ModelGatewayError, test_connection as probe_model_connection
 from .settings import ModelSettings, SettingsUpdate
 from .store import StudioStore, VersionConflict
+from .manual_edits import ManualEdit, ManualEditConflict
 
 
 router = APIRouter(prefix="/api/studio", tags=["studio"])
@@ -47,7 +48,7 @@ def studio_store(request: Request) -> StudioStore:
 @router.get("/health")
 async def health(request: Request):
     config = request.app.state.model_settings.load()
-    return {"status": "ok", "api_revision": 6, "provider_configured": config.configured,
+    return {"status": "ok", "api_revision": 7, "provider_configured": config.configured,
             "model": config.model, "provider": config.provider}
 
 
@@ -178,6 +179,19 @@ async def delete_session(request: Request, session_id: str):
         return studio_store(request).delete_session(session_id)
     except KeyError as exc:
         raise HTTPException(404, str(exc)) from exc
+
+
+@router.patch('/documents/{document_id}/scene')
+async def save_manual_edit(request: Request, document_id: str, body: ManualEdit):
+    try:
+        return studio_store(request).save_manual_edit(document_id, body.model_dump())
+    except KeyError as error:
+        raise HTTPException(404, str(error)) from error
+    except ManualEditConflict as error:
+        raise HTTPException(409, {'message': str(error), 'conflicts': error.conflicts,
+                                  'document': error.document}) from error
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
 
 
 @router.post("/documents/{document_id}/history")

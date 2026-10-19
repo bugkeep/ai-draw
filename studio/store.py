@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import sqlite3
 import threading
@@ -11,6 +12,7 @@ from typing import Any
 from .actions import apply_action, matches_fingerprint
 from .agent_store import AgentStore
 from .scene_patch import scene_patch
+from .manual_edits import merge_manual_edit
 
 
 class VersionConflict(Exception):
@@ -76,6 +78,13 @@ class StudioStore:
             );
             CREATE INDEX IF NOT EXISTS idx_document_history_direction
                 ON document_history(document_id,direction,id);
+            CREATE TABLE IF NOT EXISTS manual_edit_receipts (
+                document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                client_id TEXT NOT NULL, mutation_id TEXT NOT NULL,
+                request_hash TEXT NOT NULL, committed_version INTEGER NOT NULL,
+                created_at REAL NOT NULL,
+                PRIMARY KEY(document_id,client_id,mutation_id)
+            );
         """)
         self.connection.commit()
         try:
@@ -478,6 +487,39 @@ class StudioStore:
         if notification:
             self._notify_event(*notification)
         return document
+
+    def save_manual_edit(self, document_id, edit):
+        notification = None
+        encoded = hashlib.sha256(json.dumps(edit, ensure_ascii=False, sort_keys=True, allow_nan=False).encode()).hexdigest()
+        with self.lock, self.connection:
+            self.connection.execute('BEGIN IMMEDIATE')
+            row = self.connection.execute(
+                'SELECT id,title,version,elements,selection,updated_at FROM documents WHERE id=?', (document_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f'Document not found: {document_id}')
+            receipt = self.connection.execute(
+                'SELECT request_hash,committed_version FROM manual_edit_receipts WHERE document_id=? AND client_id=? AND mutation_id=?',
+                (document_id, edit['client_id'], edit['mutation_id']),
+            ).fetchone()
+            if receipt:
+                if receipt['request_hash'] != encoded:
+                    raise ValueError('A manual edit identity cannot be reused for different changes')
+                return {'document': self._document(row), 'mutation_id': edit['mutation_id'],
+                        'committed_version': receipt['committed_version'], 'already_committed': True}
+            before = self._document(row)
+            elements, selection = merge_manual_edit(before, edit)
+            document = self._save(row, elements, selection, True)
+            self.connection.execute('INSERT INTO manual_edit_receipts VALUES(?,?,?,?,?,?)',
+                (document_id, edit['client_id'], edit['mutation_id'], encoded, document['version'], time.time()))
+            if document['version'] != before['version']:
+                notification = self._append_event(document_id, 'scene_patch', {
+                    'patch': scene_patch(before, document), 'source': 'manual', 'client_id': edit['client_id'],
+                    'mutation_id': edit['mutation_id']})
+        if notification:
+            self._notify_event(*notification)
+        return {'document': document, 'mutation_id': edit['mutation_id'],
+                'committed_version': document['version'], 'already_committed': False}
 
     def commit_action(self, document_id: str, action: dict[str, Any], expected_elements: dict[str, Any],
                       receipt: tuple[str, int] | None = None) -> dict[str, Any]:

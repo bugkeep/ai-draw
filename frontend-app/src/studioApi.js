@@ -6,15 +6,17 @@ async function request(path, options = {}) {
   const data = await response.json()
   if (!response.ok) {
     const message = response.status === 405 ? '后端服务版本与页面不匹配，请重新启动 Draw Agent 服务后重试。' : typeof data.detail === 'string' ? data.detail :
-      Array.isArray(data.detail) ? data.detail.map((item) => item.msg).join('；') : `HTTP ${response.status}`
+      (data.detail?.message || (Array.isArray(data.detail) ? data.detail.map((item) => item.msg).join('；') : `HTTP ${response.status}`))
     const error = new Error(message)
     error.status = response.status
+    error.document = data.detail?.document
+    error.conflicts = data.detail?.conflicts
     throw error
   }
   return data
 }
 
-export const STUDIO_API_REVISION = 6
+export const STUDIO_API_REVISION = 7
 
 export const studioApi = {
   health: () => request('/health'),
@@ -31,6 +33,9 @@ export const studioApi = {
   }),
   saveScene: (id, snapshot) => request(`/documents/${id}/scene`, {
     method: 'PUT', body: JSON.stringify(snapshot),
+  }),
+  saveEdits: (id, edits) => request(`/documents/${id}/scene`, {
+    method: 'PATCH', body: JSON.stringify(edits),
   }),
   history: (id, direction) => request(`/documents/${id}/history`, {
     method: 'POST', body: JSON.stringify({ direction }),

@@ -54,6 +54,8 @@ Agent 可以通过 `search_references` 使用免费的公共搜索查阅具体�
 
 每个会话有独立画布、消息、任务、实时事件和撤销历史。切换画布或打开多个窗口时，各自显示所属会话的内容；同一会话内的指令按顺序执行，当前 Agent 上下文不包含后续排队任务的指令。服务重启后，数据仍保存在 `runs/studio.sqlite3`，该路径可通过 `DRAW_AGENT_DB` 配置。
 
+手动编辑按对象变更保存。尚未保存的移动、颜色等修改会保留在当前画布，收到 Agent 或其他窗口的更新时合并互不冲突的内容。同一对象的同一内容同时修改时，页面保留本地草稿，提供“保留本地修改”和“采用最新画布”；网络响应丢失后可“重试保存”，同一操作不会重复提交或增加撤销记录。更新项目后应重新启动后端并刷新页面，当前编辑协议为 API 7。
+
 模型绘图在宣布完成前进行独立图片检查；未通过时，具体缺陷和修正建议返回主 Agent 继续处理。同一张未改变的画面复用检查结果。检查中可随时停止，已经提交的原生图形继续保留。画布修改使用增量事件推送，断线后继续同步；长期作画没有应用层的总动作数或单次模型请求时限。
 
 主 Agent 负责构图、简单几何与语义编辑，以及审阅和提交。手工笔画坐标与曲线重塑由绘图子 Agent 在私有草稿中准备，主 Agent 的工具定义和运行时均执行这个边界。多个区域可以并行准备，主 Agent 仍按版本与依赖顺序提交。
@@ -82,6 +84,7 @@ Agent 可以通过 `search_references` 使用免费的公共搜索查阅具体�
 | `studio/llm.py`、`studio/settings.py` | 多厂商模型请求、连接验证和加密配置 |
 | `studio/runtime.py` | 任务队列、逐项提交、画笔过程和取消操作 |
 | `studio/store.py` | SQLite 会话、画布版本、历史记录和工具记录 |
+| `studio/manual_edits.py` | 手动变更校验、字段合并、几何冲突与图层顺序保护 |
 | `studio/api.py` | HTTP API 与画布 WebSocket 事件 |
 | `scripts/` | 真实操作成功率与延迟评测 |
 
@@ -199,6 +202,8 @@ npm run test:sync
 也可以在仓库根目录运行 `python -m scripts.verify_browser --database runs/browser-verification.sqlite3`，自动使用空闲端口和独立数据库完成浏览器检查，结束后正常关闭测试服务。
 
 `scene_sync_smoke.js` 使用真实 HTTP 与 WebSocket 服务，检查连续修改、双窗口导出一致、丢失或乱序消息后的快照恢复、断线回放和画布切换。它会创建独立测试会话。已有完整作画事件归档时，可运行 `python -m scripts.evaluate_scene_events --source-database ARCHIVE --output runs/scene-events.json`，只读比较原有全量事件与增量数据量，并通过前端实际使用的增量处理函数重建最终对象、图层顺序与选择状态。该回放不发送模型请求，不衡量重新作画的总延迟。
+
+默认浏览器检查还包含 `manual_edit_smoke.js`：使用真实鼠标拖动和生产绘图指令，检查未保存修改与 Agent 更新交错、字段合并、冲突处理、确认删除，以及后端已经提交但响应丢失后的幂等重试。密集原生画布案例记录实际笔画事件与整图复制次数，并核对导出的原生对象；该检查不发送模型请求，也不作为完整绘画的质量验收。
 
 `evaluate_completion_review --rejected-artwork PATH.excalidraw --drawing-request "原绘图要求" --database runs/completion-review.sqlite3 --output runs/completion-review.json` 使用真实模型检查完成边界：缺陷作品应被拒绝，正确的局部修改应被允许，同一画面复用检查结果并保留图形和历史。通过 `python -m scripts.evaluate_completion_review` 执行，需要已配置真实模型及全新的独立测试数据库。它验证完成检查，完整绘画质量仍按题材单独验收。
 
