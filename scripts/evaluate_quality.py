@@ -1,4 +1,6 @@
 import argparse
+import asyncio
+import hashlib
 import json
 import os
 import time
@@ -8,6 +10,16 @@ import httpx
 from fastapi.testclient import TestClient
 
 from server.app import create_app
+from studio.renderer import CanvasRenderer
+from studio.vision import scene_digest
+
+
+async def render_final_document(document):
+    renderer = CanvasRenderer()
+    try:
+        return (await renderer.render(document))['png']
+    finally:
+        await renderer.close()
 
 
 def main():
@@ -19,6 +31,11 @@ def main():
     parser.add_argument("--output-dir", type=Path, default=Path("runs/drawing-quality"))
     parser.add_argument("--recheck", action="store_true", help="Recheck saved evaluation tasks without requesting new drawings")
     args = parser.parse_args()
+    root = Path(__file__).resolve().parent.parent
+    implementation = {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in (
+        'studio/runtime.py', 'studio/agents.py', 'studio/actions.py', 'studio/result_review.py',
+        'studio/memory.py', 'studio/vision.py', 'studio/reference_images.py', 'studio/store.py')}
+    dataset_hash = hashlib.sha256(args.dataset.read_bytes()).hexdigest()
     cases = json.loads(args.dataset.read_text(encoding="utf-8"))["cases"]
     selected = set(args.cases.split(",")) if args.cases else {case["id"] for case in cases}
     if selected - {case["id"] for case in cases}:
@@ -65,12 +82,15 @@ def main():
             response = client.get(f"/api/studio/tasks/{task_id}/logs")
             response.raise_for_status()
             logs = response.json()
+            final_hash = scene_digest(scene)
             full_images = [item['payload'] for item in logs if item['kind'] == 'canvas_observation'
-                           and item['agent_id'] == 'main' and item['payload'].get('region') is None]
-            if full_images:
-                response = client.get(f"/api/studio/sessions/{session_id}/observations/{full_images[-1]['observation_id']}")
-                response.raise_for_status()
-                (args.output_dir / f"{case['id']}.png").write_bytes(response.content)
+                           and item['agent_id'] == 'main' and item['payload'].get('region') is None
+                           and item['payload'].get('scope', 'shared') == 'shared'
+                           and item['payload']['scene_hash'] == final_hash]
+            contexts = [item['payload'] for item in logs if item['agent_id'] == 'main' and item['kind'] == 'model_context']
+            delivered_ids = {observation_id for context in contexts for observation_id in context.get('image_observation_ids', [])}
+            final_observed = any(item['observation_id'] in delivered_ids for item in full_images)
+            (args.output_dir / f"{case['id']}.png").write_bytes(asyncio.run(render_final_document(scene)))
             checks = {key: any(any(word in (item.get("customData", {}).get("name", "") + " " + item.get("text", "")).casefold()
                                            for word in words) for item in elements
                                if item["type"] != "text" or case.get("min_arrows") or key == "sign")
@@ -86,13 +106,19 @@ def main():
             checks["native_geometry"] = bool(elements) and all(item["type"] in {
                 "freedraw", "line", "arrow", "ellipse", "rectangle", "diamond", "text"} for item in elements)
             checks["arrows"] = sum(item["type"] == "arrow" for item in elements) >= case.get("min_arrows", 0)
+            checks['final_model_canvas_inspected'] = not contexts or final_observed
             commits = [item for item in logs if item["kind"] == "commit"]
             result = {"case": case["id"], "prompt": case["prompt"], "session_id": session_id, "task_id": task_id,
+                      'implementation_sha256': implementation, 'dataset_sha256': dataset_hash,
                       "status": task["status"], "error": task["error"], "element_count": len(elements),
                       "latency_ms": task["latency_ms"], "structural_checks": checks,
                       "first_canvas_update_ms": round((commits[0]["created_at"] - task["created_at"]) * 1000, 1) if commits else None,
                       "model_retry_count": sum(item["kind"] == "model_retry" for item in logs),
                       'image_observation_count': sum(item['kind'] == 'canvas_observation' for item in logs),
+                      'final_shared_scene_hash': final_hash,
+                      'final_model_canvas_observed': final_observed if contexts else None,
+                      'png_source': 'rendered_final_shared_native_document',
+                      'result_preview_count': sum(len(context.get('result_observation_ids', [])) for context in contexts),
                       "tool_error_count": sum(item["kind"] == "function_call_output" and
                                               json.loads(item["payload"]["output"]).get("ok") is False for item in logs),
                       "structural_checks_passed": task["status"] == "completed" and all(checks.values()),
