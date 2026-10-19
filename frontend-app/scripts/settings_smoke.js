@@ -75,6 +75,7 @@ try {
   if (!(await page.locator('.revision').textContent()).includes('1 个对象')) throw new Error('Another browser window changed this scene')
   await page.locator('.top-actions').getByRole('button', { name: '模型设置' }).click()
   await page.waitForURL('**/settings')
+  if (await page.getByLabel('请求超时', { exact: true }).count()) throw new Error('Settings still expose a request deadline')
   const save = page.getByRole('button', { name: '保存配置' })
   await page.waitForFunction(() => [...document.querySelectorAll('button')].some((button) => button.textContent === '保存配置' && button.disabled))
   const original = await request('/api/studio/settings')
@@ -112,7 +113,7 @@ try {
   await switchTo(second)
   await page.waitForFunction(() => document.querySelector('.revision')?.textContent.includes('1 个对象'))
   if (errors.length) throw new Error(errors.join('\n'))
-  console.log(JSON.stringify({ settings_navigation: true, saved_config: true, secret_not_returned: true,
+  console.log(JSON.stringify({ settings_navigation: true, saved_config: true, secret_not_returned: true, no_request_deadline_control: true,
     save_blocked_during_drawing: true, session_scene_isolation: true, session_message_isolation: true,
     browser_window_isolation: true, model_connection_tested: testModel }))
 } finally {

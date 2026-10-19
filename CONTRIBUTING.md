@@ -18,3 +18,5 @@ python -m pytest -q
 Pull Request 合并后及时删除对应的本地和远端任务分支，保持工作分支数量较少。
 
 涉及会话列表、名称或页面高度的修改，还应运行 `node frontend-app/scripts/sessions_smoke.js`。使用独立的 `DRAW_AGENT_DB` 启动测试服务，设置 `DRAW_AGENT_URL` 指向该服务。该脚本会创建多个会话和绘图任务，用真实数据检查页面滚动与名称保存。
+
+涉及会话删除的修改，还应运行 `node frontend-app/scripts/deletion_smoke.js`。在空白测试数据库中首先运行该脚本，可以同时检查最后一个画布被删除后的空白画布创建。涉及复杂流程图与连续编辑的修改，应配置真实模型并运行 `python -m scripts.evaluate_transformer`，记录图形内容、对象数量、模型耗时和后续编辑检查。

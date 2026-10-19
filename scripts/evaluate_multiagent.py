@@ -12,7 +12,7 @@ def main():
     parser.add_argument("--output", type=Path, default=Path("runs/studio-multiagent-evaluation.json"))
     parser.add_argument("--session-id")
     args = parser.parse_args()
-    prompt = "在同一张画布上画一个完整的公园场景：左侧画一栋房子，右侧画两棵树，天空画太阳和云朵。请安排多个子 Agent 分别准备独立部分。"
+    prompt = "在同一张画布上画一个完整的公园场景：左侧画一栋房子，右侧画两棵树，天空画太阳和云朵。请安排三个子 Agent 分别准备房子、两棵树和天空部分。"
     with httpx.Client(base_url=args.url, timeout=15) as client:
         if args.session_id:
             session_id = args.session_id
@@ -33,16 +33,17 @@ def main():
             task_response = client.post(f"/api/studio/sessions/{session_id}/messages", json={"message": prompt})
             task_response.raise_for_status()
             task_id = task_response.json()["id"]
-            deadline = time.monotonic() + 180
-            while time.monotonic() < deadline:
-                task_response = client.get(f"/api/studio/tasks/{task_id}")
-                task_response.raise_for_status()
-                task = task_response.json()
-                if task["status"] in {"completed", "partial", "failed", "cancelled"}:
-                    break
-                time.sleep(0.3)
-            else:
-                raise TimeoutError("Multi-agent task exceeded 180 seconds")
+            try:
+                while True:
+                    task_response = client.get(f"/api/studio/tasks/{task_id}")
+                    task_response.raise_for_status()
+                    task = task_response.json()
+                    if task["status"] in {"completed", "partial", "failed", "cancelled"}:
+                        break
+                    time.sleep(0.3)
+            except KeyboardInterrupt:
+                client.post(f"/api/studio/tasks/{task_id}/cancel").raise_for_status()
+                raise
         scene_response = client.get(f"/api/studio/sessions/{session_id}")
         scene_response.raise_for_status()
         logs_response = client.get(f"/api/studio/tasks/{task_id}/logs")

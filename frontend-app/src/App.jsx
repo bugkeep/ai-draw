@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { CaptureUpdateAction, DefaultSidebar, Excalidraw, exportToBlob } from '@excalidraw/excalidraw'
 import { useNavigate } from 'react-router-dom'
 import '@excalidraw/excalidraw/index.css'
-import { eventsUrl, studioApi } from './studioApi.js'
+import { eventsUrl, STUDIO_API_REVISION, studioApi } from './studioApi.js'
 import SessionListItem from './SessionListItem.jsx'
+import DeleteSessionDialog from './DeleteSessionDialog.jsx'
 
 const CLIENT_ID = crypto.randomUUID()
 
@@ -37,9 +38,12 @@ export default function App() {
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
   const [providerReady, setProviderReady] = useState(false)
+  const [apiReady, setApiReady] = useState(false)
   const [connected, setConnected] = useState(false)
   const [changingSession, setChangingSession] = useState(false)
   const [renamingSessionId, setRenamingSessionId] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [pendingDeletion, setPendingDeletion] = useState('')
   const [sending, setSending] = useState(false)
   const [canvasKey, setCanvasKey] = useState('')
   const apiRef = useRef(null)
@@ -154,6 +158,7 @@ export default function App() {
         const [health, available] = await Promise.all([studioApi.health(), studioApi.listSessions()])
         if (cancelled) return
         setProviderReady(health.provider_configured)
+        setApiReady(health.api_revision === STUDIO_API_REVISION)
         setSessions(available)
         const remembered = localStorage.getItem('draw-agent-session')
         const chosen = available.find((item) => item.id === remembered) || available[0]
@@ -171,6 +176,65 @@ export default function App() {
     start()
     return () => { cancelled = true }
   }, [loadSession])
+
+  useEffect(() => {
+    if (apiReady) return
+    let cancelled = false
+    const timer = setInterval(async () => {
+      try {
+        const health = await studioApi.health()
+        if (!cancelled) {
+          setApiReady(health.api_revision === STUDIO_API_REVISION)
+          setProviderReady(health.provider_configured)
+        }
+      } catch (cause) {
+        if (!cancelled) setError(cause.message)
+      }
+    }, 2500)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [apiReady])
+
+  const recoverDeletedSession = useCallback(async (id) => {
+    setSessions((current) => current.filter((item) => item.id !== id))
+    setDeleteTarget((current) => current?.id === id ? null : current)
+    if (sessionRef.current !== id) return
+    generationRef.current += 1
+    wsRef.current?.close()
+    clearTimeout(reconnectRef.current)
+    clearTimeout(saveTimerRef.current)
+    pendingSnapshotRef.current = null
+    docRef.current = null
+    sessionRef.current = ''
+    apiRef.current = null
+    setDocument(null)
+    setSessionId('')
+    setMessages([])
+    setTaskList([])
+    setPhase(null)
+    setDraft('')
+    localStorage.removeItem('draw-agent-session')
+    const available = await studioApi.listSessions()
+    if (!available.length) {
+      const created = await studioApi.createSession('我的画布')
+      available.push({ id: created.id, document_id: created.document.id, title: created.title })
+    }
+    if (!mountedRef.current) return
+    setSessions(available)
+    await loadSession(available[0].id, true)
+    setError('')
+  }, [loadSession, setTaskList])
+
+  useEffect(() => {
+    if (!pendingDeletion || changingSession || transitionRef.current) return
+    transitionRef.current = true
+    setChangingSession(true)
+    void recoverDeletedSession(pendingDeletion).catch((cause) => {
+      if (mountedRef.current) setError(cause.message)
+    }).finally(() => {
+      transitionRef.current = false
+      if (mountedRef.current) { setChangingSession(false); setPendingDeletion('') }
+    })
+  }, [pendingDeletion, changingSession, recoverDeletedSession])
 
   const flushSnapshot = useCallback(async () => {
     clearTimeout(saveTimerRef.current)
@@ -213,6 +277,20 @@ export default function App() {
     if (pendingSnapshotRef.current) await flushSnapshot()
   }, [applyDocument])
 
+  const deleteSession = useCallback(async (id) => {
+    if (transitionRef.current) throw new Error('正在切换画布，请稍后重试。')
+    transitionRef.current = true
+    setChangingSession(true)
+    try {
+      if (sessionRef.current === id) await flushSnapshot()
+      await studioApi.deleteSession(id)
+      await recoverDeletedSession(id)
+    } finally {
+      transitionRef.current = false
+      if (mountedRef.current) setChangingSession(false)
+    }
+  }, [flushSnapshot, recoverDeletedSession])
+
   const handleCanvasChange = useCallback((documentId, elements, appState) => {
     if (documentId !== docRef.current?.id || suppressRef.current || transitionRef.current) return
     const snapshot = { documentId: docRef.current.id, elements: JSON.parse(JSON.stringify(elements)), selection: selectedIds(appState) }
@@ -254,6 +332,8 @@ export default function App() {
       showStroke(value.element)
     } else if (event.type === 'session') {
       updateSessionTitle(value)
+    } else if (event.type === 'session_deleted') {
+      setPendingDeletion(value.id)
     } else if (event.type === 'message') {
       setMessages((current) => current.some((item) => item.id === value.id) ? current : [...current, value])
     } else if (event.type === 'task') {
@@ -296,6 +376,10 @@ export default function App() {
       ws.onclose = () => {
         if (closed || generation !== generationRef.current) return
         setConnected(false)
+        const targetSession = sessionRef.current
+        void studioApi.getSession(targetSession).catch((cause) => {
+          if (cause.status === 404 && !closed && generation === generationRef.current) setPendingDeletion(targetSession)
+        })
         reconnectTimer = setTimeout(connect, 1200)
         reconnectRef.current = reconnectTimer
       }
@@ -326,7 +410,7 @@ export default function App() {
   const send = useCallback(async (event) => {
     event.preventDefault()
     const text = draft.trim()
-    if (!text || !sessionRef.current || transitionRef.current || sendingRef.current) return
+    if (!apiReady || !text || !sessionRef.current || transitionRef.current || sendingRef.current) return
     const targetSession = sessionRef.current
     const generation = generationRef.current
     sendingRef.current = true
@@ -347,7 +431,7 @@ export default function App() {
       sendingRef.current = false
       if (mountedRef.current) setSending(false)
     }
-  }, [draft, flushSnapshot, setTaskList])
+  }, [apiReady, draft, flushSnapshot, setTaskList])
 
   const createSession = useCallback(async () => {
     if (!docRef.current || transitionRef.current) return
@@ -470,14 +554,15 @@ export default function App() {
           <button type="button" onClick={openSettings} disabled={changingSession} aria-label="模型设置">⚙ 设置</button>
         </div>
       </header>
+      {!apiReady && <div className="backend-notice" role="status">正在核查服务版本。若已更新项目代码，请重新启动 Draw Agent 后端服务；连接恢复后可继续操作。</div>}
       <main className="workspace">
         <nav className="sessions" aria-label="画布会话">
-          <div className="section-heading"><span>画布</span><button type="button" onClick={createSession} disabled={!document || changingSession}>＋ 新建</button></div>
+          <div className="section-heading"><span>画布</span><button type="button" onClick={createSession} disabled={!apiReady || !document || changingSession}>＋ 新建</button></div>
           <div className="session-list">
             {sessions.map((item) => <SessionListItem key={item.id} session={item} selected={sessionId === item.id}
-              editing={renamingSessionId === item.id} disabled={changingSession}
+              editing={renamingSessionId === item.id} disabled={changingSession} actionsDisabled={!apiReady}
               onSelect={() => switchSession(item.id)} onEdit={() => setRenamingSessionId(item.id)}
-              onCancel={() => setRenamingSessionId('')} onRename={renameSession} />)}
+              onCancel={() => setRenamingSessionId('')} onRename={renameSession} onDelete={() => setDeleteTarget(item)} />)}
           </div>
           <div className="session-hint">每段对话保留同一张画布。可在画布上直接选择和修改图形。</div>
         </nav>
@@ -510,7 +595,7 @@ export default function App() {
         </section>
         <aside className="chat" aria-label="绘图对话">
           <div className="chat-heading"><div><strong>绘图 Agent</strong><span>通过对话逐步完成作品</span></div>
-            <span className={`agent-status ${busy ? 'active' : ''}`}>{taskLabel(activeTask)}</span></div>
+            <span className={`agent-status ${busy ? 'active' : ''}`}>{taskLabel(activeTask || tasks[0])}</span></div>
           <div className="conversation">
             {messages.length === 0 && <div className="welcome">
               <div className="welcome-icon">✧</div><h2>从一个想法开始</h2>
@@ -530,11 +615,13 @@ export default function App() {
             <textarea aria-label="绘图指令" placeholder="描述你想创建或修改的内容…" value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form.requestSubmit() } }} />
-            <div className="composer-bottom"><span>Enter 发送 · Shift+Enter 换行</span><button type="submit" disabled={!draft.trim() || !document || changingSession || sending}>发送 ↑</button></div>
+            <div className="composer-bottom"><span>Enter 发送 · Shift+Enter 换行</span><button type="submit" disabled={!apiReady || !draft.trim() || !document || changingSession || sending}>发送 ↑</button></div>
           </form>
           {!providerReady && <div className="config-note">请前往<button type="button" onClick={openSettings}>模型设置</button>配置模型连接。</div>}
         </aside>
       </main>
+      {deleteTarget && <DeleteSessionDialog key={deleteTarget.id} session={deleteTarget}
+        blocked={deleteTarget.id === sessionId && busy} onCancel={() => setDeleteTarget(null)} onDelete={deleteSession} />}
     </div>
   )
 }

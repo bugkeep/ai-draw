@@ -6,6 +6,7 @@ from typing import Any
 
 from .actions import create_native_element, element_fingerprint, validate_action
 from .agents import DrawingAgents
+from .errors import validation_summary
 from .fast_path import fast_actions
 from .settings import ModelSettings
 from .store import StudioStore, VersionConflict
@@ -22,6 +23,9 @@ class DrawingRuntime:
     @property
     def busy(self) -> bool:
         return bool(self.running)
+
+    def session_busy(self, session_id: str) -> bool:
+        return any(self.store.get_task(task_id)["session_id"] == session_id for task_id in self.running)
 
     def submit(self, session_id: str, message: str) -> dict[str, Any]:
         session = self.store.get_session(session_id)
@@ -95,7 +99,7 @@ class DrawingRuntime:
         except Exception as exc:
             self.store.log_tool(task_id, "runtime", 0, "error", {"type": type(exc).__name__, "message": str(exc)})
             self.store.publish(document_id, "scene", {"document": self.store.get_document(document_id), "source": "error"})
-            self._status(task_id, document_id, "failed", error=str(exc),
+            self._status(task_id, document_id, "failed", error=validation_summary(exc),
                          latency_ms=(time.perf_counter() - started) * 1000)
         finally:
             self.cancel_requested.discard(task_id)
@@ -120,6 +124,7 @@ class DrawingRuntime:
                                                            "count": len(retry_indices)})
                 self.store.log_tool(task_id, "main", 0, "retry_children", {
                     "ids": [plan.delegations[index].id for index in retry_indices],
+                    "errors": {plan.delegations[index].id: validation_summary(results[index]) for index in retry_indices},
                     "model": agents.settings.model,
                 })
                 retries = await asyncio.gather(

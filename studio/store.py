@@ -144,6 +144,30 @@ class StudioStore:
             raise KeyError(f"Document not found: {document_id}")
         return self._document(row)
 
+    def delete_session(self, session_id: str) -> dict[str, str]:
+        with self.lock, self.connection:
+            session = self.connection.execute("SELECT document_id FROM sessions WHERE id=?", (session_id,)).fetchone()
+            if session is None:
+                raise KeyError(f"Session not found: {session_id}")
+            document_id = session["document_id"]
+            seq = self.connection.execute(
+                "SELECT COALESCE(MAX(seq),0)+1 FROM events WHERE document_id=?", (document_id,),
+            ).fetchone()[0]
+            self.connection.execute(
+                "DELETE FROM tool_logs WHERE task_id IN (SELECT id FROM tasks WHERE session_id=?)", (session_id,),
+            )
+            self.connection.execute("DELETE FROM messages WHERE session_id=?", (session_id,))
+            self.connection.execute("DELETE FROM tasks WHERE session_id=?", (session_id,))
+            self.connection.execute("DELETE FROM sessions WHERE id=?", (session_id,))
+            self.connection.execute("DELETE FROM events WHERE document_id=?", (document_id,))
+            self.connection.execute("DELETE FROM documents WHERE id=?", (document_id,))
+            listeners = tuple(self.listeners.get(document_id, {}).items())
+        result = {"id": session_id, "document_id": document_id}
+        event = {"seq": seq, "document_id": document_id, "type": "session_deleted", "payload": result}
+        for queue, loop in listeners:
+            loop.call_soon_threadsafe(queue.put_nowait, event)
+        return result
+
     def get_session(self, session_id: str) -> dict[str, Any]:
         with self.lock:
             session = self.connection.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()

@@ -63,8 +63,14 @@ class ModelForm(BaseModel):
     api_base: str = Field(default="", max_length=1000)
     api_version: str = Field(default="", max_length=80)
     api_mode: Literal["chat_completions", "responses"] = "chat_completions"
-    timeout_seconds: int = Field(default=60, ge=5, le=300)
     request_parameters: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_fields(cls, value):
+        if isinstance(value, dict):
+            value = {key: item for key, item in value.items() if key != "timeout_seconds"}
+        return value
 
     @model_validator(mode="after")
     def validate_connection(self):

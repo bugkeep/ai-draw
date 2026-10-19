@@ -54,3 +54,9 @@ Base URL 不应附加 `chat/completions`、`responses` 或 `messages`。Azure �
 ```bash
 python -m scripts.probe_model
 ```
+
+## 持续绘图与停止任务
+
+应用不设置模型请求或绘图任务的时间上限。运行期间可以点击“停止”，取消当前任务及其子 Agent 请求；模型厂商或网络返回错误时，任务按错误处理流程结束。只有主 Agent 可以创建子 Agent，子 Agent 仅能使用绘图工具。
+
+模型厂商返回 HTTP 429 时，适配器根据 `Retry-After` 或逐渐延长的随机间隔等待并重试，直至成功或用户停止；账户额度错误会直接报告。等待记录写入 SQLite，不加入主 Agent 的对话上下文。

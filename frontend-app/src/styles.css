@@ -37,6 +37,17 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .session-title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .session-rename-button { flex: none; border: 0; background: transparent; color: #8b80b6; width: 27px; height: 30px; margin-right: 3px; border-radius: 6px; font-size: 17px; }
 .session-rename-button:hover { background: #e4def8; color: #6049c9; }
+.session-delete-button { flex: none; display: grid; place-items: center; width: 25px; height: 30px; margin-right: 3px; border: 0; border-radius: 6px; background: transparent; color: #9690a8; }
+.session-delete-button:hover { color: #b74343; background: #ffecec; }
+.backend-notice { flex: none; padding: 10px 18px; color: #805c20; background: #fff4d9; font-size: 12px; }
+.delete-session-dialog { width: min(430px, calc(100vw - 32px)); border: 1px solid #e0e3eb; border-radius: 16px; padding: 24px; color: #354359; box-shadow: 0 18px 70px #16203333; }
+.delete-session-dialog::backdrop { background: #16203355; }
+.delete-session-dialog h2 { margin: 0 0 12px; font-size: 18px; }
+.delete-session-dialog p { font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.dialog-error { color: #b74343; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.dialog-actions button { padding: 8px 16px; border: 1px solid #dfe3eb; background: #fff; color: #4d5a70; border-radius: 8px; }
+.dialog-actions .danger-button { background: #c44747; border-color: #c44747; color: #fff; }
 .session-rename-form { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 3px; padding: 2px 4px 8px; }
 .session-rename-form input { min-width: 0; width: 100%; padding: 7px 6px; border: 1px solid #a599ec; border-radius: 6px; outline: none; color: #354359; font-size: 12px; }
 .session-rename-form button { width: 24px; height: 28px; border: 0; background: transparent; color: #705bd3; border-radius: 5px; }

@@ -163,8 +163,6 @@ export default function SettingsPage() {
                 {supportsResponses && <label className="settings-field"><span>API 类型</span><select aria-label="API 类型" value={form.api_mode} onChange={(event) => update('api_mode', event.target.value)}>
                   <option value="chat_completions">Chat Completions</option><option value="responses">Responses</option>
                 </select></label>}
-                <label className="settings-field"><span>请求超时（秒）</span><input aria-label="请求超时" type="number" min="5" max="300" value={form.timeout_seconds}
-                  onChange={(event) => update('timeout_seconds', Number(event.target.value))} /></label>
                 {form.provider === 'azure' && <label className="settings-field"><span>Azure API Version</span><input aria-label="Azure API Version" value={form.api_version}
                   onChange={(event) => update('api_version', event.target.value)} placeholder="填写资源所需的 API 版本" /></label>}
                 <label className="settings-field full-width"><span>扩展请求参数 <em>JSON</em></span><textarea aria-label="扩展请求参数" value={parameters} onChange={(event) => { setParameters(event.target.value); setNotice('') }} spellCheck={false} />

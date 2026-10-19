@@ -1,13 +1,22 @@
+import asyncio
 import copy
 import json
+import math
 import os
+import random
 import time
+from collections.abc import Callable
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
+
+import httpx
 
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 
 import litellm
-from openai import OpenAIError
+from litellm.utils import supports_httpx_timeout
+from openai import OpenAIError, RateLimitError
 
 from .settings import ModelConfig, PROVIDER_BY_ID
 
@@ -20,6 +29,18 @@ class ModelGatewayError(RuntimeError):
     pass
 
 
+def rate_limit_delay(retry_after: str | None, attempt: int) -> float:
+    delay = random.uniform(1, 2) * 2 ** min(attempt, 6)
+    if retry_after:
+        try:
+            server_delay = float(retry_after)
+        except ValueError:
+            server_delay = (parsedate_to_datetime(retry_after) - datetime.now(timezone.utc)).total_seconds()
+        if math.isfinite(server_delay):
+            delay = max(delay, server_delay)
+    return delay
+
+
 def request_options(config: ModelConfig) -> dict[str, Any]:
     route = PROVIDER_BY_ID[config.provider]["route"]
     prefix = f"{route}/" if route else ""
@@ -28,7 +49,9 @@ def request_options(config: ModelConfig) -> dict[str, Any]:
         model = model[len(prefix):]
     if config.api_mode == "responses" and not model.startswith("responses/"):
         model = f"responses/{model}"
-    options: dict[str, Any] = {"model": f"{prefix}{model}", "timeout": config.timeout_seconds,
+    provider = route or model.split("/", 1)[0]
+    timeout = httpx.Timeout(None) if supports_httpx_timeout(provider) else float("inf")
+    options: dict[str, Any] = {"model": f"{prefix}{model}", "timeout": timeout,
                                "num_retries": 0, "max_retries": 0, "stream": False}
     if config.api_base:
         options["api_base"] = config.api_base
@@ -51,19 +74,35 @@ class ModelGateway:
             raise ValueError("请在设置页面完成模型配置。")
         self.config = config.model_copy(deep=True)
 
-    async def complete(self, messages: list[dict], tools: list[dict] | None = None):
+    def error_message(self, error: OpenAIError) -> str:
+        message = str(error)
+        key = self.config.api_key.get_secret_value()
+        return message.replace(key, "[redacted]")[:1500] if key else message[:1500]
+
+    async def complete(self, messages: list[dict], tools: list[dict] | None = None,
+                       on_retry: Callable[[dict], None] | None = None):
         options = request_options(self.config)
         options["messages"] = copy.deepcopy(messages)
         if tools:
             options.update(tools=tools, tool_choice="auto")
-        try:
-            response = await litellm.acompletion(**options)
-        except OpenAIError as exc:
-            message = str(exc)
-            key = self.config.api_key.get_secret_value()
-            if key:
-                message = message.replace(key, "[redacted]")
-            raise ModelGatewayError(message[:1500]) from None
+        attempt = 0
+        while True:
+            try:
+                response = await litellm.acompletion(**options)
+                break
+            except RateLimitError as exc:
+                message = self.error_message(exc)
+                if getattr(exc, "rate_limit_type", None) == "budget" or any(
+                    code in message.lower() for code in ("insufficient_quota", "quota_exhausted", "billing_hard_limit")
+                ):
+                    raise ModelGatewayError(message) from None
+                delay = rate_limit_delay(exc.response.headers.get("retry-after"), attempt)
+                attempt += 1
+                if on_retry:
+                    on_retry({"attempt": attempt, "wait_seconds": round(delay, 2), "message": message})
+                await asyncio.sleep(delay)
+            except OpenAIError as exc:
+                raise ModelGatewayError(self.error_message(exc)) from None
         if not response.choices:
             raise ModelGatewayError("模型没有返回可用的响应。")
         return response

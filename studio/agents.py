@@ -3,9 +3,10 @@ import json
 import time
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .actions import apply_action, element_fingerprint, validate_action
+from .errors import AgentOutputError, validation_summary
 from .llm import ModelGateway
 from .settings import ModelConfig
 from .store import StudioStore
@@ -13,14 +14,21 @@ from .store import StudioStore
 
 class Delegation(BaseModel):
     id: str = Field(min_length=1, max_length=30)
-    goal: str = Field(min_length=1, max_length=600)
-    relevant_ids: list[str] = Field(default_factory=list, max_length=30)
+    goal: str = Field(min_length=1)
+    relevant_ids: list[str] = Field(default_factory=list)
 
 
 class Plan(BaseModel):
     reply: str = Field(default="", max_length=1000)
-    actions: list[dict[str, Any]] = Field(default_factory=list, max_length=30)
-    delegations: list[Delegation] = Field(default_factory=list, max_length=4)
+    actions: list[dict[str, Any]] = Field(default_factory=list)
+    delegations: list[Delegation] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def check_delegation_ids(self):
+        ids = [item.id for item in self.delegations]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Each child agent needs a unique ID")
+        return self
 
 
 TOOL_DEFINITIONS = [
@@ -92,10 +100,20 @@ TOOL_DEFINITIONS.insert(0, {
         "name": "create_elements", "description": "Prepare several independent native Excalidraw elements in one validated tool call.",
         "parameters": {"type": "object", "properties": {
             "items": {"type": "array", "items": TOOL_DEFINITIONS[0]["function"]["parameters"],
-                      "minItems": 1, "maxItems": 24}},
+                      "minItems": 1}},
             "required": ["items"], "additionalProperties": False},
     },
 })
+
+CHILD_TOOL_NAMES = frozenset({
+    "create_elements", "create_element", "select_elements", "move_elements",
+    "update_elements", "delete_elements", "inspect_scene",
+})
+
+
+def validate_child_tool(name: str) -> None:
+    if name not in CHILD_TOOL_NAMES:
+        raise ValueError("Child agents can only use drawing tools and cannot create or delegate to other agents")
 
 
 def scene_context(document: dict[str, Any]) -> dict[str, Any]:
@@ -119,6 +137,20 @@ def scene_context(document: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def prepare_creation_batch(items: list[dict], draft: list[dict], selection: list[str]) -> tuple:
+    if not isinstance(items, list) or not items:
+        raise ValueError("create_elements needs a non-empty items array")
+    validated = [validate_action({"kind": "create_element", "args": item}) for item in items]
+    batch = []
+    created_ids = []
+    for action in validated:
+        draft, selection, changed_ids = apply_action(draft, selection, action)
+        action["element_id"] = changed_ids[0]
+        batch.append({"action": action, "expected_elements": {}})
+        created_ids.extend(changed_ids)
+    return draft, selection, batch, created_ids
+
+
 class DrawingAgents:
     def __init__(self, store: StudioStore, settings: ModelConfig):
         self.store = store
@@ -138,7 +170,11 @@ class DrawingAgents:
             "For line, arrow and freedraw, omit x and y when points are absolute; when x or y is supplied, points are relative to that origin. "
             "For move_elements use ids with dx and dy offsets, or one id with absolute x and y. "
             "For simple requests return direct actions and no delegations to minimize latency. "
-            "For a composition with independent parts, delegate at most three focused goals. "
+            "For new multi-part compositions or flowcharts with multiple labeled sections, delegate independent sections to child agents. "
+            "In that case main actions cover only shared titles or connecting lines; each child prepares the full geometry and labels of its section. "
+            "Assign explicit shared layout regions and connector coordinates so independently prepared sections form one coherent drawing. "
+            "Include all section requirements and positions in each goal so children can prepare their parts without reading each other's tool logs. "
+            "Keep goals concise: name the section, required components, bounding region and connector endpoints. Let children determine individual shape geometry inside their regions. "
             "Delegations each have id, goal, relevant_ids. Child agents prepare actions concurrently; you will review their JSON reports. "
             "For edits, refer to exact existing element IDs. Prefer selected_ids when the user says this or it. "
             "Preserve existing artwork unless explicitly asked to change it. "
@@ -153,7 +189,8 @@ class DrawingAgents:
                         {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)}]
         for attempt in range(2):
             started = time.perf_counter()
-            response = await self.gateway.complete(conversation)
+            response = await self.gateway.complete(conversation, on_retry=lambda info: self.store.log_tool(
+                task_id, "main", attempt, "model_retry", info))
             content = response.choices[0].message.content or ""
             self.store.log_tool(task_id, "main", attempt, "plan", {
                 "response": content, "latency_ms": round((time.perf_counter() - started) * 1000, 1),
@@ -161,19 +198,19 @@ class DrawingAgents:
             })
             try:
                 plan = Plan.model_validate(json.loads(content))
-                if len(plan.delegations) > 3:
-                    raise ValueError("Main agent requested too many child agents")
                 if not plan.actions and not plan.delegations:
                     raise ValueError("Main agent returned no drawing actions")
                 for action in plan.actions:
                     validate_action(action)
                 return plan
             except (ValueError, KeyError) as exc:
+                detail = validation_summary(exc)
+                self.store.log_tool(task_id, "main", attempt, "plan_validation_error", {"message": detail})
                 if attempt:
-                    raise
+                    raise AgentOutputError("模型返回的绘图参数仍未通过校验，请重新描述需要绘制或修改的内容。") from exc
                 conversation.extend([
                     {"role": "assistant", "content": content},
-                    {"role": "user", "content": f"Correct the JSON action arguments and return the full plan again. Validation error: {str(exc)[:1200]}"},
+                    {"role": "user", "content": f"Correct the JSON action arguments and return the full plan again. Validation error: {detail}"},
                 ])
         raise RuntimeError("Main agent did not produce a valid plan")
 
@@ -184,8 +221,10 @@ class DrawingAgents:
         prepared: list[dict[str, Any]] = []
         system = (
             "You are a drawing child agent. Your only job is to prepare validated Excalidraw actions for the assigned goal. "
+            "Only the main agent can create child agents. You cannot create agents, delegate goals or request nested agent execution. "
             "Call the provided drawing tools. For a composition, use create_elements once with all necessary shapes to reduce latency. "
             "Use canvas coordinates, existing IDs from context, and readable names. "
+            "Keep tool arguments compact and omit default style properties. Text width and height are automatic; text needs x, y, text and fontSize only when required. "
             "For paths, omit x and y for absolute points, or provide x and y with relative points. "
             "For pen drawing, create freedraw elements with ordered points; use several strokes when needed. "
             "Never use SVG. Never edit unrelated existing elements. "
@@ -199,7 +238,8 @@ class DrawingAgents:
         ]
         for round_number in range(1, 4):
             started = time.perf_counter()
-            response = await self.gateway.complete(conversation, TOOL_DEFINITIONS)
+            response = await self.gateway.complete(conversation, TOOL_DEFINITIONS, on_retry=lambda info: self.store.log_tool(
+                task_id, agent_id, round_number, "model_retry", info))
             message = response.choices[0].message
             self.store.log_tool(task_id, agent_id, round_number, "llm_response", {
                 "content": message.content,
@@ -213,29 +253,14 @@ class DrawingAgents:
                 raise ValueError(f"Child agent {delegation.id} called no drawing tools")
             had_error = False
             for call in message.tool_calls:
-                if len(prepared) >= 24:
-                    raise ValueError(f"Child agent {delegation.id} exceeded its action limit")
                 name = call.function.name
                 try:
+                    validate_child_tool(name)
                     args = json.loads(call.function.arguments)
                     if name == "inspect_scene":
                         result = {"scene": scene_context({**document, "elements": draft, "selection": selection})}
                     elif name == "create_elements":
-                        items = args["items"]
-                        if not isinstance(items, list) or not 1 <= len(items) <= 24:
-                            raise ValueError("create_elements needs 1 to 24 items")
-                        if len(prepared) + len(items) > 24:
-                            raise ValueError("Child agent exceeded its action limit")
-                        validated = [validate_action({"kind": "create_element", "args": item}) for item in items]
-                        current_draft, current_selection = draft, selection
-                        batch: list[dict[str, Any]] = []
-                        created_ids = []
-                        for action in validated:
-                            current_draft, current_selection, changed_ids = apply_action(current_draft, current_selection, action)
-                            action["element_id"] = changed_ids[0]
-                            batch.append({"action": action, "expected_elements": {}})
-                            created_ids.extend(changed_ids)
-                        draft, selection = current_draft, current_selection
+                        draft, selection, batch, created_ids = prepare_creation_batch(args["items"], draft, selection)
                         prepared.extend(batch)
                         result = {"ok": True, "changed_ids": created_ids, "selected_ids": selection}
                     else:
@@ -250,7 +275,7 @@ class DrawingAgents:
                         prepared.append({"action": action, "expected_elements": expected})
                         result = {"ok": True, "changed_ids": changed_ids, "selected_ids": selection}
                 except (ValueError, KeyError, TypeError) as exc:
-                    result = {"ok": False, "error": str(exc)}
+                    result = {"ok": False, "error": validation_summary(exc)}
                     had_error = True
                 self.store.log_tool(task_id, agent_id, round_number, name, {"arguments": call.function.arguments, "result": result})
                 conversation.append({"role": "tool", "tool_call_id": call.id,
@@ -290,7 +315,7 @@ class DrawingAgents:
         response = await self.gateway.complete([
             {"role": "system", "content": system},
             {"role": "user", "content": json.dumps({"request": request, "reports": compact}, ensure_ascii=False)},
-        ])
+        ], on_retry=lambda info: self.store.log_tool(task_id, "main", 0, "model_retry", info))
         content = response.choices[0].message.content or ""
         self.store.log_tool(task_id, "main", 0, "review", {
             "response": content, "latency_ms": round((time.perf_counter() - started) * 1000, 1),

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-export default function SessionListItem({ session, selected, editing, disabled, onSelect, onEdit, onCancel, onRename }) {
+export default function SessionListItem({ session, selected, editing, disabled, actionsDisabled, onSelect, onEdit, onCancel, onRename, onDelete }) {
   const [title, setTitle] = useState(session.title)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -37,8 +37,14 @@ export default function SessionListItem({ session, selected, editing, disabled, 
           onClick={onSelect} disabled={disabled || saving} aria-current={selected ? 'page' : undefined} title={session.title}>
           <span className="session-icon" aria-hidden="true">◇</span><span className="session-title">{session.title}</span>
         </button>
-        {!editing && <button type="button" className="session-rename-button" onClick={onEdit} disabled={disabled}
+        {!editing && <button type="button" className="session-rename-button" onClick={onEdit} disabled={disabled || actionsDisabled}
           aria-label="重命名" title="重命名">✎</button>}
+        {!editing && <button type="button" className="session-delete-button" onClick={onDelete} disabled={disabled || actionsDisabled}
+          aria-label="删除画布" title="删除画布">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true">
+            <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7M14 10v7" />
+          </svg>
+        </button>}
       </div>
       {editing && <form className="session-rename-form" onSubmit={save} aria-label="重命名画布">
         <input ref={inputRef} aria-label="画布名称" value={title} maxLength={120} disabled={saving || disabled}

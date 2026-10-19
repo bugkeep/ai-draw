@@ -42,6 +42,7 @@ jobs:
             if curl --fail --silent http://127.0.0.1:8000/api/studio/health > /dev/null; then break; fi
             sleep 1
           done
+          node frontend-app/scripts/deletion_smoke.js
           node frontend-app/scripts/browser_smoke.js
           node frontend-app/scripts/settings_smoke.js
           node frontend-app/scripts/sessions_smoke.js

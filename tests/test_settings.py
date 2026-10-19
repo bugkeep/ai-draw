@@ -1,13 +1,19 @@
+import math
 import secrets
 import time
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 
 import pytest
+import httpx
 from fastapi.testclient import TestClient
 
 from server.app import create_app
-from studio.llm import request_options, litellm
+from studio.llm import rate_limit_delay, request_options, litellm
 from studio.settings import ModelConfig, ModelSettings, PROVIDERS, SettingsUpdate
 from studio.store import StudioStore, VersionConflict
+from litellm.litellm_core_utils.completion_timeout import CompletionTimeout
+from litellm.utils import supports_httpx_timeout
 
 
 def test_settings_encrypt_keys_and_preserve_them_after_restart(tmp_path):
@@ -52,8 +58,35 @@ def test_every_preset_routes_to_an_installed_provider():
             config = ModelConfig(provider=preset["id"], model="drawing-model", api_base=preset["api_base"],
                                  api_key=secrets.token_urlsafe(32))
             assert request_options(config)["model"] == f"{preset['route']}/drawing-model"
+            timeout = CompletionTimeout.resolve(request_options(config)["timeout"], {}, preset["route"],
+                                                global_timeout=600, supports_httpx_timeout=supports_httpx_timeout)
+            if isinstance(timeout, httpx.Timeout):
+                assert all(value is None for value in timeout.as_dict().values())
+            else:
+                assert math.isinf(timeout)
     responses = ModelConfig(provider="openai", model="drawing-model", api_mode="responses", api_key=secrets.token_urlsafe(32))
     assert request_options(responses)["model"] == "openai/responses/drawing-model"
+
+
+def test_saved_settings_normalize_fields_without_request_deadline(tmp_path):
+    store = StudioStore(tmp_path / "settings.sqlite3")
+    settings = ModelSettings(store)
+    settings.save(SettingsUpdate(provider="local", model="drawing-model", api_base="http://localhost:1234/v1"))
+    row = store.get_model_settings()
+    store.save_model_settings({**row["config"], "timeout_seconds": 180}, row["encrypted_key"], row["revision"])
+    assert "timeout_seconds" not in settings.view()["config"]
+    assert "timeout_seconds" not in SettingsUpdate.model_json_schema()["properties"]
+    settings.save(SettingsUpdate(**settings.view()["config"], revision=2))
+    assert "timeout_seconds" not in store.get_model_settings()["config"]
+    store.close()
+
+
+def test_rate_limit_wait_respects_http_retry_after_and_spreads_requests():
+    assert rate_limit_delay("35", 0) >= 35
+    date = format_datetime(datetime.now(timezone.utc) + timedelta(seconds=45), usegmt=True)
+    assert rate_limit_delay(date, 0) > 43
+    assert 1 <= rate_limit_delay(None, 0) <= 2
+    assert 8 <= rate_limit_delay(None, 3) <= 16
 
 
 def test_settings_save_is_blocked_by_tasks_in_any_session(tmp_path, monkeypatch):

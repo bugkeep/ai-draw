@@ -5,7 +5,7 @@ async function request(path, options = {}) {
   })
   const data = await response.json()
   if (!response.ok) {
-    const message = typeof data.detail === 'string' ? data.detail :
+    const message = response.status === 405 ? '后端服务版本与页面不匹配，请重新启动 Draw Agent 服务后重试。' : typeof data.detail === 'string' ? data.detail :
       Array.isArray(data.detail) ? data.detail.map((item) => item.msg).join('；') : `HTTP ${response.status}`
     const error = new Error(message)
     error.status = response.status
@@ -13,6 +13,8 @@ async function request(path, options = {}) {
   }
   return data
 }
+
+export const STUDIO_API_REVISION = 2
 
 export const studioApi = {
   health: () => request('/health'),
@@ -23,6 +25,7 @@ export const studioApi = {
   createSession: (title) => request('/sessions', { method: 'POST', body: JSON.stringify({ title }) }),
   getSession: (id) => request(`/sessions/${id}`),
   renameSession: (id, title) => request(`/sessions/${id}`, { method: 'PATCH', body: JSON.stringify({ title }) }),
+  deleteSession: (id) => request(`/sessions/${id}`, { method: 'DELETE' }),
   sendMessage: (id, message) => request(`/sessions/${id}/messages`, {
     method: 'POST', body: JSON.stringify({ message }),
   }),

@@ -46,7 +46,7 @@ def studio_store(request: Request) -> StudioStore:
 @router.get("/health")
 async def health(request: Request):
     config = request.app.state.model_settings.load()
-    return {"status": "ok", "provider_configured": config.configured,
+    return {"status": "ok", "api_revision": 2, "provider_configured": config.configured,
             "model": config.model, "provider": config.provider}
 
 
@@ -131,6 +131,17 @@ async def save_scene(request: Request, document_id: str, body: SceneSnapshot):
         raise HTTPException(422, str(exc)) from exc
 
 
+@router.delete("/sessions/{session_id}")
+async def delete_session(request: Request, session_id: str):
+    runtime: DrawingRuntime = request.app.state.drawing_runtime
+    if runtime.session_busy(session_id):
+        raise HTTPException(409, "此画布有正在运行或排队的绘图任务，请停止任务后再删除。")
+    try:
+        return studio_store(request).delete_session(session_id)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
 @router.post("/documents/{document_id}/history")
 async def history(request: Request, document_id: str, body: HistoryCommand):
     try:
@@ -199,6 +210,9 @@ async def document_events(websocket: WebSocket, document_id: str, after: int = 0
             if event["seq"] > seen:
                 await websocket.send_json(event)
                 seen = event["seq"]
+                if event["type"] == "session_deleted":
+                    await websocket.close(code=1000)
+                    return
     except WebSocketDisconnect:
         pass
     finally:

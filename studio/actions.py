@@ -56,11 +56,11 @@ class CreateElement(BaseModel):
 
 
 class SelectElements(BaseModel):
-    ids: list[str] = Field(max_length=100)
+    ids: list[str]
 
 
 class MoveElements(BaseModel):
-    ids: list[str] = Field(min_length=1, max_length=100)
+    ids: list[str] = Field(min_length=1)
     dx: float | None = None
     dy: float | None = None
     x: float | None = None
@@ -76,12 +76,12 @@ class MoveElements(BaseModel):
 
 
 class UpdateElements(BaseModel):
-    ids: list[str] = Field(min_length=1, max_length=100)
+    ids: list[str] = Field(min_length=1)
     patch: dict[str, Any]
 
 
 class DeleteElements(BaseModel):
-    ids: list[str] = Field(min_length=1, max_length=100)
+    ids: list[str] = Field(min_length=1)
 
 
 ACTION_MODELS = {

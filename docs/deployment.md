@@ -18,3 +18,5 @@ python -m uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8000
 数据库默认位于 `runs/studio.sqlite3`，设置 `DRAW_AGENT_DB` 可改变位置。模型配置与加密后的 API Key 保存在同一数据库；加密文件默认位于数据库目录的 `model-settings.key`，可通过 `DRAW_AGENT_SETTINGS_KEY_FILE` 指定其他位置。备份应同时包含数据库和加密文件。运行期间使用 SQLite 的备份接口；停止服务后可复制数据库及其 `-wal` 和 `-shm` 文件。加密文件缺失时，应从备份恢复后启动服务。
 
 `GET /api/studio/health` 返回模型是否已配置。服务启动后运行 `python -m scripts.probe_model` 验证实际文本与工具调用；运行 `python -m scripts.evaluate_multiagent` 检查子 Agent 并行准备与逐项提交。模型评测会创建新会话并产生计费调用。`python -m scripts.evaluate_studio` 检查明确指令的连续编辑行为。
+
+更新代码并构建前端后，需要停止当前 Uvicorn 进程并重新启动。页面会核查 `/api/studio/health` 的 `api_revision`；服务尚未加载匹配版本时显示提示，暂时禁止新建、发送指令、重命名和删除，重新连接后自动恢复这些操作。
