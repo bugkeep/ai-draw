@@ -304,7 +304,7 @@ class AgentMemory:
                 'ORDER BY m.created_at DESC LIMIT 1', (task_id, self._session(task_id), actor_id)).fetchone()
             queries = self.store.connection.execute('SELECT tool_name,query_key,count(*) repeat_count,max(created_at) latest,'
                 'min(id) memory_ref,min(payload) request FROM agent_memories WHERE caller_id=? AND state_key=? '
-                "AND tool_name IN ('inspect_scene','view_canvas','search_memory','recall_memory') "
+                "AND tool_name IN ('inspect_scene','view_canvas','view_agent_result','search_memory','recall_memory') "
                 'GROUP BY tool_name,query_key ORDER BY latest DESC LIMIT 8', (caller_id, state_key)).fetchall()
             activity = self.store.connection.execute(
                 'SELECT m.tool_name,count(*) calls,sum(m.is_error) errors FROM agent_memories m '

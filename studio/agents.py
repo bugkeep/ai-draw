@@ -203,7 +203,11 @@ MAIN_SYSTEM = (
     "Reuse a suitable existing Agent with send_input for follow-up edits. Running inputs queue sequentially. "
     "Use wait_agent to observe results. It never executes work. For subsequent waits use only returned running_ids, "
     "with their revisions in after. Final and Shutdown Agents always return immediately, even with after. "
-    "Review result summaries and call apply_agent_result for each accepted result_id. Apply its depends_on results first. "
+    "Review result summaries AND the proposed shared-canvas images before calling apply_agent_result. "
+    "A ready result is previewed automatically in your next context using the actual current canvas plus its pending actions. "
+    "This proposed image is not committed yet. Check visible quality, overlaps, alignment and preservation of existing work. "
+    "Use view_agent_result for another pending result or a close-up; a changed canvas requires a fresh preview. "
+    "Call apply_agent_result only for the suitable reviewed result_id. Apply its depends_on results first. "
     "Use reject_agent_result with a reason for irrelevant or invalid work, then send_input for corrections if needed. "
     "Apply each ready part while other children are still running so the user sees progress. "
     "Children only prepare private drafts; only your drawing tools and apply_agent_result modify the shared canvas. "
@@ -412,7 +416,8 @@ class DrawingAgents:
     async def respond(self, task_id: str, agent_id: str, round_number: int,
                       messages: list[dict], *, child: bool = False,
                       observation_ids: list[str] | None = None,
-                      reference_image_ids: list[str] | None = None) -> dict:
+                      reference_image_ids: list[str] | None = None,
+                      result_observation_ids: list[str] | None = None) -> dict:
         started = time.perf_counter()
         session_id = self.store.get_task(task_id)["session_id"]
         document_id = self.store.session_document_id(session_id)
@@ -430,6 +435,7 @@ class DrawingAgents:
         self.store.log_tool(task_id, agent_id, round_number, "model_context", {
             "message_count": len(messages), "character_count": len(json.dumps(text_messages, ensure_ascii=False)),
             "image_observation_ids": observation_ids or [],
+            "result_observation_ids": result_observation_ids or [],
             "reference_image_view_ids": reference_image_ids or [],
             "tool_output_ids": [item["tool_call_id"] for item in outputs],
             "tool_error_ids": [item["tool_call_id"] for item in outputs

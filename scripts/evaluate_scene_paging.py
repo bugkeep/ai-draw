@@ -54,6 +54,14 @@ def main():
                 (entry['payload']['run_id'], entry['payload']['call_id'])).fetchone()
             context_pages.append(bool(row) and [item['id'] for item in json.loads(row['summary'])['scene']['elements']]
                                  == [item['id'] for item in page['elements']])
+        first_submission = next((index for index, entry in enumerate(logs) if entry['agent_id'] == 'main'
+            and entry['kind'] == 'function_call' and entry['payload']['name'] == 'apply_agent_result'), None)
+        proposed_views = [observation_id for index, entry in enumerate(logs)
+                          if entry['agent_id'] == 'main' and entry['kind'] == 'model_context'
+                          and first_submission is not None and index < first_submission
+                          for observation_id in entry['payload'].get('result_observation_ids', [])]
+        proposed_rows = [store.connection.execute('SELECT metadata,delivered_at FROM canvas_observations WHERE id=?',
+                                                 (observation_id,)).fetchone() for observation_id in proposed_views]
         errors = [(entry['agent_id'], entry['payload']['call_id']) for entry in logs
                   if entry['kind'] == 'function_call_output' and json.loads(entry['payload']['output']).get('ok') is False]
         delivered = {(entry['agent_id'], call_id) for entry in logs if entry['kind'] == 'model_context'
@@ -69,6 +77,10 @@ def main():
                 for entry, page in continued),
             'all_requested_ids_reach_structured_context': bool(context_pages) and all(context_pages),
             'main_commits_child_result': any(entry['agent_id'] == 'main' and entry['payload']['name'] == 'apply_agent_result' for entry in calls),
+            'main_sees_proposed_pixels_before_submission': bool(proposed_views),
+            'proposed_images_are_delivered_and_result_scoped': bool(proposed_rows) and all(row is not None
+                and row['delivered_at'] is not None and json.loads(row['metadata']).get('scope') == 'proposed_result'
+                and json.loads(row['metadata']).get('result_id') for row in proposed_rows),
             'exact_same_object_moves': target['id'] in by_id and by_id[target['id']]['x'] == target['x'] + 17
                 and by_id[target['id']]['y'] == target['y'] + 23,
             'other_native_objects_preserved': set(by_id) == {item['id'] for item in elements} and all(

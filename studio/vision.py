@@ -56,7 +56,7 @@ class CanvasVision:
         return rendered['png'], {'value': 'draw-agent', 'left_shape': shape_name, 'left_color': color_name}
 
     async def observe(self, task_id: str, agent_id: str, caller_id: str, document: dict,
-                      region: dict | None = None) -> dict:
+                      region: dict | None = None, *, result_id: str | None = None) -> dict:
         session_id = self._check(task_id, document)
         digest = scene_digest(document)
         region_json = json.dumps(region, sort_keys=True, separators=(',', ':'))
@@ -74,7 +74,8 @@ class CanvasVision:
         observation_id = 'view_' + uuid.uuid4().hex
         metadata = {'ok': True, 'observation_id': observation_id, 'scene_hash': digest,
                     'document_id': document['id'], 'document_version': document['version'],
-                    'scope': 'shared' if agent_id == 'main' else 'private_draft',
+                    'scope': 'proposed_result' if result_id else 'shared' if agent_id == 'main' else 'private_draft',
+                    **({'result_id': result_id} if result_id else {}),
                     'region': region,
                     'width': rendered['width'], 'height': rendered['height'],
                     'scene_bounds': rendered['scene_bounds'], 'pixels_per_unit': rendered['pixels_per_unit'],
@@ -87,16 +88,17 @@ class CanvasVision:
         self.store.log_tool(task_id, agent_id, 0, 'canvas_observation', metadata)
         return metadata
 
-    async def context(self, task_id: str, agent_id: str, caller_id: str, document: dict) -> tuple[list[dict], list[str]]:
+    async def context(self, task_id: str, agent_id: str, caller_id: str, document: dict,
+                      *, result_id: str | None = None) -> tuple[list[dict], list[str]]:
         self._check(task_id, document)
         with self.store.lock:
             prior = self.store.connection.execute(
                 'SELECT 1 FROM canvas_observations WHERE task_id=? AND caller_id=? LIMIT 1',
                 (task_id, caller_id),
             ).fetchone()
-        if not prior and not any(not item.get('isDeleted') for item in document['elements']):
+        if not result_id and not prior and not any(not item.get('isDeleted') for item in document['elements']):
             return [], []
-        full = await self.observe(task_id, agent_id, caller_id, document)
+        full = await self.observe(task_id, agent_id, caller_id, document, result_id=result_id)
         with self.store.lock:
             rows = self.store.connection.execute(
                 'SELECT id,metadata,png FROM canvas_observations WHERE task_id=? AND caller_id=? AND scene_hash=? '
@@ -109,7 +111,12 @@ class CanvasVision:
             metadata = json.loads(row['metadata'])
             messages.append({'role': 'user', 'content': [
                 {'type': 'text', 'text': json.dumps({'canvas_observation': metadata,
-                    'instruction': 'This is the current rendered drawing, not a reference image. Check the visible structure, overlaps and proportions. Canvas coordinates are given by scene_bounds.'}, ensure_ascii=False)},
+                    'instruction': ('PROPOSED RESULT: this image replays the pending result on the current shared canvas. '
+                        'These actions are NOT submitted yet. Check composition, overlaps, proportions and preservation of existing work. '
+                        'Apply this result only if the visible change is suitable; otherwise reject it with a concrete reason. '
+                        'Canvas coordinates are given by scene_bounds.' if result_id else
+                        'This is the current rendered drawing, not a reference image. Check the visible structure, overlaps and proportions. '
+                        'Canvas coordinates are given by scene_bounds.')}, ensure_ascii=False)},
                 {'type': 'image_url', 'image_url': {
                     'url': 'data:image/png;base64,' + base64.b64encode(row['png']).decode('ascii'), 'detail': 'high'}},
             ]})
@@ -126,9 +133,9 @@ class CanvasVision:
                 if changed.rowcount != 1:
                     raise ValueError('Canvas image delivery targets another Agent or task')
 
-    def require_review(self, task_id: str, caller_id: str, document: dict) -> None:
+    def require_review(self, task_id: str, caller_id: str, document: dict, *, allow_empty: bool = True) -> None:
         self._check(task_id, document)
-        if not any(not item.get('isDeleted') for item in document['elements']):
+        if allow_empty and not any(not item.get('isDeleted') for item in document['elements']):
             with self.store.lock:
                 prior = self.store.connection.execute(
                     'SELECT 1 FROM canvas_observations WHERE task_id=? AND caller_id=? LIMIT 1',

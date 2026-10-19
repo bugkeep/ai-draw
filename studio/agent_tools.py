@@ -51,6 +51,10 @@ class CanvasRegion(ToolInput):
     height: float = Field(gt=0, le=200000, allow_inf_nan=False)
 
 
+class ViewAgentResult(ApplyAgentResult):
+    region: CanvasRegion | None = None
+
+
 class InspectScene(ToolInput):
     ids: list[str] = Field(default_factory=list)
     query: str = Field(default='', description='Literal case-insensitive name/text substring. Use search_memory for multiple search terms.')
@@ -198,6 +202,7 @@ LIFECYCLE_INPUTS = {
     "spawn_agent": SpawnAgent, "send_input": SendInput, "wait_agent": WaitAgent,
     "close_agent": AgentIdentity, "resume_agent": AgentIdentity,
     "apply_agent_result": ApplyAgentResult,
+    "view_agent_result": ViewAgentResult,
     "reject_agent_result": RejectAgentResult,
 }
 CHILD_INPUTS = {**DRAWING_INPUTS, **REFERENCE_INPUTS, **MEMORY_INPUTS}
@@ -239,7 +244,8 @@ LIFECYCLE_TOOLS = [
     definition("wait_agent", "Observe or wait for Agents in this canvas. Return when any requested Agent is Final/Shutdown or has a new completed run. For another wait, use only returned running_ids and their previous revisions in after, which must be a mapping such as {\"agent_123\":7}, never a single number. Final/Shutdown always return immediately. This tool never starts or resumes work and has no execution deadline.", WaitAgent),
     definition("close_agent", "Stop a child Agent and retain its context, pending inputs and prepared drawing progress. State becomes Shutdown. No drawing actions are submitted by closing.", AgentIdentity),
     definition("resume_agent", "Resume a Shutdown Agent with the same agent_id and saved progress. Continue unfinished inputs. An Agent without unfinished work becomes Final. Completed work is never restarted.", AgentIdentity),
-    definition("apply_agent_result", "Approve and submit one saved child drawing result to this canvas, step by step. Review its summary first. Apply listed depends_on results first. Repeating this call skips actions already committed.", ApplyAgentResult),
+    definition('view_agent_result', 'Inspect a proposed child result BEFORE submitting it. Replays only its pending actions on the CURRENT shared canvas, checks all expected objects and dependencies, and attaches actual PNGs to your next context. Optional region provides a close-up in canvas coordinates. The shared drawing, history and commit receipts remain unchanged. Normally one ready result is previewed automatically after wait_agent; use this tool for another result or a close-up.', ViewAgentResult),
+    definition("apply_agent_result", "Approve and submit one saved child drawing result to this canvas, step by step. Inspect its automatically supplied proposed-result image first; use view_agent_result for another result or a close-up. Apply listed depends_on results first. A changed canvas or partial submission requires a fresh preview. Repeating this call skips actions already committed.", ApplyAgentResult),
     definition("reject_agent_result", "Reject unsubmitted actions from a child result with an explanation. Already committed actions stay on the canvas. Use send_input to request corrected work when needed.", RejectAgentResult),
 ]
 MEMORY_TOOL_DEFINITIONS = [

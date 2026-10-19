@@ -25,14 +25,19 @@
 | `wait_agent` | `ids`、可选 `after` | 等待任意指定 Agent 完成一次执行，或观察到 Final/Shutdown；返回摘要、结果编号和状态版本 |
 | `close_agent` | `agent_id` | 停止执行，保留上下文、排队输入、工具检查点和已准备动作 |
 | `resume_agent` | `agent_id` | 使用原身份恢复未完成工作；没有待处理输入时进入 Final |
-| `apply_agent_result` | `result_id` | 主 Agent 接受结果，执行器依次提交尚未提交的动作 |
+| `view_agent_result` | `result_id`、可选 `region` | 将未提交动作重放到当前共享画布，返回候选 PNG，可放大指定区域；画布和提交进度保持原样 |
+| `apply_agent_result` | `result_id` | 主 Agent 查看当前候选图后接受结果，执行器依次提交尚未提交的动作 |
 | `reject_agent_result` | `result_id`、`reason` | 主 Agent 拒绝未提交部分，并保存原因；已提交内容保留在画布 |
 
 子 Agent 具有 `draw_paths`、`reshape_path`、`create_elements`、`create_element`、`select_elements`、`move_elements`、`update_elements`、`delete_elements`、`inspect_scene` 与本轮完成信号 `finish_drawing`。工具名称与参数在每次执行前校验，子 Agent 无法创建或控制其他 Agent。
 
+每轮主 Agent 上下文默认附上一份可提交结果的候选图片。图片根据最新共享画布和该结果的剩余动作生成，保留其他 Agent 或用户后来增加的图形，并在绘制前检查全部目标及依赖。主 Agent 可以提交该结果、用 `view_agent_result` 查看另一个结果或局部图片，或通过 `reject_agent_result` 退回有问题的结果。
+
+候选图片保存在 `canvas_observations`，`scope=proposed_result`，与当前共享画布、子 Agent 私有草稿分别标记。实际模型响应成功后记录图片已经发送；主 Agent 尚未收到对应候选全图时不能提交。画布变化或部分动作已经提交后，剩余动作需要重新预览。删除全部对象的候选也需要查看空白画布。每轮默认保留一份候选，完整历史图片继续保存在 SQLite。
+
 主 Agent 与子 Agent 均可使用 `search_references` 和 `read_reference` 读取免费的公共绘图资料。研究子 Agent 可以只返回方案和来源，不准备画布动作；主 Agent 审核方案后安排绘图。检索结果和网页正文保存在所属任务的 SQLite 工具记录中，只有短片段和编号进入当前 Agent 上下文，其他画布不能读取这些来源。工具参数与筛选方法见[绘图工具与资料检索](drawing-tools.md)。
 
-画布概况保留近期对象和选择状态。`inspect_scene` 支持按 `ids` 读取指定对象，也支持 `query` 搜索全部对象的名称和文字，因此较早的图形可以继续被定位和修改。`include_geometry=true` 返回已有线条的完整相对点列，配合对象原点可以计算绝对位置并交给 `reshape_path`。
+画布概况保留近期对象和选择状态。`inspect_scene` 支持按 `ids`、名称文字与画布区域分页读取当前对象，因此较早的图形可以继续被定位和修改。`include_geometry=true` 将完整点列保存到原始结果，当前上下文继续使用结构化元数据；精确点列通过 `recall_memory` 按对象分页取回，再交给 `reshape_path`。
 
 `finish_drawing` 的 `summary` 是完成后的简短说明。该工具应位于本轮全部绘图工具之后；前面的任何工具失败，都会返回对应的 `function_call_output` 并要求 Agent 读取错误后继续处理。主 Agent 仍有运行工作或待处理结果时，完成信号也会返回错误。成功的完成信号允许省去一轮仅返回文本的模型调用。
 

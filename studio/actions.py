@@ -178,8 +178,9 @@ def _new_id() -> str:
 def create_native_element(spec: dict[str, Any], element_id: str | None = None) -> dict[str, Any]:
     data = CreateElement.model_validate(spec)
     now = int(time.time() * 1000)
+    element_id = element_id or _new_id()
     element: dict[str, Any] = {
-        "id": element_id or _new_id(),
+        "id": element_id,
         "type": data.type,
         "x": data.x,
         "y": data.y,
@@ -196,7 +197,7 @@ def create_native_element(spec: dict[str, Any], element_id: str | None = None) -
         "groupIds": [],
         "frameId": None,
         "roundness": None,
-        "seed": secrets.randbelow(2**31),
+        "seed": int.from_bytes(hashlib.sha256(element_id.encode('utf-8')).digest()[:4], 'big') % 2**31,
         "version": 1,
         "versionNonce": secrets.randbelow(2**31),
         "isDeleted": False,

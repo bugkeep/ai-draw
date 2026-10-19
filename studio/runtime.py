@@ -18,6 +18,7 @@ from .store import StudioStore, VersionConflict
 from .vision import CanvasVision
 from .memory import AgentMemory, MEMORY_TOOLS
 from .reference_images import IMAGE_QUERY_TOOLS, TRACE_TOOLS, ReferenceImages
+from .result_review import AgentResultReview
 
 
 class DrawingRuntime:
@@ -28,6 +29,7 @@ class DrawingRuntime:
         self.document_locks: dict[str, asyncio.Lock] = {}
         self.cancel_requested: set[str] = set()
         self.vision = CanvasVision(store)
+        self.result_reviews = AgentResultReview(store, self.vision)
         self.memory = AgentMemory(store)
         self.references = ReferenceImages(store)
         self.children = AgentManager(store, settings, self.vision, self.memory, self.references)
@@ -144,14 +146,17 @@ class DrawingRuntime:
             document = self.store.get_document(document_id)
             pictures, observations = await self.vision.context(task_id, 'main', f'main:{task_id}', document)
             references, reference_ids = await self.references.prepare_context(task_id, f'main:{task_id}')
+            reviews, review_deliveries = await self.result_reviews.context(task_id)
             messages = self.memory.prepare_messages(task_id, 'main', f'main:{task_id}',
                 f"{document_id}:{document['version']}", document, agents.main_messages(
                 task_id, message, document, history, recent_tool_exchanges(turns),
-            )) + references + pictures
+            )) + references + pictures + reviews
             response = await agents.respond(task_id, "main", round_number, messages, observation_ids=observations,
-                                            reference_image_ids=reference_ids)
+                                            reference_image_ids=reference_ids,
+                                            result_observation_ids=[item for items in review_deliveries.values() for item in items])
             self.vision.delivered(task_id, f'main:{task_id}', observations)
             self.references.delivered(task_id, f'main:{task_id}', reference_ids)
+            self.result_reviews.delivered(task_id, review_deliveries)
             self.memory.delivered(f'main:{task_id}', messages)
             calls = response.get("tool_calls", [])
             if not calls:
@@ -250,7 +255,10 @@ class DrawingRuntime:
                 elif name == "resume_agent":
                     output = await self.children.resume_agent(session_id, task_id, args["agent_id"], models.settings)
                 elif name == "apply_agent_result":
+                    self.result_reviews.require_review(task_id, args['result_id'])
                     output = await self.apply_result(task_id, session_id, document_id, args["result_id"])
+                elif name == 'view_agent_result':
+                    output = await self.result_reviews.observe(task_id, args['result_id'], args.get('region'))
                 elif name == "reject_agent_result":
                     output = self.store.agents.reject_result(session_id, args["result_id"], args["reason"])
                 elif name in CHILD_TOOL_NAMES:
