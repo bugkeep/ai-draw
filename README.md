@@ -16,6 +16,8 @@ Agent 使用 `compact_context` 保存目标、约束、重要对象、已完成�
 
 绘图动作数量与模型请求持续时间由任务需要决定。用户可主动停止任务；子 Agent 可以执行绘图和资料检索，不能创建或控制其他 Agent。
 
+模型返回 `finish_reason=length` 时保存当前进度。子 Agent 的输出截断会通过 `wait_agent` 交给主 Agent，主 Agent 使用 `continue_agent` 和对应的 `continuation_id` 继续原输入；有效工具动作保留，不完整参数的真实错误继续进入子 Agent 上下文。主 Agent 自身截断时在同一任务中继续。关闭恢复、重复信号和后续输入排队行为见[子 Agent 生命周期](docs/agent-lifecycle.md)。
+
 每轮只附带少量当前对象的概览。`inspect_scene` 按对象编号、名称和区域返回完整的结构化分页；画布或私有草稿改变后，旧分页会失效并提示重新定位。完整工具日志和几何信息继续保存在 SQLite，需要时按页取回。
 
 ## 运行
@@ -93,7 +95,7 @@ Agent 可以通过 `search_references` 使用免费的公共搜索查阅具体�
 | `studio/api.py` | HTTP API 与画布 WebSocket 事件 |
 | `scripts/` | 真实操作成功率与延迟评测 |
 
-会话、任务和绘图提交的处理方法见[架构说明](docs/studio-architecture.md)，工具协议与状态转换见[子 Agent 生命周期](docs/agent-lifecycle.md)。前端使用 [Excalidraw](https://github.com/excalidraw/excalidraw)，许可证为 MIT；本项目许可证见 [LICENSE](LICENSE)。
+会话、任务和绘图提交的处理方法见[架构说明](docs/studio-architecture.md)，工具协议与状态转换见[子 Agent 生命周期](docs/agent-lifecycle.md)。主 Agent 通过 [DrawSpec/1 美术 DSL](docs/drawspec.md) 保存动态、主要形体、比例、连接、遮挡与阶段计划，并通过现有工具与子 Agent 通信。前端使用 [Excalidraw](https://github.com/excalidraw/excalidraw)，许可证为 MIT；本项目许可证见 [LICENSE](LICENSE)。
 参与开发请阅读[贡献说明](CONTRIBUTING.md)，需求与故障通过 GitHub Issue 管理，代码变更通过 Pull Request 审阅。
 
 ## 验证

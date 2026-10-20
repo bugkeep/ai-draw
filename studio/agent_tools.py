@@ -7,6 +7,7 @@ from .actions import COLOR_PATTERN, CreateElement, DeleteElements, MoveElements,
 from .pen import DrawPaths, ReshapePath
 from .eraser import EraseStrokes
 from .coordinates import ObservationCoordinates
+from .drawing_dsl import DrawSpecInput
 
 
 class ToolInput(BaseModel):
@@ -25,12 +26,20 @@ class SpawnAgent(ToolInput):
     message: str = Field(min_length=1)
     nickname: str = Field(default="", max_length=100)
     relevant_ids: list[str] = Field(default_factory=list)
+    drawspec: DrawSpecInput | None = Field(default=None,
+        description='DrawSpec/1 art-direction and construction DSL. Required for multi-part artwork; begin with the whole block-in stage. '
+            'reuse composition_ref for later children. After inspecting and submitting structure, assign local refinement. '
+            'Running children queue this input; it does not replace their current assignment.')
 
 
 class SendInput(ToolInput):
     agent_id: str = Field(min_length=1)
     message: str = Field(min_length=1)
     relevant_ids: list[str] = Field(default_factory=list)
+    drawspec: DrawSpecInput | None = Field(default=None,
+        description='Main-mediated composition synchronization through this existing input queue. '
+            'Use composition_ref instead of rewriting the saved composition; include this pass\'s visible success criteria. '
+            'A new revision needs settled child work and pending results first.')
 
 
 class WaitAgent(ToolInput):
@@ -40,6 +49,11 @@ class WaitAgent(ToolInput):
 
 class AgentIdentity(ToolInput):
     agent_id: str = Field(min_length=1)
+
+
+class ContinueAgent(AgentIdentity):
+    continuation_id: str = Field(min_length=1)
+    message: str = Field(default='', description='Optional guidance for the unfinished input. Preserve its scope and accepted actions.')
 
 
 class ApplyAgentResult(ToolInput):
@@ -243,6 +257,7 @@ MEMORY_INPUTS = {'search_memory': SearchMemory, 'recall_memory': RecallMemory, '
 LIFECYCLE_INPUTS = {
     "spawn_agent": SpawnAgent, "send_input": SendInput, "wait_agent": WaitAgent,
     "close_agent": AgentIdentity, "resume_agent": AgentIdentity,
+    "continue_agent": ContinueAgent,
     "apply_agent_result": ApplyAgentResult,
     "view_agent_result": ViewAgentResult,
     "reject_agent_result": RejectAgentResult,
@@ -316,9 +331,10 @@ DRAWING_TOOLS = [
 LIFECYCLE_TOOLS = [
     definition("spawn_agent", "Start a persistent child Agent asynchronously. Return agent_id, nickname, input_id and run_id immediately. Assign a self-contained drawing goal with shared layout bounds and connector positions, or a research goal with source requirements. Children return private drawing results or research summaries for your review.", SpawnAgent),
     definition("send_input", "Send new work to an existing Agent. Running Agents queue inputs in arrival order. Final Agents become Running. Each input gets its own input_id and run_id. Resume a Shutdown Agent before sending input.", SendInput),
-    definition("wait_agent", "Observe or wait for Agents in this canvas. Return when any requested Agent is Final/Shutdown or has a new completed run. For another wait, use only returned running_ids and their previous revisions in after, which must be a mapping such as {\"agent_123\":7}, never a single number. Final/Shutdown always return immediately. This tool never starts or resumes work and has no execution deadline.", WaitAgent),
+    definition("wait_agent", "Observe or wait for Agents in this canvas. Return when any requested Agent is Final/Shutdown, has a new completed run, or needs continuation after provider output truncation. Handle each pending continuation with continue_agent and its exact continuation_id before waiting again. For another wait, use only returned running_ids and their previous revisions in after, which must be a mapping such as {\"agent_123\":7}, never a single number. Final/Shutdown always return immediately. This tool never starts or resumes work and has no execution deadline.", WaitAgent),
     definition("close_agent", "Stop a child Agent and retain its context, pending inputs and prepared drawing progress. State becomes Shutdown. No drawing actions are submitted by closing.", AgentIdentity),
     definition("resume_agent", "Resume a Shutdown Agent with the same agent_id and saved progress. Continue unfinished inputs. An Agent without unfinished work becomes Final. Completed work is never restarted.", AgentIdentity),
+    definition('continue_agent', 'Continue the SAME input_id/run_id after a child response was truncated with finish_reason=length. Use the exact agent_id and continuation_id returned by wait_agent or child_agents.continuations. Optional message gives correction guidance. Successful actions, current private draft and full tool errors are retained; incomplete JSON must be issued as a smaller COMPLETE call. This does not create or queue a new input. Repeating an acknowledged continuation is harmless and cannot release a newer interruption. A Shutdown Agent must first be resumed.', ContinueAgent),
     definition('view_agent_result', 'Inspect a proposed child result BEFORE submitting it. Replays only its pending actions on the CURRENT shared canvas, checks all expected objects and dependencies, and attaches actual PNGs to your next context. Optional region provides a close-up in canvas coordinates. The shared drawing, history and commit receipts remain unchanged. Normally one ready result is previewed automatically after wait_agent; use this tool for another result or a close-up.', ViewAgentResult),
     definition("apply_agent_result", "Approve and submit one saved child drawing result to this canvas, step by step. Inspect its automatically supplied proposed-result image first; use view_agent_result for another result or a close-up. Apply listed depends_on results first. A changed canvas or partial submission requires a fresh preview. Repeating this call skips actions already committed.", ApplyAgentResult),
     definition("reject_agent_result", "Reject unsubmitted actions from a child result with an explanation. Already committed actions stay on the canvas. Use send_input to request corrected work when needed.", RejectAgentResult),

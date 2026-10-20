@@ -1,0 +1,39 @@
+{
+  "source_database": "composition-reference-cat-20261020.sqlite3",
+  "run_id": "run_ef2af37c31905ad0b32cac9ec27c72fc",
+  "review": {
+    "ok": false,
+    "status": "repair",
+    "assessment": {
+      "status": "repair",
+      "visible_state": "当前已补出三条新尾线，右根短封口近似竖向，右端没有明显向右尖出；但左端没有与上缘在(708,633)同点收尖。新下缘从左侧头部/前爪区域穿过并继续向下越过身体底线，形成明显错误的斜向穿线，尾巴带状轮廓未按要求沿身体外下缘收束。",
+      "findings": [
+        {
+          "defect": "新尾巴下缘左端没有收在共同端点(708,633)，而是从脸部/胸侧和前爪附近穿过后继续向下、向画面底部延伸；它还越过身体下轮廓，和尾巴/前爪线条交叉，未形成左尖收束。",
+          "repair": "整段删除当前下缘对象后重新放样一条独立开放黑线：从右封口下端(1278,642)平滑经过(1110,714)、(1010,724)、(790,724)、(724,665)，最终严格吸附到上缘端点(708,633)。左端在该点停止，不能穿过脸、胸、前爪或继续下垂；保持弧线在身体外下缘，不与上缘交叉。",
+          "object_ids": ["b941eea71d644aff", "1d85577f223d4e04"],
+          "draft_region": {"x": 430.0, "y": 620.0, "width": 230.0, "height": 260.0},
+          "canvas_region": {"x": 697.38, "y": 589.2, "width": 337.18, "height": 223.6}
+        }
+      ],
+      "next_action": "删除并重画 b941eea71d644aff 下缘，按指定低位锚点放样，并把左端终点精确放到上缘终点(708,633)；放大检查左端不再穿过头脸、胸部或前爪。",
+      "revision": {
+        "change": "ineffective",
+        "evidence": "相比前稿，确实新增了缺失的下缘线，但该线没有按要求终止于(708,633)，而是在左侧穿过脸/胸和前爪区域并向下伸出，仍未形成共同左尖，重复了路径穿入身体结构的问题。",
+        "next_strategy": "不要在现有错误下线上局部延长或修补；整段删除后重新用右根起点、四个低位锚点和精确左端点构建单一平滑曲线，先放置并吸附两端点，再调整中段，避免任何越过身体下轮廓或前爪的线段。"
+      }
+    },
+    "review_key": "2137fb5d8987f23120a9f2996ef9a8da4fbb711d22a3cd48c97009bc65d36a77",
+    "scene_hash": "e8ed7b177969c3a46585ff13972f67477b995b151c9b2b49f57381a9ee86ad2b",
+    "selection": ["b941eea71d644aff"],
+    "full_observation_id": "view_5cd32fcd7f284c1792af975ded3bed80",
+    "previous_review_key": "2094dd86a53262221bce7b41c7057085730755bd1582eae4b958c846c5e66dcb",
+    "constructive_correction": true,
+    "latency_ms": 18812.3
+  },
+  "replan": {
+    "reason": "ineffective_repair",
+    "review_key": "2137fb5d8987f23120a9f2996ef9a8da4fbb711d22a3cd48c97009bc65d36a77",
+    "next_strategy": "不要在现有错误下线上局部延长或修补；整段删除后重新用右根起点、四个低位锚点和精确左端点构建单一平滑曲线，先放置并吸附两端点，再调整中段，避免任何越过身体下轮廓或前爪的线段。"
+  }
+}

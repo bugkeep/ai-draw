@@ -1,6 +1,6 @@
 # 子 Agent 生命周期
 
-主 Agent 通过模型原生 function calling 调用 `spawn_agent`、`send_input`、`wait_agent`、`close_agent` 和 `resume_agent`。runtime 执行每次调用，将结果关联到原来的 `call_id`，再交回主 Agent。各厂商的工具消息格式由模型请求模块转换。
+主 Agent 通过模型原生 function calling 调用 `spawn_agent`、`send_input`、`wait_agent`、`continue_agent`、`close_agent` 和 `resume_agent`。runtime 执行每次调用，将结果关联到原来的 `call_id`，再交回主 Agent。各厂商的工具消息格式由模型请求模块转换。
 
 ## 编号和归属
 
@@ -12,6 +12,7 @@
 | `input_id` | 派发给某个子 Agent 的一条输入 |
 | `run_id` | 该输入的执行记录，关闭和恢复沿用这个编号 |
 | `call_id` | 一次模型工具调用；对应一个结构化返回 |
+| `continuation_id` | 一次厂商输出截断事件；主 Agent 使用该编号继续同一条输入 |
 | `result_id` | 保存的绘图结果，供主 Agent 审核、提交或拒绝 |
 
 每个子 Agent 只属于一个画布会话。输入、执行记录和绘图结果都会检查归属，其他画布不能引用这些编号。主 Agent 与子 Agent 使用本次任务开始时的同一份模型配置和 API Key，消息及上下文分别管理。
@@ -20,9 +21,10 @@
 
 | 工具 | 参数 | 行为 |
 | --- | --- | --- |
-| `spawn_agent` | `message`、可选 `nickname`、`relevant_ids` | 创建子 Agent，立即开始执行，返回身份、状态、输入和执行编号 |
-| `send_input` | `agent_id`、`message`、可选 `relevant_ids` | 复用原会话；运行期间的新输入按到达顺序排队 |
-| `wait_agent` | `ids`、可选 `after` | 等待任意指定 Agent 完成一次执行，或观察到 Final/Shutdown；返回摘要、结果编号和状态版本 |
+| `spawn_agent` | `message`、可选 `nickname`、`relevant_ids`、`drawspec` | 创建子 Agent，立即开始执行，返回身份、状态、输入和执行编号 |
+| `send_input` | `agent_id`、`message`、可选 `relevant_ids`、`drawspec` | 复用原会话；运行期间的新输入按到达顺序排队 |
+| `wait_agent` | `ids`、可选 `after` | 等待指定 Agent 完成、进入 Final/Shutdown 或发生输出截断；返回摘要、继续事件和状态版本 |
+| `continue_agent` | `agent_id`、`continuation_id`、可选 `message` | 主 Agent 确认继续被截断的原输入；保留输入、执行、草稿与工具检查点 |
 | `close_agent` | `agent_id` | 停止执行，保留上下文、排队输入、工具检查点和已准备动作 |
 | `resume_agent` | `agent_id` | 使用原身份恢复未完成工作；没有待处理输入时进入 Final |
 | `view_agent_result` | `result_id`、可选 `region` | 将未提交动作重放到当前共享画布，返回候选 PNG，可放大指定区域；画布和提交进度保持原样 |
@@ -30,6 +32,8 @@
 | `reject_agent_result` | `result_id`、`reason` | 主 Agent 拒绝未提交部分，并保存原因；已提交内容保留在画布 |
 
 子 Agent 具有 `draw_paths`、`reshape_path`、`create_elements`、`create_element`、`select_elements`、`move_elements`、`update_elements`、`delete_elements` 与 `inspect_scene` 等绘图工具。工具名称与参数在每次执行前校验，子 Agent 无法创建或控制其他 Agent。
+
+多部分作画通过 [DrawSpec/1 美术 DSL](drawspec.md) 传递共同构图和当前阶段。主 Agent 首次提交完整计划，后续通过构图引用派单；子 Agent 使用同一协议返回形体与原生对象的对应关系、检查自述和未完成事项。格式错误返回当前子 Agent 的下一轮上下文，已准备动作继续保存；局部评审与整幅图片验收继续独立执行。
 
 每轮主 Agent 上下文默认附上一份可提交结果的候选图片。图片根据最新共享画布和该结果的剩余动作生成，保留其他 Agent 或用户后来增加的图形，并在绘制前检查全部目标及依赖。主 Agent 可以提交该结果、用 `view_agent_result` 查看另一个结果或局部图片，或通过 `reject_agent_result` 退回有问题的结果。
 
@@ -39,7 +43,19 @@
 
 画布概况保留近期对象和选择状态。`inspect_scene` 支持按 `ids`、名称文字与画布区域分页读取当前对象，因此较早的图形可以继续被定位和修改。`include_geometry=true` 将完整点列保存到原始结果，当前上下文继续使用结构化元数据；精确点列通过 `recall_memory` 按对象分页取回，再交给 `reshape_path`。
 
-模型回复没有 `tool_calls` 时交付本次候选；`tool_calls` 缺失、`null` 或空数组具有相同含义。主 Agent 的候选经过整幅画图片评审，通过后才能完成任务；未通过的完整缺陷反馈进入下一次上下文，继续调用工具修正。仍有运行子 Agent 或待处理结果时，主 Agent 需要先处理这些工作。每个工具错误保持原 `call_id`，完整进入下一次真实模型请求。`completion_candidate` 记录自然交付信号及检查结果。
+模型回复没有 `tool_calls` 且 `finish_reason` 未表示输出截断时，交付本次候选；`tool_calls` 缺失、`null` 或空数组具有相同含义。主 Agent 的候选经过整幅画图片评审，通过后才能完成任务；未通过的完整缺陷反馈进入下一次上下文，继续调用工具修正。仍有运行子 Agent 或待处理结果时，主 Agent 需要先处理这些工作。每个工具错误保持原 `call_id`，完整进入下一次真实模型请求。`completion_candidate` 记录自然交付信号及检查结果。
+
+## 输出截断与继续信号
+
+模型响应的 `finish_reason=length` 表示当前输出未完成，不能作为候选交付信号。runtime 保存原始响应、厂商返回的 token 使用情况及关联日志编号，完整且通过校验的工具照常执行；不完整的 JSON 返回真实解析错误，不执行其中的部分参数。已经完成的工具与私有草稿继续保存。
+
+子 Agent 在该响应处理后保留 `Running` 状态，等待主 Agent 的继续信号；这期间不占用模型请求。等待事件具有独立的 `continuation_id`，与该响应的 `input_id`、`run_id`、原始日志关联。清理 `pending_response`、保存工具反馈上下文和写入待继续事件在同一 SQLite 事务中完成。完整工具错误保留在子 Agent 下一轮上下文；主 Agent 只接收编号、截断原因、输出 tokens 和准备动作数量。
+
+`wait_agent` 会在出现待继续事件时立即返回 `continuations`。主 Agent 按返回的 `required_tool.arguments` 调用 `continue_agent`，可以附带本输入的作画建议。runtime 将继续信号放进原输入的上下文，唤醒原执行，继续查看当前草稿和完成剩余工作。每个事件只接受一次；同一编号重复调用不会重复注入消息、重新创建输入或确认之后的新事件。尚未处理的事件在后续观察中持续可见，即使 `after` 已是最新版本。
+
+`send_input` 继续按顺序创建新输入。存在截断等待时，新输入保持排队；`continue_agent` 沿用当前 `input_id/run_id`。关闭和服务重启会保留待继续事件及当前进度；主 Agent 先通过 `resume_agent` 恢复原身份，再确认返回的待继续事件。其他画布、其他子 Agent 或没有接管该 Agent 的任务不能确认这一事件。
+
+主 Agent 自身发生 `length` 时，harness 将未完成反馈加入本任务的下一轮上下文，继续生成较小的完整工具调用。已保存构图通过 `composition_ref` 或失败草稿的 `drawspec_draft_call_id` 继续使用。恢复不拼接截断的 JSON，也不增加绘图总次数、继续次数或请求时间上限。
 
 子 Agent 的草稿在完成当前输入前经过独立图片复查。`DraftReview` 使用同一模型连接、独立且无绘图工具的上下文，检查当前输入的完成标准、开始时的私有草稿、当前全图、所需局部图和该子 Agent 实际查看的参考图。检查只针对本次输入及新增损坏；构图阶段可以留待后续补充五官，局部修改无需修复无关旧内容。返回包含 `ready`、`repair` 或 `blocked`、可见依据、具体缺陷、当前对象编号和下一步建议。子 Agent 的大量历史工具记录不进入复查请求。
 
@@ -167,6 +183,12 @@ python -m pytest -q
 
 ```bash
 python -m scripts.evaluate_agent_lifecycle
+```
+
+输出截断恢复使用保存的真实厂商响应建立检查点，然后让当前实际模型连接的主 Agent 自主调用继续工具，子 Agent 接着执行原输入。该诊断检查原错误与当前草稿图片确实进入下一次模型请求，在保存下一批完整原生动作后停止并保留图片，不进行整幅画质量验收。数据库与输出目录需要使用尚不存在的独立路径：
+
+```bash
+python -m scripts.evaluate_agent_continuation --database runs/continuation-check.sqlite3 --output-dir runs/continuation-check
 ```
 
 启动使用独立数据库的服务后，可以检查主 Agent 自主调用工具完成组合绘图：

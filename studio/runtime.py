@@ -9,7 +9,7 @@ from .actions import create_native_element, element_fingerprint, validate_action
 from .agent_manager import AgentManager
 from .agent_store import stable_id
 from .agent_tools import CHILD_TOOL_NAMES, validate_tool
-from .agents import DrawingAgents, prepare_drawing_tool, recent_tool_exchanges
+from .agents import DrawingAgents, prepare_drawing_tool, recent_tool_exchanges, model_output_feedback
 from .errors import validation_summary
 from .fast_path import fast_actions
 from .settings import ModelSettings
@@ -21,6 +21,7 @@ from .reference_images import IMAGE_QUERY_TOOLS, TRACE_TOOLS, ReferenceImages
 from .result_review import AgentResultReview
 from .quality import DrawingQuality, review_scene_key
 from .completion import ReplyCompletion
+from .drawing_dsl import require_current_result
 
 
 class DrawingRuntime:
@@ -178,7 +179,13 @@ class DrawingRuntime:
             self.result_reviews.delivered(task_id, review_deliveries)
             self.memory.delivered(f'main:{task_id}', messages)
             calls = response.get("tool_calls", [])
+            incomplete = model_output_feedback(self.store, task_id, 'main', response)
+            if incomplete:
+                self.store.log_tool(task_id, 'main', round_number, 'model_output_truncated', incomplete)
             if not calls:
+                if incomplete:
+                    turns.append([response, {'role': 'user', 'content': json.dumps(incomplete, ensure_ascii=False)}])
+                    continue
                 active = [agent for agent in self.store.agents.list_agents(session_id)
                           if agent["owner_task_id"] == task_id and agent["state"] == "Running"]
                 pending = self.store.agents.pending_results(session_id, task_id=task_id)
@@ -216,6 +223,8 @@ class DrawingRuntime:
                 compacted = compacted or call['function']['name'] == 'compact_context' and output.get('ok') is True
             if compacted:
                 turns.clear()
+            if incomplete:
+                exchange.append({'role': 'user', 'content': json.dumps(incomplete, ensure_ascii=False)})
             turns.append(exchange)
             last_tools_failed = errors
 
@@ -260,8 +269,10 @@ class DrawingRuntime:
         output = self.store.agents.begin_call(task_id, caller_id, call["id"], name, raw_args)
         cached = output is not None
         if not cached:
+            proposed = None
             try:
-                args = validate_tool(name, json.loads(raw_args))
+                proposed = json.loads(raw_args)
+                args = validate_tool(name, proposed)
                 if name in MEMORY_TOOLS:
                     output = self.memory.call(task_id, 'main', name, args, self.store.get_document(document_id))
                 elif name == 'view_canvas':
@@ -281,6 +292,8 @@ class DrawingRuntime:
                     output = await self.children.close_agent(session_id, args["agent_id"])
                 elif name == "resume_agent":
                     output = await self.children.resume_agent(session_id, task_id, args["agent_id"], models.settings)
+                elif name == 'continue_agent':
+                    output = await self.children.continue_agent(session_id, task_id, args, models.settings)
                 elif name == "apply_agent_result":
                     self.result_reviews.require_review(task_id, args['result_id'])
                     output = await self.apply_result(task_id, session_id, document_id, args["result_id"])
@@ -294,6 +307,16 @@ class DrawingRuntime:
                     raise ValueError(f"Unknown main Agent tool: {name}")
             except (ValueError, KeyError, TypeError, VersionConflict) as exc:
                 output = {"ok": False, "error": validation_summary(exc)}
+                spec = proposed.get('drawspec') if isinstance(proposed, dict) else None
+                draft_id = (call['id'] if isinstance(spec, dict) and isinstance(spec.get('composition'), dict)
+                    else spec['amend'].get('source_call_id') if isinstance(spec, dict) and isinstance(spec.get('amend'), dict) else None)
+                if (name in {'spawn_agent', 'send_input'} and isinstance(spec, dict)
+                        and isinstance(draft_id, str) and draft_id):
+                    output['drawspec_draft_call_id'] = draft_id
+                    output['repair_instruction'] = ('Keep stage_id/intent/success_criteria and use drawspec.amend.source_call_id '
+                        'with this ID. Send only corrected complete records by ID, or the corrected full frame/art_direction/perspective. '
+                        'Retain all corrections relative to that original failed full call; earlier unsuccessful amendments are not published. '
+                        'Unchanged records are reused from SQLite and the complete plan is validated before dispatch.')
             self.store.agents.finish_call(caller_id, call["id"], output)
         current = self.store.get_document(document_id)
         self.memory.register(task_id, 'main', caller_id, call['id'], name, raw_args, output,
@@ -343,6 +366,7 @@ class DrawingRuntime:
         result = self.store.agents.get_result(session_id, result_id)
         if result["rejected_reason"]:
             raise ValueError("This drawing result has been rejected")
+        require_current_result(self.store, task_id, result)
         changed_ids = []
         for index in range(result["committed_count"], len(result["actions"])):
             item = result["actions"][index]

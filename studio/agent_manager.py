@@ -4,7 +4,7 @@ import json
 
 from .actions import apply_action, matches_fingerprint
 from .agent_tools import validate_tool
-from .agents import DrawingAgents, prepare_drawing_tool, recent_tool_messages, validate_child_tool
+from .agents import DrawingAgents, prepare_drawing_tool, recent_tool_messages, validate_child_tool, model_output_feedback
 from .errors import validation_summary
 from .settings import ModelConfig, ModelSettings
 from .research import DrawingResearch, RESEARCH_TOOLS
@@ -13,6 +13,8 @@ from .memory import MEMORY_TOOLS
 from .reference_images import IMAGE_QUERY_TOOLS, TRACE_TOOLS
 from .draft_review import DraftReview
 from .reference_work import ReferenceWork
+from .drawing_dsl import prepare_assignment, parse_report, result_evidence
+from .child_harness import repair_context, coordinate_context
 
 
 class AgentManager:
@@ -48,16 +50,17 @@ class AgentManager:
         self.store.publish(document_id, "phase", {
             "task_id": agent["owner_task_id"], "phase": "agent_state",
             "agent_id": agent_id, "nickname": agent["nickname"], "state": agent["state"],
-            "queued_inputs": len(agent["inputs"]), "result": result,
+            "queued_inputs": len(agent["inputs"]), "result": result, 'continuations': agent['continuations'],
         })
         async with self.changed:
             self.changed.notify_all()
 
     async def spawn_agent(self, session_id: str, task_id: str, call_id: str,
                            args: dict, config: ModelConfig) -> dict:
-        ReferenceWork.load(self.references, task_id, args['message'])
+        message = prepare_assignment(self.store, session_id, task_id, args['message'], args.get('drawspec'))
+        ReferenceWork.load(self.references, task_id, message)
         nickname = args.get("nickname") or f"Artist-{call_id[-6:]}"
-        agent = self.records.create_agent(session_id, task_id, call_id, args["message"], nickname,
+        agent = self.records.create_agent(session_id, task_id, call_id, message, nickname,
                                           args.get("relevant_ids", []))
         if agent["state"] == "Running":
             self._start(session_id, task_id, agent["agent_id"], config)
@@ -66,11 +69,13 @@ class AgentManager:
 
     async def send_input(self, session_id: str, task_id: str, call_id: str,
                          args: dict, config: ModelConfig) -> dict:
-        ReferenceWork.load(self.references, task_id, args['message'])
+        message = prepare_assignment(self.store, session_id, task_id, args['message'], args.get('drawspec'),
+            agent_id=args['agent_id'])
+        ReferenceWork.load(self.references, task_id, message)
         agent_id = args["agent_id"]
         async with self.controls.setdefault(agent_id, asyncio.Lock()):
             agent = self.records.enqueue_input(session_id, task_id, agent_id, call_id,
-                                               args["message"], args.get("relevant_ids", []))
+                                               message, args.get("relevant_ids", []))
             if agent["state"] == "Running":
                 self._start(session_id, task_id, agent_id, config)
         await self._notify(session_id, agent_id)
@@ -95,6 +100,19 @@ class AgentManager:
         await self._notify(session_id, agent_id)
         return agent
 
+    async def continue_agent(self, session_id: str, task_id: str, args: dict,
+                             config: ModelConfig) -> dict:
+        agent_id = args['agent_id']
+        async with self.controls.setdefault(agent_id, asyncio.Lock()):
+            output = self.records.continue_agent(session_id, task_id, agent_id,
+                args['continuation_id'], args.get('message', ''))
+            agent = self.records.get_agent(session_id, agent_id)
+            if not output['already_continued'] and agent['state'] == 'Running':
+                self._start(session_id, task_id, agent_id, config)
+        self.store.log_tool(task_id, agent_id, 0, 'agent_continued', output)
+        await self._notify(session_id, agent_id)
+        return output
+
     def observe(self, session_id: str, ids: list[str], after: dict[str, int]) -> dict:
         agents, results = [], []
         for agent_id in dict.fromkeys(ids):
@@ -105,6 +123,7 @@ class AgentManager:
                     result.update(self.records.result_summary(self.records.get_result(session_id, result["result_id"])))
                 results.append(result)
         return {"agents": agents, "results": results,
+                'continuations': [item for agent in agents for item in agent['continuations']],
                 "running_ids": [agent["agent_id"] for agent in agents if agent["state"] == "Running"],
                 "revisions": {agent["agent_id"]: agent["revision"] for agent in agents}}
 
@@ -117,10 +136,27 @@ class AgentManager:
         async with self.changed:
             while True:
                 observation = self.observe(session_id, ids, after)
-                if observation["results"] or any(agent["state"] in {"Final", "Shutdown"}
+                if observation["results"] or observation['continuations'] or any(agent["state"] in {"Final", "Shutdown"}
                                                  for agent in observation["agents"]):
                     return observation
                 await self.changed.wait()
+
+    async def _await_continuation(self, session_id: str, run: dict) -> bool:
+        async with self.changed:
+            while True:
+                agent = self.records.get_agent(session_id, run['agent_id'])
+                if agent['state'] == 'Shutdown':
+                    return False
+                if not any(item['run_id'] == run['id'] for item in agent['continuations']):
+                    return True
+                await self.changed.wait()
+
+    async def _suspend_truncated_response(self, session_id: str, run: dict,
+                                          history: list[dict], feedback: dict, round_number: int) -> None:
+        continuation = self.records.suspend_for_continuation(session_id, run['id'], history, feedback)
+        self.store.log_tool(run['owner_task_id'], run['agent_id'], round_number,
+            'agent_continuation_required', continuation)
+        await self._notify(session_id, run['agent_id'])
 
     async def close_task(self, task_id: str) -> None:
         task = self.store.get_task(task_id)
@@ -236,12 +272,13 @@ class AgentManager:
             return
         source_work = ReferenceWork.load(self.references, run['owner_task_id'], run['message'])
         round_number = 0
-        restored_history = recent_tool_messages(run['conversation'])
         while True:
+            if not await self._await_continuation(session_id, run):
+                return
             round_number += 1
             run = self.records.get_run(session_id, run["id"])
             message = run["pending_response"]
-            history = list(restored_history if round_number == 1 else run["conversation"])
+            history = list(recent_tool_messages(run['conversation']) if round_number == 1 else run["conversation"])
             if message is not None:
                 for index in range(len(history) - 1, -1, -1):
                     if history[index]["role"] == "assistant":
@@ -272,12 +309,16 @@ class AgentManager:
                         source_work.context() if source_work else None)) + references + pictures
                 replan = self.draft_reviews.replan_completion(run, review) if review else None
                 if review:
-                    messages.append(self.draft_reviews.context(review, document, replan=replan))
+                    messages.append(repair_context(self.draft_reviews, review, document, replan))
+                guide = coordinate_context(self.store, run, observations)
+                if guide:
+                    messages.append(guide)
                 message = await models.respond(run["owner_task_id"], run["agent_id"], round_number,
                                                messages, child=True,
                                                observation_ids=observations, reference_image_ids=reference_ids,
                                                draft_review_keys=[review['review_key']] if review and review.get('review_key') else [],
-                                               draft_handoff_review_keys=[replan['review_key']] if replan else [])
+                                               draft_handoff_review_keys=[],
+                                               drawspec_coordinate_observation_ids=observations if guide else [])
                 self.vision.delivered(run['owner_task_id'], run['id'], observations)
                 self.references.delivered(run['owner_task_id'], run['id'], reference_ids)
                 self.memory.delivered(run['id'], messages)
@@ -285,12 +326,38 @@ class AgentManager:
                     self.draft_reviews.delivered(run['id'], review.get('review_key'))
                 self.records.save_response(run, message)
             calls = message.get("tool_calls", [])
+            incomplete = model_output_feedback(self.store, run['owner_task_id'], run['agent_id'], message, run['id'])
+            if incomplete:
+                self.store.log_tool(run['owner_task_id'], run['agent_id'], round_number, 'model_output_truncated', incomplete)
             if not calls:
+                if incomplete:
+                    await self._suspend_truncated_response(session_id, run, [*history, message,
+                        {'role': 'user', 'content': json.dumps(incomplete, ensure_ascii=False)}], incomplete, round_number)
+                    continue
                 summary = str(message.get("content") or "").strip()
+                try:
+                    summary, drawing_report = parse_report(summary, run)
+                except ValueError as exc:
+                    error = {'ok': False, 'error_kind': 'drawing_protocol', 'error': validation_summary(exc),
+                        'instruction': 'The input is unfinished. Continue drawing if needed; when returning without tools, '
+                            'provide the DrawSpec report format in your current input. Keep tool errors and unresolved work explicit.'}
+                    self.store.log_tool(run['owner_task_id'], run['agent_id'], round_number, 'drawing_protocol_error', error)
+                    self.records.finish_response(run['id'], [*history, message,
+                        {'role': 'user', 'content': json.dumps(error, ensure_ascii=False)}])
+                    continue
                 if run['prepared']:
                     self.vision.require_review(run['owner_task_id'], run['id'], {
                         **run['document'], 'elements': run['draft'], 'selection': run['selection']})
                 completion = await self._completion(models, run, summary)
+                if drawing_report is not None:
+                    report_unresolved = drawing_report['unresolved'] + [item['evidence'] for item in drawing_report['checks']
+                        if item['status'] == 'unresolved']
+                    completion['completion']['drawspec'] = result_evidence(self.store, run, drawing_report,
+                        completion['completion'].get('review_key'))
+                    if report_unresolved:
+                        completion['completion']['status'] = 'blocked'
+                        completion['completion']['unresolved'] = list(dict.fromkeys([
+                            *completion['completion']['unresolved'], *report_unresolved]))
                 self.store.log_tool(run['owner_task_id'], run['agent_id'], round_number,
                     'completion_candidate', {'run_id': run['id'], 'source': 'no_tool_calls', 'result': completion})
                 result = self.records.complete_run(session_id, run["id"], completion['summary'], completion=completion['completion'])
@@ -364,4 +431,10 @@ class AgentManager:
                     "output": json.dumps(output, ensure_ascii=False), "run_id": run["id"], "cached": cached,
                 })
                 await asyncio.sleep(0)
-            self.records.finish_response(run["id"], recent_tool_messages(([] if compacted else history) + exchange))
+            if incomplete:
+                exchange.append({'role': 'user', 'content': json.dumps(incomplete, ensure_ascii=False)})
+            conversation = recent_tool_messages(([] if compacted else history) + exchange)
+            if incomplete:
+                await self._suspend_truncated_response(session_id, run, conversation, incomplete, round_number)
+            else:
+                self.records.finish_response(run["id"], conversation)

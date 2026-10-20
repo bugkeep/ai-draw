@@ -1,0 +1,11 @@
+{
+  "source_database": "drawspec-guided-cat-20261020.sqlite3",
+  "task_id": "7fa27d47fcff4dda91e657659d867a82",
+  "projection": "Actual llm_response finish_reason and token usage; raw long arguments remain in the source database.",
+  "responses": [
+    {"finish_reason": "tool_calls", "usage": {"completion_tokens": 3902}},
+    {"finish_reason": "length", "usage": {"completion_tokens": 4096}},
+    {"finish_reason": "length", "usage": {"completion_tokens": 4096}}
+  ],
+  "draft_call_id": "call_zftfj9aq2w9zg66bnkuw3fxt"
+}

@@ -50,6 +50,15 @@ class AgentStore:
                 run_id TEXT PRIMARY KEY REFERENCES agent_runs(id) ON DELETE CASCADE,
                 payload TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS agent_continuations (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+                response_log_id INTEGER NOT NULL REFERENCES tool_logs(id) ON DELETE CASCADE,
+                status TEXT NOT NULL CHECK(status IN ('pending','continued')),
+                feedback TEXT NOT NULL, message TEXT NOT NULL,
+                created_at REAL NOT NULL, continued_at REAL,
+                UNIQUE(run_id, response_log_id)
+            );
             CREATE TABLE IF NOT EXISTS agent_tool_calls (
                 caller_id TEXT NOT NULL, call_id TEXT NOT NULL,
                 task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -72,6 +81,7 @@ class AgentStore:
             CREATE INDEX IF NOT EXISTS idx_agent_inputs_queue ON agent_inputs(agent_id, created_at);
             CREATE INDEX IF NOT EXISTS idx_agent_runs_owner ON agent_runs(owner_task_id, status);
             CREATE INDEX IF NOT EXISTS idx_agent_messages_run ON agent_messages(run_id, id);
+            CREATE INDEX IF NOT EXISTS idx_agent_continuations_run ON agent_continuations(run_id, status);
             CREATE INDEX IF NOT EXISTS idx_drawing_results_session ON drawing_results(session_id, created_at);
         """)
         self.connection.commit()
@@ -183,6 +193,7 @@ class AgentStore:
                 "revision": row["revision"], "summary": row["summary"],
                 "owner_task_id": row["owner_task_id"], "inputs": [dict(item) for item in inputs],
                 "latest_result": latest_result,
+                "continuations": self.pending_continuations(session_id, agent_id),
                 "pending_results": [self.result_summary(dict(item)) for item in pending]}
 
     def list_agents(self, session_id: str) -> list[dict]:
@@ -306,6 +317,91 @@ class AgentStore:
                 (self.encode(conversation), time.time(), run_id),
             )
 
+    def pending_continuations(self, session_id: str, agent_id: str) -> list[dict]:
+        with self.lock:
+            self._agent(session_id, agent_id)
+            rows = self.connection.execute(
+                "SELECT c.id,c.run_id,c.feedback,i.id AS input_id,r.owner_task_id,"
+                "json_array_length(r.prepared) AS action_count FROM agent_continuations c "
+                "JOIN agent_runs r ON r.id=c.run_id JOIN agent_inputs i ON i.id=r.input_id "
+                "WHERE i.agent_id=? AND c.status='pending' AND r.status IN ('running','paused') ORDER BY c.rowid",
+                (agent_id,),
+            ).fetchall()
+        return [{'continuation_id': row['id'], 'agent_id': agent_id, 'input_id': row['input_id'],
+                 'run_id': row['run_id'], 'task_id': row['owner_task_id'], 'status': 'pending',
+                 'reason': 'model_output_truncated', 'finish_reason': 'length',
+                 'completion_tokens': json.loads(row['feedback']).get('completion_tokens'),
+                 'prepared_action_count': row['action_count'],
+                 'required_tool': {'name': 'continue_agent', 'arguments': {
+                     'agent_id': agent_id, 'continuation_id': row['id']}}} for row in rows]
+
+    def suspend_for_continuation(self, session_id: str, run_id: str,
+                                 conversation: list[dict], feedback: dict) -> dict:
+        with self.lock, self.connection:
+            run = self.get_run(session_id, run_id)
+            agent = self._agent(session_id, run['agent_id'])
+            source = self.connection.execute('SELECT * FROM tool_logs WHERE id=?',
+                (feedback['response_log_id'],)).fetchone()
+            if (source is None or source['kind'] != 'llm_response' or source['agent_id'] != run['agent_id']
+                    or json.loads(source['payload']).get('finish_reason') != 'length'):
+                raise ValueError('Continuation requires the actual truncated response for this Agent')
+            response = json.loads(source['payload'])
+            continuation_id = stable_id('continuation', f"{run_id}/{source['id']}")
+            existing = self.connection.execute('SELECT id FROM agent_continuations WHERE id=?',
+                (continuation_id,)).fetchone()
+            if existing:
+                return {'continuation_id': continuation_id, 'agent_id': run['agent_id'],
+                        'input_id': run['input_id'], 'run_id': run_id}
+            if agent['state'] != 'Running' or run['status'] != 'running':
+                raise ValueError('Only a running input can wait for continuation')
+            if response['message'] != run['pending_response']:
+                raise ValueError('Continuation response differs from this input checkpoint')
+            saved = self.connection.execute("SELECT task_id,payload FROM agent_messages WHERE run_id=? AND json_extract(payload,'$.role')='assistant' "
+                'ORDER BY id DESC LIMIT 1', (run_id,)).fetchone()
+            if saved is None or saved['task_id'] != source['task_id'] or json.loads(saved['payload']) != response['message']:
+                raise ValueError('Continuation response belongs to a different input task')
+            self.connection.execute("INSERT INTO agent_continuations VALUES(?,?,?,'pending',?,'',?,NULL)",
+                (continuation_id, run_id, source['id'], self.encode(feedback), time.time()))
+            self.connection.execute('UPDATE agent_runs SET pending_response=NULL,conversation=?,updated_at=? WHERE id=?',
+                (self.encode(conversation), time.time(), run_id))
+            self._touch(run['agent_id'])
+        return next(item for item in self.pending_continuations(session_id, run['agent_id'])
+                    if item['continuation_id'] == continuation_id)
+
+    def continue_agent(self, session_id: str, task_id: str, agent_id: str,
+                       continuation_id: str, message: str = '') -> dict:
+        with self.lock, self.connection:
+            self._check_task(session_id, task_id)
+            agent = self._agent(session_id, agent_id)
+            row = self.connection.execute('SELECT c.*,r.input_id,r.status AS run_status,r.conversation '
+                'FROM agent_continuations c JOIN agent_runs r ON r.id=c.run_id '
+                'JOIN agent_inputs i ON i.id=r.input_id WHERE c.id=? AND i.agent_id=?',
+                (continuation_id, agent_id)).fetchone()
+            if row is None:
+                raise KeyError('Continuation does not belong to this Agent')
+            if agent['owner_task_id'] != task_id:
+                raise ValueError('Resume this Agent in the current task before continuing its saved input')
+            repeated = row['status'] == 'continued'
+            if not repeated:
+                if agent['state'] == 'Shutdown':
+                    raise ValueError('Resume this Shutdown Agent before sending a continuation')
+                if row['run_status'] not in {'running', 'paused'} or agent['state'] != 'Running':
+                    raise ValueError('This input is no longer available for continuation')
+                signal = {'type': 'agent_continuation', 'signal': 'continue', 'continuation_id': continuation_id,
+                    'agent_id': agent_id, 'input_id': row['input_id'], 'run_id': row['run_id'],
+                    'message': message or 'Continue the unfinished input from the current saved draft.',
+                    'instruction': 'Keep successful actions and object IDs. Resolve the saved tool errors. '
+                        'Issue smaller complete calls for the remaining work; never concatenate partial tool JSON.'}
+                conversation = [*json.loads(row['conversation']),
+                    {'role': 'user', 'content': self.encode(signal)}]
+                self.connection.execute("UPDATE agent_continuations SET status='continued',message=?,continued_at=? WHERE id=?",
+                    (message, time.time(), continuation_id))
+                self.connection.execute('UPDATE agent_runs SET owner_task_id=?,conversation=?,updated_at=? WHERE id=?',
+                    (task_id, self.encode(conversation), time.time(), row['run_id']))
+                self._touch(agent_id)
+        return {'ok': True, 'agent_id': agent_id, 'input_id': row['input_id'], 'run_id': row['run_id'],
+                'continuation_id': continuation_id, 'status': 'continued', 'already_continued': repeated}
+
     def complete_run(self, session_id: str, run_id: str, summary: str, error: str = "", *, completion=None) -> dict:
         summary, error = summary[:1000], error[:1500]
         with self.lock, self.connection:
@@ -313,6 +409,8 @@ class AgentStore:
             agent = self._agent(session_id, run["agent_id"])
             if agent["state"] == "Shutdown":
                 raise ValueError("A closed Agent cannot publish a new result")
+            if any(item['run_id'] == run_id for item in self.pending_continuations(session_id, run['agent_id'])):
+                raise ValueError('A truncated response must be continued before completing this input')
             result_id = None
             if not error:
                 result_id = stable_id("result", run_id)

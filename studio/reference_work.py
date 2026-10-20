@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .drawing_dsl import assignment_goal
+
 
 class ReferenceWorkInput(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
@@ -21,6 +23,7 @@ class ReferenceWork:
 
     @classmethod
     def load(cls, images, task_id, message):
+        message = assignment_goal(message)
         try:
             value = json.loads(message)
         except (ValueError, TypeError):

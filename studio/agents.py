@@ -17,6 +17,7 @@ from .prompts import MAIN_SYSTEM, CHILD_SYSTEM, TOOL_GUIDANCE
 from .tool_feedback import DRAWING_GUIDANCE
 from .progress_context import agent_progress, input_progress, result_progress, PROGRESS_RETRIEVAL
 from .store import StudioStore
+from .drawing_dsl import assignment, assignment_goal, latest_spec, report_context
 
 
 TOOL_DEFINITIONS = CHILD_TOOLS
@@ -86,6 +87,46 @@ def recent_tool_messages(messages: list[dict]) -> list[dict]:
 def validate_child_tool(name: str) -> None:
     if name not in CHILD_TOOL_NAMES:
         raise ValueError("Child agents can only use drawing and reference tools and cannot create or delegate to other agents")
+
+
+def truncation_feedback(finish_reason, usage, draft_call_id=None):
+    if finish_reason != 'length':
+        return None
+    return {'ok': False, 'error_kind': 'model_output_truncated', 'finish_reason': finish_reason,
+        'completion_tokens': (usage or {}).get('completion_tokens'),
+        **({'drawspec_draft_call_id': draft_call_id} if draft_call_id else {}),
+        'instruction': 'The provider truncated this response; this is not a completed input or a natural finish. '
+            'Continue the same task using smaller COMPLETE tool calls. When a saved draft ID is provided, '
+            'use drawspec.amend.source_call_id and retain all corrections by record ID instead of repeating the whole plan. '
+            'Without a saved draft, submit a complete concise composition, preserving the requested structure and finish. '
+            'For geometry, batch related paths and reuse current object IDs/images. Successful actions already exist; '
+            'do not repeat them. Raw responses and tool errors remain in SQLite. This feedback adds no total drawing limit.'}
+
+
+def model_output_feedback(store, task_id, agent_id, message, run_id=None):
+    with store.lock:
+        if run_id:
+            saved = store.connection.execute("SELECT task_id FROM agent_messages WHERE run_id=? AND json_extract(payload,'$.role')='assistant' "
+                'ORDER BY id DESC LIMIT 1', (run_id,)).fetchone()
+            if saved:
+                task_id = saved['task_id']
+        row = store.connection.execute("SELECT id,payload FROM tool_logs WHERE task_id=? AND agent_id=? "
+            "AND kind='llm_response' ORDER BY id DESC LIMIT 1", (task_id, agent_id)).fetchone()
+    if row is None:
+        return None
+    response = json.loads(row['payload'])
+    if response.get('message') != message or response.get('finish_reason') != 'length':
+        return None
+    draft_id = None
+    if agent_id == 'main':
+        with store.lock:
+            draft = store.connection.execute("SELECT call_id FROM agent_tool_calls WHERE task_id=? AND caller_id=? "
+                "AND name IN ('spawn_agent','send_input') AND json_extract(output,'$.ok')=0 AND "
+                "json_type(CASE WHEN json_valid(arguments) THEN arguments ELSE '{}' END,'$.drawspec.composition')='object' "
+                'ORDER BY rowid DESC LIMIT 1', (task_id, f'main:{task_id}')).fetchone()
+        draft_id = draft['call_id'] if draft else None
+    return {**truncation_feedback(response['finish_reason'], response.get('usage'), draft_id),
+            'response_log_id': row['id']}
 
 
 def scene_context(document: dict[str, Any], ids: list[str] | None = None, query: str = "",
@@ -263,17 +304,25 @@ class DrawingAgents:
                                 for item in self.store.agents.pending_results(session_id, task_id=task_id)],
             "progress_details": PROGRESS_RETRIEVAL,
         }
+        composition = latest_spec(self.store, task_id, include_previous=True)
+        if composition:
+            prompt['shared_drawspec'] = composition
         return [{"role": "system", "content": MAIN_SYSTEM},
                 {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)}, *copy.deepcopy(exchange)]
 
     def child_messages(self, run: dict, agent: dict, source_work: dict | None = None) -> list[dict]:
         prompt = {
             "agent_id": run["agent_id"], "input_id": run["input_id"], "run_id": run["id"],
-            "goal": run["message"],
+            "goal": assignment_goal(run["message"]),
             "drawing_guidance": DRAWING_GUIDANCE,
             "scene": scene_context({**run["document"], "elements": run["draft"], "selection": run["selection"]}),
             "relevant_ids": run["relevant_ids"], "prepared_action_count": len(run["prepared"]),
         }
+        current_assignment = assignment(run['message'])
+        if current_assignment:
+            prompt['drawspec'] = current_assignment.drawspec.model_dump()
+            prompt['composition_id'] = current_assignment.drawspec.composition_id
+            prompt['drawing_report'] = report_context(current_assignment.drawspec)
         previous = agent.get('latest_result')
         if previous and previous.get('rejected_reason'):
             prompt['previous_result'] = {key: previous[key] for key in (
@@ -285,6 +334,10 @@ class DrawingAgents:
                 'Committed shared-canvas changes remain. Historical records stay in SQLite for explicit retrieval.')
         else:
             prompt['previous_work_summary'] = agent['summary']
+            previous_report = (previous.get('completion') or {}).get('drawspec') if previous else None
+            if (current_assignment and previous_report
+                    and previous_report['composition_id'] == current_assignment.drawspec.composition_id):
+                prompt['previous_drawspec_report'] = previous_report
         if source_work:
             prompt['goal'] = source_work['goal']
             prompt[source_work['kind']] = source_work
@@ -306,7 +359,8 @@ class DrawingAgents:
                       result_observation_ids: list[str] | None = None,
                       quality_review_keys: list[str] | None = None,
                       draft_review_keys: list[str] | None = None,
-                      draft_handoff_review_keys: list[str] | None = None) -> dict:
+                      draft_handoff_review_keys: list[str] | None = None,
+                      drawspec_coordinate_observation_ids: list[str] | None = None) -> dict:
         started = time.perf_counter()
         session_id = self.store.get_task(task_id)["session_id"]
         document_id = self.store.session_document_id(session_id)
@@ -323,6 +377,16 @@ class DrawingAgents:
                          if isinstance(item.get('content'), list) else item for item in messages]
         replan_ids = main_replan_ids(messages) if not child else []
         tools = context_tools(child=child)
+        brief_context = {}
+        if child and len(messages) > 1 and isinstance(messages[1].get('content'), str):
+            try:
+                prompt = json.loads(messages[1]['content'])
+            except json.JSONDecodeError:
+                prompt = {}
+            if isinstance(prompt, dict) and prompt.get('drawspec'):
+                brief_context = {'drawing_assignment': {key: prompt[key]
+                    for key in ('input_id', 'run_id', 'composition_id')}
+                    | {key: prompt['drawspec'][key] for key in ('protocol', 'stage_id', 'intent')}}
         self.store.log_tool(task_id, agent_id, round_number, "model_context", {
             "message_count": len(messages), "character_count": len(json.dumps(text_messages, ensure_ascii=False)),
             "image_observation_ids": observation_ids or [],
@@ -330,12 +394,14 @@ class DrawingAgents:
             "quality_review_keys": quality_review_keys or [],
             "draft_review_keys": draft_review_keys or [],
             "draft_handoff_review_keys": draft_handoff_review_keys or [],
+            'drawspec_coordinate_observation_ids': drawspec_coordinate_observation_ids or [],
             "tool_prompt_sha256": hashlib.sha256(json.dumps(tools, sort_keys=True).encode()).hexdigest(),
             "replan_run_ids": replan_ids,
             "reference_image_view_ids": reference_image_ids or [],
             "tool_output_ids": [item["tool_call_id"] for item in outputs],
             "tool_error_ids": [item["tool_call_id"] for item in outputs
                                if json.loads(item["content"]).get("ok") is False],
+            **brief_context,
         })
         response = await self.gateway.complete(
             messages, tools,
