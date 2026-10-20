@@ -14,7 +14,7 @@ from .reference_images import IMAGE_QUERY_TOOLS, TRACE_TOOLS
 from .draft_review import DraftReview
 from .reference_work import ReferenceWork
 from .drawing_dsl import prepare_assignment, parse_report, result_evidence
-from .child_harness import repair_context, coordinate_context
+from .child_harness import repair_context, coordinate_context, observation_context
 
 
 class AgentManager:
@@ -304,9 +304,9 @@ class AgentManager:
                         pictures, observations = await self.vision.context(
                             run['owner_task_id'], run['agent_id'], run['id'], document)
                     run['conversation'] = history
-                messages = self.memory.prepare_messages(run['owner_task_id'], run['agent_id'], run['id'],
+                messages = observation_context(self.memory.prepare_messages(run['owner_task_id'], run['agent_id'], run['id'],
                     f"{run['id']}:{len(run['prepared'])}", document, models.child_messages(run, agent,
-                        source_work.context() if source_work else None)) + references + pictures
+                        source_work.context() if source_work else None)), references, pictures)
                 replan = self.draft_reviews.replan_completion(run, review) if review else None
                 if review:
                     messages.append(repair_context(self.draft_reviews, review, document, replan))

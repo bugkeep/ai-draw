@@ -4,6 +4,12 @@ from .drawing_dsl import assignment
 from .vision import scene_digest
 
 
+def observation_context(messages, references, pictures):
+    if [item.get('role') for item in messages[:2]] != ['system', 'user']:
+        raise ValueError('Child observations require the role and current assignment prefix')
+    return [*messages[:2], *references, *pictures, *messages[2:]]
+
+
 def report_context(spec):
     stage = next(item for item in spec.composition.stages if item.id == spec.stage_id)
     return {'format': {'protocol': 'drawspec/1', 'kind': 'report', 'summary': '<brief visible result>',
