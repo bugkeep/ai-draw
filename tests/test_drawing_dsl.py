@@ -1,5 +1,6 @@
 import asyncio
 import json
+from pathlib import Path
 
 import pytest
 
@@ -109,6 +110,39 @@ def test_composition_reports_all_numeric_conflicts_before_dispatch():
     subject_ratio = brief()
     subject_ratio['composition']['proportions'][0].update(target='cat', ratio=130 / 450)
     assert DrawSpec.model_validate(subject_ratio).composition.proportions[0].target == 'cat'
+
+
+def test_recorded_frame_measurements_preserve_numeric_and_contact_validation():
+    recorded = json.loads((Path(__file__).parent / 'fixtures' / 'recorded_frame_composition.json').read_text(encoding='utf-8'))
+    spec = recorded['arguments']['drawspec']
+    assert 'distinct declared subject/form IDs' in recorded['output']['error']
+    with pytest.raises(ValueError) as failed:
+        DrawSpec.model_validate(spec)
+    assert 'bridge_right_anchor' in str(failed.value)
+    assert 'Proportion ' not in str(failed.value)
+    for landmark in spec['composition']['landmarks']:
+        if landmark['id'] in {'bridge_right_anchor', 'right_bank_contact'}:
+            landmark['y'] = 710
+    valid = DrawSpec.model_validate(spec)
+    assert valid.composition.frame.width == 2400
+    frame_ratios = [item for item in valid.composition.proportions if item.target == 'frame']
+    assert len(frame_ratios) == 3
+    spec['composition']['proportions'][0]['ratio'] = 1.52
+    with pytest.raises(ValueError, match='measured ratio=0.933333'):
+        DrawSpec.model_validate(spec)
+
+
+def test_frame_reference_is_reserved_and_limited_to_numeric_measurements():
+    spec = brief()
+    spec['composition']['proportions'][0].update(source='cat', target='frame', ratio=0.45)
+    assert DrawSpec.model_validate(spec).composition.proportions[0].target == 'frame'
+    spec['composition']['value_groups'][0]['member_ids'] = ['frame']
+    with pytest.raises(ValueError, match='Value group'):
+        DrawSpec.model_validate(spec)
+    spec = brief()
+    spec['composition']['forms'][0]['id'] = 'frame'
+    with pytest.raises(ValueError, match='reserved'):
+        DrawSpec.model_validate(spec)
 
 
 def test_failed_assignment_accepts_scoped_record_amendments_without_resending_plan(tmp_path):

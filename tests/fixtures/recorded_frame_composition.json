@@ -1,0 +1,666 @@
+{
+  "provenance": {
+    "database": "runs\\quality-af6480c-landscape-20261021.sqlite3",
+    "task_id": "309421aa5f3b496da17c098be96b6eed",
+    "call_id": "call_2k68qym9gdc2tteidoad9kzv"
+  },
+  "arguments": {
+    "message": "创作一幅中国水墨山水线描：横向构图，包含淡远山峰、前景苍松、蜿蜒溪流和一座小桥。以宣纸白底上的黑色/灰黑墨线为主，线条有提按与干湿变化；远山用简淡断续轮廓，近松枝干虬劲、松针成组，溪流用流畅曲线和少量水纹，小桥横跨溪流并与两岸明确连接。先建立整体山水结构与遮挡，再完善轮廓和细节；不要彩色平涂，不要现代建筑或人物。",
+    "nickname": "水墨山水线描",
+    "drawspec": {
+      "protocol": "drawspec/1",
+      "stage_id": "block_in",
+      "intent": "execute",
+      "form_ids": [],
+      "success_criteria": [
+        "整体横向山水画构图落在画布内，主次分明",
+        "远山峰、近松、溪流、小桥四类主题均有清晰可辨的位置与轮廓",
+        "小桥两端连接两岸且跨越溪流，不悬浮",
+        "前景松树与溪流、桥的前后遮挡关系合理",
+        "块面和动线为后续墨线勾勒提供准确骨架"
+      ],
+      "composition": {
+        "revision": 1,
+        "frame": {
+          "x": 0,
+          "y": 0,
+          "width": 2400,
+          "height": 1400
+        },
+        "coordinate_space": "canvas",
+        "art_direction": {
+          "medium": "中国水墨线描",
+          "rendering": "宣纸白底上的单色墨笔线描，淡墨远山与较重近景线条形成层次",
+          "focal_intent": "前景左侧苍松和中景跨溪小桥共同形成视觉焦点，远山营造空间纵深",
+          "line_quality": "中锋用笔为主，线条有提按、顿挫、断续和少量枯笔感；避免机械硬边",
+          "value_strategy": "背景留白，远山淡墨细线，近松和桥用较深墨线，水流以细曲线暗示",
+          "finish_criteria": [
+            "远山轮廓淡远、层峰有主次",
+            "松树主干、枝桠和成组松针清晰",
+            "溪流自远山脚下蜿蜒流向前景，水纹简洁",
+            "小桥结构可信且跨越溪流、连接两岸",
+            "全图为统一的中国水墨山水线描风格"
+          ]
+        },
+        "subjects": [
+          {
+            "id": "far_mountains",
+            "description": "远处层叠山峰，位于画面上部与中后部",
+            "bounds": {
+              "x": 80,
+              "y": 130,
+              "width": 2240,
+              "height": 520
+            },
+            "category": "landscape",
+            "role": "setting"
+          },
+          {
+            "id": "stream",
+            "description": "自山谷蜿蜒至前景的溪流",
+            "bounds": {
+              "x": 760,
+              "y": 430,
+              "width": 980,
+              "height": 900
+            },
+            "category": "landscape",
+            "role": "supporting"
+          },
+          {
+            "id": "pine",
+            "description": "前景左侧苍老松树，树干倾斜伸展，带成组松针",
+            "bounds": {
+              "x": 120,
+              "y": 250,
+              "width": 1050,
+              "height": 1080
+            },
+            "category": "landscape",
+            "role": "focal"
+          },
+          {
+            "id": "bridge",
+            "description": "横跨溪流的小木桥/石拱桥，位于中景",
+            "bounds": {
+              "x": 1120,
+              "y": 650,
+              "width": 520,
+              "height": 180
+            },
+            "category": "architecture",
+            "role": "focal"
+          },
+          {
+            "id": "banks",
+            "description": "溪流两侧坡岸与岩石",
+            "bounds": {
+              "x": 80,
+              "y": 600,
+              "width": 2240,
+              "height": 730
+            },
+            "category": "landscape",
+            "role": "supporting"
+          }
+        ],
+        "forms": [
+          {
+            "id": "mtn_left",
+            "subject_id": "far_mountains",
+            "form": "mass",
+            "bounds": {
+              "x": 100,
+              "y": 250,
+              "width": 650,
+              "height": 360
+            },
+            "description": "左侧淡墨远峰"
+          },
+          {
+            "id": "mtn_center",
+            "subject_id": "far_mountains",
+            "form": "mass",
+            "bounds": {
+              "x": 650,
+              "y": 150,
+              "width": 760,
+              "height": 450
+            },
+            "description": "中央主峰，峰尖最高"
+          },
+          {
+            "id": "mtn_right",
+            "subject_id": "far_mountains",
+            "form": "mass",
+            "bounds": {
+              "x": 1370,
+              "y": 270,
+              "width": 820,
+              "height": 340
+            },
+            "description": "右侧低缓远山"
+          },
+          {
+            "id": "pine_trunk",
+            "subject_id": "pine",
+            "form": "ribbon",
+            "bounds": {
+              "x": 250,
+              "y": 520,
+              "width": 260,
+              "height": 780
+            },
+            "axis_degrees": -10,
+            "description": "松树主干，自左下向上微倾"
+          },
+          {
+            "id": "pine_branch_left",
+            "subject_id": "pine",
+            "form": "ribbon",
+            "bounds": {
+              "x": 180,
+              "y": 360,
+              "width": 480,
+              "height": 240
+            },
+            "axis_degrees": -20,
+            "description": "左上伸展主枝"
+          },
+          {
+            "id": "pine_branch_right",
+            "subject_id": "pine",
+            "form": "ribbon",
+            "bounds": {
+              "x": 420,
+              "y": 330,
+              "width": 650,
+              "height": 280
+            },
+            "axis_degrees": 15,
+            "description": "向右伸展并悬向溪流上方的主枝"
+          },
+          {
+            "id": "pine_foliage_1",
+            "subject_id": "pine",
+            "form": "mass",
+            "bounds": {
+              "x": 145,
+              "y": 250,
+              "width": 420,
+              "height": 260
+            },
+            "description": "左侧成组松针冠"
+          },
+          {
+            "id": "pine_foliage_2",
+            "subject_id": "pine",
+            "form": "mass",
+            "bounds": {
+              "x": 530,
+              "y": 220,
+              "width": 500,
+              "height": 310
+            },
+            "description": "右侧成组松针冠"
+          },
+          {
+            "id": "pine_foliage_3",
+            "subject_id": "pine",
+            "form": "mass",
+            "bounds": {
+              "x": 760,
+              "y": 390,
+              "width": 330,
+              "height": 220
+            },
+            "description": "靠近溪上方的小松针团"
+          },
+          {
+            "id": "stream_upper",
+            "subject_id": "stream",
+            "form": "ribbon",
+            "bounds": {
+              "x": 1360,
+              "y": 450,
+              "width": 320,
+              "height": 280
+            },
+            "axis_degrees": -8,
+            "description": "远处较窄溪道"
+          },
+          {
+            "id": "stream_middle",
+            "subject_id": "stream",
+            "form": "ribbon",
+            "bounds": {
+              "x": 1040,
+              "y": 660,
+              "width": 610,
+              "height": 300
+            },
+            "axis_degrees": 12,
+            "description": "桥下中景溪道"
+          },
+          {
+            "id": "stream_lower",
+            "subject_id": "stream",
+            "form": "ribbon",
+            "bounds": {
+              "x": 760,
+              "y": 900,
+              "width": 760,
+              "height": 430
+            },
+            "axis_degrees": -18,
+            "description": "前景变宽的溪流"
+          },
+          {
+            "id": "bridge_deck",
+            "subject_id": "bridge",
+            "form": "box",
+            "bounds": {
+              "x": 1130,
+              "y": 710,
+              "width": 500,
+              "height": 55
+            },
+            "axis_degrees": -5,
+            "description": "微微拱起的桥面"
+          },
+          {
+            "id": "bridge_arch",
+            "subject_id": "bridge",
+            "form": "mass",
+            "bounds": {
+              "x": 1240,
+              "y": 735,
+              "width": 280,
+              "height": 95
+            },
+            "description": "桥拱或桥下开口"
+          },
+          {
+            "id": "bank_left",
+            "subject_id": "banks",
+            "form": "mass",
+            "bounds": {
+              "x": 80,
+              "y": 630,
+              "width": 1090,
+              "height": 700
+            },
+            "description": "左侧坡岸，承载松树和桥左端"
+          },
+          {
+            "id": "bank_right",
+            "subject_id": "banks",
+            "form": "mass",
+            "bounds": {
+              "x": 1570,
+              "y": 620,
+              "width": 750,
+              "height": 710
+            },
+            "description": "右侧坡岸，承接桥右端"
+          }
+        ],
+        "gestures": [
+          {
+            "subject_id": "stream",
+            "line_of_action": [
+              [
+                1490,
+                455
+              ],
+              [
+                1350,
+                625
+              ],
+              [
+                1220,
+                800
+              ],
+              [
+                1010,
+                1030
+              ],
+              [
+                870,
+                1290
+              ]
+            ],
+            "description": "溪流从山谷中央曲折流向前景偏左"
+          },
+          {
+            "subject_id": "pine",
+            "line_of_action": [
+              [
+                330,
+                1260
+              ],
+              [
+                390,
+                910
+              ],
+              [
+                455,
+                610
+              ],
+              [
+                610,
+                410
+              ]
+            ],
+            "description": "松干向上伸展并分出左右枝"
+          },
+          {
+            "subject_id": "far_mountains",
+            "line_of_action": [
+              [
+                130,
+                560
+              ],
+              [
+                470,
+                320
+              ],
+              [
+                880,
+                160
+              ],
+              [
+                1260,
+                420
+              ],
+              [
+                1760,
+                300
+              ],
+              [
+                2260,
+                550
+              ]
+            ],
+            "description": "远山山脊起伏线"
+          }
+        ],
+        "landmarks": [
+          {
+            "id": "bridge_left_anchor",
+            "form_id": "bridge_deck",
+            "role": "contact",
+            "x": 1130,
+            "y": 735,
+            "description": "桥左端落在左岸岩石上"
+          },
+          {
+            "id": "left_bank_contact",
+            "form_id": "bank_left",
+            "role": "contact",
+            "x": 1130,
+            "y": 735,
+            "description": "左岸承接桥左端"
+          },
+          {
+            "id": "bridge_right_anchor",
+            "form_id": "bridge_deck",
+            "role": "contact",
+            "x": 1630,
+            "y": 700,
+            "description": "桥右端落在右岸岩石上"
+          },
+          {
+            "id": "right_bank_contact",
+            "form_id": "bank_right",
+            "role": "contact",
+            "x": 1630,
+            "y": 700,
+            "description": "右岸承接桥右端"
+          },
+          {
+            "id": "pine_base",
+            "form_id": "pine_trunk",
+            "role": "contact",
+            "x": 320,
+            "y": 1270,
+            "description": "松根固定在左岸前景"
+          },
+          {
+            "id": "pine_bank_base",
+            "form_id": "bank_left",
+            "role": "contact",
+            "x": 320,
+            "y": 1270,
+            "description": "左岸坡地承接松根"
+          },
+          {
+            "id": "stream_source",
+            "form_id": "stream_upper",
+            "role": "center",
+            "x": 1490,
+            "y": 470,
+            "description": "溪流从远山脚下出现"
+          },
+          {
+            "id": "stream_foreground",
+            "form_id": "stream_lower",
+            "role": "center",
+            "x": 900,
+            "y": 1230,
+            "description": "溪流流出前景"
+          }
+        ],
+        "proportions": [
+          {
+            "id": "mountain_width_ratio",
+            "source": "far_mountains",
+            "target": "frame",
+            "axis": "width",
+            "ratio": 0.93,
+            "tolerance": 0.05,
+            "description": "远山几乎横亘画面上部但保留留白"
+          },
+          {
+            "id": "pine_height_ratio",
+            "source": "pine",
+            "target": "frame",
+            "axis": "height",
+            "ratio": 0.77,
+            "tolerance": 0.06,
+            "description": "近松足够高大，成为前景主体"
+          },
+          {
+            "id": "bridge_to_stream_width",
+            "source": "bridge",
+            "target": "stream_middle",
+            "axis": "width",
+            "ratio": 0.85,
+            "tolerance": 0.1,
+            "description": "桥宽足以跨过中景溪面"
+          },
+          {
+            "id": "stream_height_ratio",
+            "source": "stream",
+            "target": "frame",
+            "axis": "height",
+            "ratio": 0.64,
+            "tolerance": 0.06,
+            "description": "溪流从山脚下延伸到前景"
+          },
+          {
+            "id": "peak_height",
+            "source": "mtn_center",
+            "target": "mtn_left",
+            "axis": "height",
+            "ratio": 1.25,
+            "tolerance": 0.12,
+            "description": "中央主峰高于左峰"
+          }
+        ],
+        "relations": [
+          {
+            "id": "bridge_touches_left_bank",
+            "kind": "attached_to",
+            "source": "bridge_left_anchor",
+            "target": "left_bank_contact",
+            "max_gap": 0,
+            "description": "桥左端必须接触左岸"
+          },
+          {
+            "id": "bridge_touches_right_bank",
+            "kind": "attached_to",
+            "source": "bridge_right_anchor",
+            "target": "right_bank_contact",
+            "max_gap": 0,
+            "description": "桥右端必须接触右岸"
+          },
+          {
+            "id": "pine_root_in_bank",
+            "kind": "supported_by",
+            "source": "pine_base",
+            "target": "pine_bank_base",
+            "max_gap": 0,
+            "description": "松树根部由左侧坡岸支撑"
+          },
+          {
+            "id": "bridge_over_stream",
+            "kind": "in_front_of",
+            "source": "bridge",
+            "target": "stream_middle",
+            "description": "桥身横跨并遮挡部分溪流"
+          },
+          {
+            "id": "pine_in_front_of_mountain",
+            "kind": "in_front_of",
+            "source": "pine",
+            "target": "far_mountains",
+            "description": "前景松树位于远山之前"
+          },
+          {
+            "id": "banks_frame_stream",
+            "kind": "in_front_of",
+            "source": "banks",
+            "target": "stream_upper",
+            "description": "两岸在中下部夹出溪流，远处水口保持可见"
+          },
+          {
+            "id": "pine_branch_over_bank",
+            "kind": "in_front_of",
+            "source": "pine_branch_right",
+            "target": "bank_left",
+            "description": "右伸松枝位于左岸和溪面上空但不接触桥面"
+          }
+        ],
+        "negative_spaces": [
+          {
+            "id": "sky_void",
+            "bounds": {
+              "x": 0,
+              "y": 0,
+              "width": 2400,
+              "height": 260
+            },
+            "description": "天空大面积留白"
+          },
+          {
+            "id": "water_void",
+            "bounds": {
+              "x": 1190,
+              "y": 760,
+              "width": 310,
+              "height": 120
+            },
+            "description": "桥拱下可见的溪水留白"
+          }
+        ],
+        "value_groups": [
+          {
+            "id": "far_light",
+            "member_ids": [
+              "far_mountains",
+              "mtn_left",
+              "mtn_center",
+              "mtn_right"
+            ],
+            "value": 0.72,
+            "description": "远山用淡墨细线"
+          },
+          {
+            "id": "mid_neutral",
+            "member_ids": [
+              "stream",
+              "banks",
+              "bridge"
+            ],
+            "value": 0.42,
+            "description": "溪流、坡岸和桥用中等墨色"
+          },
+          {
+            "id": "foreground_dark",
+            "member_ids": [
+              "pine",
+              "pine_trunk",
+              "pine_branch_left",
+              "pine_branch_right",
+              "pine_foliage_1",
+              "pine_foliage_2",
+              "pine_foliage_3"
+            ],
+            "value": 0.18,
+            "description": "前景松干与松针用较深墨色"
+          }
+        ],
+        "perspective": {
+          "projection": "atmospheric",
+          "horizon_y": 560,
+          "vanishing_points": []
+        },
+        "stages": [
+          {
+            "id": "block_in",
+            "phase": "block_in",
+            "form_ids": [],
+            "criteria": [
+              "建立远山、溪流、两岸、松树和桥的整体位置与比例",
+              "桥的两个端点与两岸接触，溪流位于桥下",
+              "松根在前景岸坡，主干和枝桠动线清楚",
+              "整体构图完整且没有元素出界"
+            ]
+          },
+          {
+            "id": "contour",
+            "phase": "contour",
+            "form_ids": [],
+            "criteria": [
+              "以水墨线描勾勒全部主要轮廓",
+              "远淡近浓，线条自然有提按",
+              "溪流边界和桥拱下留白清楚"
+            ]
+          },
+          {
+            "id": "detail",
+            "phase": "detail",
+            "form_ids": [],
+            "criteria": [
+              "添加松针、树皮、岩石皴线、水纹和桥板/栏杆细节",
+              "细节克制，保持宣纸留白和传统山水线描气质"
+            ]
+          }
+        ],
+        "preserve": [
+          "白底留白",
+          "单色水墨线描",
+          "四类主题都必须保留",
+          "桥必须跨越溪流"
+        ]
+      }
+    }
+  },
+  "output": {
+    "drawspec_draft_call_id": "call_2k68qym9gdc2tteidoad9kzv",
+    "error": "drawspec.composition: Value error, Landmark bridge_right_anchor at (1630,700) is outside its form bridge_deck bounds (1130,710,500,55)\nProportion mountain_width_ratio needs two distinct declared subject/form IDs: far_mountains, frame\nProportion pine_height_ratio needs two distinct declared subject/form IDs: pine, frame\nProportion stream_height_ratio needs two distinct declared subject/form IDs: stream, frame",
+    "ok": false,
+    "repair_instruction": "Keep stage_id/intent/success_criteria and use drawspec.amend.source_call_id with this ID. Send only corrected complete records by ID, or the corrected full frame/art_direction/perspective. Retain all corrections relative to that original failed full call; earlier unsuccessful amendments are not published. Unchanged records are reused from SQLite and the complete plan is validated before dispatch."
+  }
+}

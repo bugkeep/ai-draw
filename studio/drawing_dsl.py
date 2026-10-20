@@ -87,8 +87,8 @@ class CompositionRelation(DslValue):
 
 class Proportion(DslValue):
     id: DslText
-    source: DslText = Field(description='Declared subject or form ID; e.g. head width / entire figure width.')
-    target: DslText
+    source: DslText = Field(description='Declared subject/form ID or reserved frame for the common composition bounds.')
+    target: DslText = Field(description='A distinct subject/form ID or frame; e.g. head / figure or figure / frame on the same axis.')
     axis: Literal['width', 'height']
     ratio: float = Field(gt=0, allow_inf_nan=False)
     tolerance: float = Field(default=0.1, ge=0, allow_inf_nan=False,
@@ -157,6 +157,8 @@ class Composition(DslValue):
         ids = [item.id for item in records]
         if len(set(ids)) != len(ids):
             raise ValueError('DrawSpec IDs must be unique across the composition')
+        if 'frame' in ids:
+            raise ValueError('frame is reserved for the common composition bounds; use another record ID')
         for item in [*self.subjects, *self.forms, *self.negative_spaces]:
             area, frame = item.bounds, self.frame
             if (area.x < frame.x or area.y < frame.y or area.x + area.width > frame.x + frame.width
@@ -205,11 +207,12 @@ class Composition(DslValue):
                         or not any(mark.form_id in owned for mark in self.landmarks)):
                     raise ValueError(f'Organic subject {subject.id} needs major forms, a line of action and structural landmarks')
         measured_items = subjects | forms
+        measurement_bounds = {key: item.bounds for key, item in measured_items.items()} | {'frame': self.frame}
         for ratio in self.proportions:
-            if ratio.source not in measured_items or ratio.target not in measured_items or ratio.source == ratio.target:
-                problems.append(f'Proportion {ratio.id} needs two distinct declared subject/form IDs: {ratio.source}, {ratio.target}')
+            if ratio.source not in measurement_bounds or ratio.target not in measurement_bounds or ratio.source == ratio.target:
+                problems.append(f'Proportion {ratio.id} needs two distinct measurement IDs (subject/form or frame): {ratio.source}, {ratio.target}')
                 continue
-            measured = getattr(measured_items[ratio.source].bounds, ratio.axis) / getattr(measured_items[ratio.target].bounds, ratio.axis)
+            measured = getattr(measurement_bounds[ratio.source], ratio.axis) / getattr(measurement_bounds[ratio.target], ratio.axis)
             if abs(measured - ratio.ratio) > ratio.tolerance + 1e-9:
                 problems.append(f'Proportion {ratio.id} contradicts planned bounds: '
                     f'measured ratio={measured:g}, declared={ratio.ratio:g} +/- {ratio.tolerance:g}')
