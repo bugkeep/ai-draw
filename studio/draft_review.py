@@ -370,15 +370,20 @@ class DraftReview:
                 'AND is_error=1 AND observed_at IS NULL LIMIT 1', (run['id'],)).fetchone()
             latest = self.store.connection.execute('SELECT review_key,scene_hash,result,observed_at FROM draft_reviews '
                 'WHERE run_id=? ORDER BY created_at DESC LIMIT 1', (run['id'],)).fetchone()
-        if unread or latest is None or latest['observed_at'] is None:
+        if unread:
             return None
         document = {**run['document'], 'elements': run['draft'], 'selection': run['selection']}
+        if latest is None:
+            return ({'first_changed_draft': True} if run['prepared']
+                    and scene_digest(document) != scene_digest(run['document']) else None)
+        if latest['observed_at'] is None:
+            return None
         feedback = json.loads(latest['result'])
         if feedback['status'] == 'error':
             return {'retry_review_after_feedback': latest['review_key']}
-        if feedback['status'] == 'repair' and (latest['scene_hash'] != scene_digest(document)
+        if (latest['scene_hash'] != scene_digest(document)
                 or feedback.get('selection', document['selection']) != document['selection']):
-            return {'repair_after_review': latest['review_key']}
+            return {'changed_after_review': latest['review_key']}
         return None
 
     @staticmethod
