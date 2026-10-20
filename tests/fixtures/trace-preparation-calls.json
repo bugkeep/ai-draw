@@ -1,0 +1,78 @@
+{
+  "scope": "Projected metadata from actual native child tool outputs for scheduling tests only; not drawing or art acceptance",
+  "source_run_id": "run_dd357169e91653438223a81d028c481a",
+  "calls": [
+    {
+      "name": "view_reference_image",
+      "output": {
+        "ok": true
+      }
+    },
+    {
+      "name": "trace_reference",
+      "output": {
+        "ok": true,
+        "action_count": 200,
+        "trace_plan_id": "traceplan_8196e80fa9c054d09454505e88f6b8ac",
+        "offset": 0,
+        "returned_paths": 200,
+        "total_paths": 729,
+        "next_page": {
+          "limit": 200,
+          "offset": 200,
+          "trace_plan_id": "traceplan_8196e80fa9c054d09454505e88f6b8ac"
+        }
+      }
+    },
+    {
+      "name": "continue_reference_trace",
+      "output": {
+        "ok": true,
+        "action_count": 200,
+        "trace_plan_id": "traceplan_8196e80fa9c054d09454505e88f6b8ac",
+        "offset": 200,
+        "returned_paths": 200,
+        "total_paths": 729,
+        "next_page": {
+          "limit": 200,
+          "offset": 400,
+          "trace_plan_id": "traceplan_8196e80fa9c054d09454505e88f6b8ac"
+        }
+      }
+    },
+    {
+      "name": "continue_reference_trace",
+      "output": {
+        "ok": true,
+        "action_count": 200,
+        "trace_plan_id": "traceplan_8196e80fa9c054d09454505e88f6b8ac",
+        "offset": 400,
+        "returned_paths": 200,
+        "total_paths": 729,
+        "next_page": {
+          "limit": 200,
+          "offset": 600,
+          "trace_plan_id": "traceplan_8196e80fa9c054d09454505e88f6b8ac"
+        }
+      }
+    },
+    {
+      "name": "continue_reference_trace",
+      "output": {
+        "ok": true,
+        "action_count": 129,
+        "trace_plan_id": "traceplan_8196e80fa9c054d09454505e88f6b8ac",
+        "offset": 600,
+        "returned_paths": 129,
+        "total_paths": 729,
+        "next_page": null
+      }
+    },
+    {
+      "name": "finish_drawing",
+      "output": {
+        "ok": true
+      }
+    }
+  ]
+}

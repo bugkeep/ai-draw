@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .errors import validation_summary
 from .llm import ModelGateway, ModelGatewayError
 from .quality import drawing_change_summary
+from .reference_images import TRACE_TOOLS
 from .vision import scene_digest
 
 
@@ -143,6 +144,16 @@ def native_preservation(before, after):
     return {'same_visible_object_ids': old.keys() == new.keys(),
             'same_visible_stacking': list(old) == list(new),
             'modified_object_count': len(changed), 'sampled_field_changes': changed[:24]}
+
+
+def trace_page_pending(name, output):
+    if name not in TRACE_TOOLS or not output or not output.get('ok'):
+        return False
+    cursor = output.get('next_page')
+    return bool(isinstance(cursor, dict) and output.get('action_count', 0) > 0
+                and output.get('trace_plan_id') and cursor.get('trace_plan_id') == output['trace_plan_id']
+                and cursor.get('offset') == output.get('offset', 0) + output.get('returned_paths', 0)
+                and cursor['offset'] < output.get('total_paths', 0))
 
 
 class DraftReview:
@@ -370,7 +381,11 @@ class DraftReview:
                 'AND is_error=1 AND observed_at IS NULL LIMIT 1', (run['id'],)).fetchone()
             latest = self.store.connection.execute('SELECT review_key,scene_hash,result,observed_at FROM draft_reviews '
                 'WHERE run_id=? ORDER BY created_at DESC LIMIT 1', (run['id'],)).fetchone()
+            last_call = self.store.connection.execute('SELECT name,output FROM agent_tool_calls '
+                'WHERE caller_id=? ORDER BY rowid DESC LIMIT 1', (run['id'],)).fetchone()
         if unread:
+            return None
+        if last_call and trace_page_pending(last_call['name'], json.loads(last_call['output']) if last_call['output'] else None):
             return None
         document = {**run['document'], 'elements': run['draft'], 'selection': run['selection']}
         if latest is None:
