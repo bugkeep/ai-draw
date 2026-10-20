@@ -41,6 +41,8 @@
 
 尚未准备绘图动作时，正常读取与分页不产生草稿完成意见，也不会触发复查检查点；该阶段继续保留规划过程和分页进度。纯研究输入完成时继续使用不增加图片复查请求的路径。
 
+逐次修正复查按运行编号查找上一份已读草稿，当前画面、上一份评语及参考来源共同决定检查缓存。只改变查看范围不会重复检查；返回较早的画面时，需要考虑后来已经尝试过的修正。无法继续沿用当前方法时，主 Agent 只接收未完成摘要、问题与下一种方法，子 Agent 的长过程继续留在原有记录中。
+
 每轮默认对象概览保留最多 12 个已选中或最近使用的对象，并提供全部对象的类型数量和继续检索入口。概览明确标注是否还有其他内容；不在概览中的对象仍然保存在画布上。
 
 `inspect_scene` 返回结构化对象分页，可以组合对象编号、名称文字和画布区域进行过滤。默认每页 12 个对象，可通过 `limit` 选择至多 50 个；`matching_count` 表示全部符合条件的对象数量，沿 `summary.scene.next_page` 可以取回全部匹配对象。每页的准确编号和下一页参数完整保留在上下文中，较长的路径点继续通过 `recall_memory` 按对象检索。分页只控制单次返回大小，不限制对象数量和绘图动作数量。
@@ -78,6 +80,12 @@ python -m scripts.evaluate_draft_loop --source-database runs/stalled.sqlite3 --r
 ```
 
 加上 `--until-terminal` 可以继续执行实际修正和后续复查，直到这条子 Agent 输入结束。它仍然不代表主 Agent 已审阅提交，或整幅作品已经通过验收。
+
+`evaluate_replanning` 在只读备份上继续同一条原始用户要求，检查主 Agent 实际收到未完成反馈并保存下一条子 Agent 输入。它在首次成功派发后停止，保留真实输入和模型记录，不以派发成功代替画面验收。
+
+```bash
+python -m scripts.evaluate_replanning --source-database runs/handoff.sqlite3 --run-id run_example --database runs/replan-check.sqlite3 --output-dir runs/replan-check
+```
 
 单元检查使用实际 SQLite 与原生对象，覆盖完整原文和点列取回、超出摘要条目的对象检索、未读错误、重复查询、工作记忆版本、任务顺序与子 Agent 私有上下文恢复。
 

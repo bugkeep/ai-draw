@@ -273,12 +273,16 @@ class DrawingAgents:
         outputs = [item for item in messages if item.get("role") == "tool"]
         text_messages = [{**item, 'content': [part for part in item['content'] if part.get('type') == 'text']}
                          if isinstance(item.get('content'), list) else item for item in messages]
+        main_prompt = json.loads(messages[1]['content']) if not child else {}
+        replan_ids = [(agent.get('latest_result') or {}).get('run_id') for agent in main_prompt.get('child_agents', [])
+                      if ((agent.get('latest_result') or {}).get('completion') or {}).get('reason') == 'ineffective_repair']
         self.store.log_tool(task_id, agent_id, round_number, "model_context", {
             "message_count": len(messages), "character_count": len(json.dumps(text_messages, ensure_ascii=False)),
             "image_observation_ids": observation_ids or [],
             "result_observation_ids": result_observation_ids or [],
             "quality_review_keys": quality_review_keys or [],
             "draft_review_keys": draft_review_keys or [],
+            "replan_run_ids": replan_ids,
             "reference_image_view_ids": reference_image_ids or [],
             "tool_output_ids": [item["tool_call_id"] for item in outputs],
             "tool_error_ids": [item["tool_call_id"] for item in outputs

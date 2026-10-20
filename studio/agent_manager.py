@@ -164,7 +164,11 @@ class AgentManager:
             'status': 'blocked' if blocked else 'ready', 'unresolved': args.get('unresolved', []),
             'review_key': review.get('review_key'), 'review_status': review['status'],
             'visible_state': assessment.get('visible_state', review.get('error', '')),
-            'findings': assessment.get('findings', [])}}
+            'findings': assessment.get('findings', []),
+            **({'reason': 'ineffective_repair', 'revision': assessment['revision'],
+                'next_strategy': assessment['revision']['next_strategy']}
+               if (assessment.get('revision') or {}).get('change') in {'ineffective', 'regressed'}
+                   and review.get('constructive_correction') else {})}}
 
     async def _work(self, session_id: str, task_id: str, agent_id: str, config: ModelConfig) -> None:
         try:
@@ -220,6 +224,15 @@ class AgentManager:
                 repeated = self.memory.repeated_read(run['id'], f"{run['id']}:{len(run['prepared'])}")
                 review = await self.draft_reviews.review(run, models.settings,
                     {'repeated_read': repeated} if repeated else self.draft_reviews.follow_up(run))
+                completion = self.draft_reviews.replan_completion(run, review) if review else None
+                if completion:
+                    summary = completion['visible_state'] + '\n' + completion['next_strategy']
+                    result = self.records.complete_run(session_id, run['id'], summary, completion=completion)
+                    self.store.log_tool(run['owner_task_id'], run['agent_id'], round_number,
+                        'agent_replan_handoff', {'run_id': run['id'], 'completion': completion})
+                    self.store.log_tool(run['owner_task_id'], run['agent_id'], round_number, 'agent_result', result)
+                    await self._notify(session_id, run['agent_id'], result)
+                    return
                 if review and review['status'] != 'error':
                     history = self.memory.fold_reads(run['id'], history, checkpoint=True)
                     if review['status'] == 'repair':

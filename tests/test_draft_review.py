@@ -1,16 +1,18 @@
 import asyncio
 import hashlib
 import json
+import time
 from pathlib import Path
 
 import pytest
 
 from studio.agent_tools import validate_tool
 from studio.actions import element_fingerprint
-from studio.draft_review import DraftAssessment, DraftRegion, parse_draft_assessment
+from studio.draft_review import DraftAssessment, DraftRegion, DraftRevision, parse_draft_assessment
 from studio.runtime import DrawingRuntime
 from studio.settings import ModelConfig, ModelSettings
 from studio.store import StudioStore
+from studio.vision import scene_digest
 
 
 def test_child_handoff_requires_unresolved_work_and_main_completion_remains_whole_request():
@@ -163,6 +165,99 @@ def test_compacted_conversation_and_actual_pending_response_survive_shutdown_tog
             assert recovered['prepared'] == child.run['prepared']
             assert store.connection.execute('SELECT count(*) FROM agent_messages WHERE run_id=?',
                 (child.run['id'],)).fetchone()[0] == previous_messages + 1
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())
+
+
+def test_recorded_ineffective_repair_requires_a_real_comparison_and_a_new_strategy():
+    fixture = json.loads((Path(__file__).parent / 'fixtures/draft-review-replan-response.json').read_text(encoding='utf-8'))
+    message = fixture['response']
+    assert hashlib.sha256(message['tool_calls'][0]['function']['arguments'].encode()).hexdigest() == fixture['argument_sha256']
+    document = {'elements': [{'id': item} for item in fixture['current_object_ids']]}
+    assessment, failure = parse_draft_assessment(message, document, compared=True)
+    assert failure is None and assessment.status == 'repair'
+    assert assessment.revision.change == 'ineffective' and assessment.revision.next_strategy
+    assessment, failure = parse_draft_assessment(message, document)
+    assert assessment is None and 'actual previous reviewed draft' in failure['error']
+    with pytest.raises(ValueError, match='different next strategy'):
+        DraftRevision.model_validate({'change': 'ineffective', 'evidence': '相同结构缺陷仍可见'})
+    ordinary = json.loads((Path(__file__).parent / 'fixtures/draft-review-repair-response.json').read_text(encoding='utf-8'))
+    _, failure = parse_draft_assessment(ordinary['response'], {'elements': [
+        {'id': item} for item in ordinary['current_object_ids']]}, compared=True)
+    assert 'report revision' in failure['error']
+
+
+def test_replan_uses_saved_current_run_feedback_and_waits_for_full_tool_error_delivery(tmp_path, native_drawing_child):
+    async def check():
+        store = StudioStore(tmp_path / 'route.sqlite3')
+        runtime = DrawingRuntime(store, ModelSettings(store))
+        session = store.create_session()
+        task = store.create_task(session['id'])
+        child = native_drawing_child(store, runtime, session, task)
+        original = child.call('create_element', {'type': 'ellipse'}, 'outline')
+        reviews = runtime.children.draft_reviews
+        try:
+            # 仅重放真实反馈检查路由和归属，不评价此测试画布的画质。
+            fixture = json.loads((Path(__file__).parent / 'fixtures/draft-review-replan-response.json').read_text(encoding='utf-8'))
+            result = {**fixture['result'], 'scene_hash': scene_digest(child.document), 'selection': child.run['selection']}
+            assert reviews.replan_completion(child.run, result) is None
+            with store.lock, store.connection:
+                store.connection.execute('INSERT INTO draft_reviews VALUES(?,?,?,?,?,?,NULL)', (
+                    result['review_key'], task['id'], child.run['id'], result['scene_hash'], json.dumps(result), time.time()))
+            completion = reviews.replan_completion(child.run, result)
+            assert completion['status'] == 'blocked' and completion['reason'] == 'ineffective_repair'
+            assert completion['stopped_by'] == 'runtime_visual_review' and completion['next_strategy']
+            assert reviews.replan_completion({**child.run, 'id': 'foreign-run'}, result) is None
+            assert reviews.replan_completion({**child.run, 'selection': []}, result) is None
+            error = child.call('move_elements', {'ids': ['missing'], 'dx': 1, 'dy': 0}, 'bad-move')
+            assert error['ok'] is False and reviews.replan_completion(child.run, result) is None
+            pending = runtime.memory.prepare_messages(task['id'], child.agent['agent_id'], child.run['id'],
+                'current-state', child.document, [])
+            assert any(item.get('tool_call_id') == 'bad-move' and json.loads(item['content']) == error for item in pending)
+            runtime.memory.delivered(child.run['id'], pending)
+            assert reviews.replan_completion(child.run, result) == completion
+            with store.lock, store.connection:
+                store.connection.execute('UPDATE draft_reviews SET result=? WHERE review_key=?', (
+                    json.dumps({**result, 'constructive_correction': False}), result['review_key']))
+            assert reviews.replan_completion(child.run, result) is None
+            with store.lock, store.connection:
+                store.connection.execute('UPDATE draft_reviews SET result=? WHERE review_key=?', (json.dumps(result), result['review_key']))
+            child.call('move_elements', {'ids': original['changed_ids'], 'dx': 17, 'dy': 23}, 'new-state')
+            assert reviews.replan_completion(child.run, result) is None
+            assert store.get_document(session['document']['id'])['elements'] == []
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())
+
+
+def test_previous_draft_comparison_requires_this_run_delivered_pixels_and_an_actual_scene_change(tmp_path, native_drawing_child):
+    async def check():
+        store = StudioStore(tmp_path / 'comparison.sqlite3')
+        runtime = DrawingRuntime(store, ModelSettings(store))
+        session = store.create_session()
+        task = store.create_task(session['id'])
+        child = native_drawing_child(store, runtime, session, task)
+        original = child.call('create_element', {'type': 'ellipse'}, 'outline')
+        reviews = runtime.children.draft_reviews
+        try:
+            image = await runtime.vision.observe(task['id'], child.agent['agent_id'], child.run['id'], child.document)
+            fixture = json.loads((Path(__file__).parent / 'fixtures/draft-review-replan-response.json').read_text(encoding='utf-8'))
+            result = {**fixture['result'], 'scene_hash': scene_digest(child.document), 'full_observation_id': image['observation_id']}
+            with store.lock, store.connection:
+                store.connection.execute('INSERT INTO draft_reviews VALUES(?,?,?,?,?,?,NULL)', (
+                    result['review_key'], task['id'], child.run['id'], result['scene_hash'], json.dumps(result), time.time()))
+            assert reviews.previous(child.run, result['scene_hash']) is None
+            child.call('delete_elements', {'ids': original['changed_ids']}, 'cleanup')
+            assert reviews.previous(child.run, scene_digest(child.document)) is None
+            reviews.delivered(child.run['id'], result['review_key'])
+            previous = reviews.previous(child.run, scene_digest(child.document))
+            assert previous['image_metadata']['observation_id'] == image['observation_id']
+            assert previous['changes'][0]['tool'] == 'delete_elements'
+            assert previous['assessment'] == fixture['result']['assessment']
+            assert reviews.previous({**child.run, 'id': 'foreign-run'}, scene_digest(child.document)) is None
         finally:
             await runtime.close()
             store.close()

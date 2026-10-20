@@ -47,6 +47,12 @@
 
 纠错时附上缺陷涉及的当前对象与局部图片，已经读过的工具过程继续保存在 SQLite，近期上下文侧重当前需要修改的内容。修正动作保存后自动复查，再决定继续修正或交付本次输入。发现未读错误时，先让子 Agent 读取完整错误，再继续复查。
 
+发生实际图形变化后，复查可比较同一输入中上一份已经送达的草稿与当前草稿，并返回 `revision`。`change` 区分 `preparation`、`improved`、`ineffective` 和 `regressed`；无效修正或退步需要给出不同的 `next_strategy`。上一份图片及少量动作类型、对象名称进入检查请求，长参数和几何继续留在 SQLite。比较只使用本次运行的完整草稿图片，当前对象编号会重新核对。
+
+仅删除或擦除旧线条时继续准备绘图。存在新绘制、重塑、移动等实际修正，且独立图片判断为无效或退步时，runtime 将本次输入交回主 Agent：执行进入 Final，`completion.status="blocked"`、`reason="ineffective_repair"`、`stopped_by="runtime_visual_review"`，同时保存原动作、具体问题与下一种方法。该转换根据图片和动作语义判断，不设置调用次数或时间期限。存在未读工具错误时先完整送达，再交回。
+
+主 Agent 从结果 JSON 读取问题与下一种方法，审阅候选，调整参考证据、当前阶段或具体部位，再复用原子 Agent 或安排新工作。`model_context.replan_run_ids` 从实际发送的主 Agent 上下文提取，记录哪些未完成交回已经进入模型请求。主 Agent 保留整幅作品的目标与待办事项，当前阶段结束不代表整幅作品通过。
+
 子 Agent 使用 `finish_drawing({"summary":"…","completion_status":"ready"})` 请求完成本次输入，省略 `completion_status` 时同样按 `ready` 处理。图片复查不通过时，真实工具返回携带完整问题，要求下一轮读取并修正。确实缺少前置条件或输入要求冲突时，子 Agent 在读取当前复查后可以使用 `completion_status="blocked"` 和非空 `unresolved` 数组交回未完成工作。该输入进入 Final，其结果保留已准备动作，并附 `completion.status="blocked"`；主 Agent 需要处理阻碍、调整输入或安排修正，并继续审阅候选图片。执行结束不等于绘画通过。
 
 `draft_review_baselines` 保存每条输入实际开始时的私有草稿，包括前序尚未提交的依赖结果。`draft_reviews` 保存复查、对应图片和发送状态，`agent_completion_notes` 保存完成或阻碍说明。关闭恢复保留这些记录；主 Agent 的整幅画质量检查与共享画布提交仍按原流程执行。纯资料研究输入没有绘图动作时不增加草稿复查请求。
