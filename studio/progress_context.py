@@ -18,7 +18,14 @@ def agent_progress(agent):
     latest = agent.get('latest_result')
     if latest:
         completion = latest.get('completion') or {}
-        progress['latest_result'] = (result_progress(latest) if completion.get('visible_state') else dict(latest))
+        if completion.get('visible_state') and latest.get('rejected_reason'):
+            progress['latest_result'] = {**input_progress(result_progress(latest)),
+                'workspace_status': 'discarded',
+                'instruction': 'This review described an abandoned private candidate. Its unsubmitted objects '
+                    'are absent from subsequent inputs. Inspect the current shared canvas and obtain current '
+                    'object IDs before rebuilding. Use wait_agent to retrieve the archived review if needed.'}
+        else:
+            progress['latest_result'] = (result_progress(latest) if completion.get('visible_state') else dict(latest))
     elif agent.get('summary'):
         progress['summary'] = agent['summary']
     return progress

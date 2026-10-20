@@ -361,9 +361,14 @@ class DraftReview:
         result = json.loads(stored['result'])
         assessment = result.get('assessment') or {}
         revision = assessment.get('revision') or {}
-        if (result.get('status') != 'repair' or not result.get('previous_review_key') or not result.get('constructive_correction')
+        if (result.get('status') != 'repair' or not result.get('previous_review_key')
                 or revision.get('change') not in {'ineffective', 'regressed'}):
             return None
+        cleanup_evidence = None
+        if not result.get('constructive_correction'):
+            cleanup_evidence = self.ineffective_cleanup(run, result)
+            if cleanup_evidence is None:
+                return None
         with self.store.lock:
             unread = self.store.connection.execute('SELECT 1 FROM agent_memories WHERE caller_id=? '
                 'AND is_error=1 AND observed_at IS NULL LIMIT 1', (run['id'],)).fetchone()
@@ -374,7 +379,35 @@ class DraftReview:
                 'unresolved': [finding['defect'] for finding in assessment['findings']],
                 'review_key': result['review_key'], 'review_status': result['status'],
                 'visible_state': assessment['visible_state'], 'findings': assessment['findings'],
-                'revision': revision, 'next_strategy': revision['next_strategy']}
+                'revision': revision, 'next_strategy': revision['next_strategy'],
+                **({'ineffective_cleanup_comparisons': cleanup_evidence} if cleanup_evidence else {})}
+
+    def ineffective_cleanup(self, run, result):
+        chain = [result]
+        with self.store.lock:
+            for _ in range(2):
+                row = self.store.connection.execute('SELECT result FROM draft_reviews WHERE review_key=? '
+                    'AND run_id=? AND task_id=? AND observed_at IS NOT NULL',
+                    (chain[-1].get('previous_review_key'), run['id'], run['owner_task_id'])).fetchone()
+                if row is None:
+                    return None
+                previous = json.loads(row['result'])
+                if previous['scene_hash'] == chain[-1]['scene_hash']:
+                    return None
+                chain.append(previous)
+            previous = chain[1]
+            if (previous.get('status') != 'repair' or previous.get('constructive_correction')
+                    or ((previous.get('assessment') or {}).get('revision') or {}).get('change')
+                    not in {'ineffective', 'regressed'}):
+                return None
+            for reviewed in chain:
+                image = self.store.connection.execute('SELECT 1 FROM canvas_observations WHERE id=? '
+                    "AND caller_id=? AND task_id=? AND scene_hash=? AND region='null' "
+                    "AND json_extract(metadata,'$.scope')='private_draft'",
+                    (reviewed.get('full_observation_id'), run['id'], run['owner_task_id'], reviewed['scene_hash'])).fetchone()
+                if image is None:
+                    return None
+        return [item['review_key'] for item in reversed(chain)]
 
     def follow_up(self, run):
         with self.store.lock:
@@ -413,7 +446,7 @@ class DraftReview:
         instruction = 'This independent review concerns your current input/pass and exact current draft, not the whole artwork. '
         if replan:
             instruction += (
-                'The saved before/after image comparison found this constructive correction ineffective or regressed. '
+                'The saved before/after image comparison found this correction ineffective or regressed. '
                 'Hand this unfinished input back to the main Agent now: return a concise honest summary with NO tool calls. '
                 'State the unresolved defect and the supplied different next_strategy so the main Agent can revise the assignment. '
                 'Do not continue this local repair loop. Your prepared actions remain saved for the main Agent to inspect; '

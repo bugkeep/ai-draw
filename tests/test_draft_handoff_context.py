@@ -102,19 +102,35 @@ def test_main_context_identifies_private_targets_and_same_agent_continuation(tmp
         child = native_drawing_child(store, runtime, session, task)
         try:
             created = child.call('create_element', {'type': 'ellipse'}, 'private-outline')
+            other = child.call('create_element', {'type': 'rectangle', 'x': 200}, 'other-private-outline')
             fixture = json.loads((Path(__file__).parent / 'fixtures/draft-review-replan-response.json').read_text(encoding='utf-8'))
             # Bind a recorded finding to actual private native objects to test context ownership, not quality.
             completion = {'status': 'blocked', 'reason': 'ineffective_repair',
                 'next_strategy': fixture['result']['assessment']['revision']['next_strategy'],
-                'findings': [{**fixture['result']['assessment']['findings'][0], 'object_ids': created['changed_ids']}]}
+                'findings': [{**fixture['result']['assessment']['findings'][0], 'object_ids': created['changed_ids']},
+                    {**fixture['result']['assessment']['findings'][1], 'object_ids': other['changed_ids']}]}
             result = store.agents.complete_run(session['id'], child.run['id'], '未完成', completion=completion)
             context = runtime.result_reviews.repair_context(task['id'], result['result_id'])
             assert context['result_id'] == result['result_id']
-            assert context['targets_present_only_in_pending_draft'] == created['changed_ids']
+            assert context['targets_present_only_in_pending_draft'] == sorted(created['changed_ids'] + other['changed_ids'])
             assert context['continue_with'] == {'tool': 'send_input', 'agent_id': child.agent['agent_id'],
                                                'relevant_ids': created['changed_ids']}
+            assert context['next_input_scope'] == completion['findings'][0]
+            assert context['remaining_finding_count'] == 1
             messages, deliveries = await runtime.result_reviews.context(task['id'])
-            assert json.loads(messages[0]['content'])['private_repair_workspace'] == context
+            assert json.loads(messages[0]['content'])['proposed_result']['result_id'] == result['result_id']
+            assert 'private_repair_workspace' not in json.loads(messages[0]['content'])
+            image_indices = [index for index, message in enumerate(messages)
+                if isinstance(message.get('content'), list)
+                and any(part.get('type') == 'image_url' for part in message['content'])]
+            assert image_indices and max(image_indices) < len(messages) - 1
+            for index in image_indices:
+                metadata = json.loads(messages[index]['content'][0]['text'])
+                assert metadata['canvas_observation']['result_id'] == result['result_id']
+                assert 'UNFINISHED PROPOSED RESULT' in metadata['instruction']
+                assert 'otherwise reject it' not in metadata['instruction']
+                assert 'same child' in metadata['instruction']
+            assert json.loads(messages[-1]['content'])['private_repair_workspace'] == context
             assert deliveries
             continued = native_drawing_child(store, runtime, session, task, child.agent)
             assert continued.run['document']['depends_on'] == [result['result_id']]
@@ -130,6 +146,71 @@ def test_main_context_identifies_private_targets_and_same_agent_continuation(tmp
             else:
                 raise AssertionError('A discarded private workspace must not be offered for continuation')
             assert store.get_document(session['document']['id']) == session['document']
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())
+
+
+def test_repeated_failed_cleanup_requires_delivered_comparisons_and_preserves_unread_errors(tmp_path, native_drawing_child):
+    async def check():
+        store = StudioStore(tmp_path / 'cleanup-handoff.sqlite3')
+        runtime = DrawingRuntime(store, ModelSettings(store))
+        session = store.create_session()
+        task = store.create_task(session['id'])
+        child = native_drawing_child(store, runtime, session, task)
+        reviews = runtime.children.draft_reviews
+        fixture = json.loads((Path(__file__).parent / 'fixtures/ineffective-cleanup-reviews.json').read_text(encoding='utf-8'))
+        try:
+            ids = [child.call('create_element', {'type': 'ellipse', 'x': index * 200,
+                'width': 40, 'height': 40}, f'outline-{index}')['changed_ids'][0] for index in range(3)]
+            bound = []
+            for index, receipt in enumerate(fixture['reviews']):
+                if index:
+                    erased = child.call('erase_strokes', {'mode': 'stroke', 'ids': [ids[index - 1]],
+                        'points': [[(index - 1) * 200, 20]], 'radius': 10}, f'cleanup-{index}')
+                    assert erased['ok'] and erased['action_count'] == 1
+                image = await runtime.vision.observe(task['id'], child.agent['agent_id'], child.run['id'], child.document)
+                # 仅将真实评审记录绑定到本测试的原生状态以检查路由，不评价这些测试图形的画质。
+                result = {**copy.deepcopy(receipt), 'scene_hash': scene_digest(child.document),
+                    'selection': child.run['selection'], 'full_observation_id': image['observation_id']}
+                for finding in result['assessment']['findings']:
+                    finding['object_ids'] = [ids[-1]]
+                with store.lock, store.connection:
+                    store.connection.execute('INSERT INTO draft_reviews VALUES(?,?,?,?,?,?,NULL)',
+                        (result['review_key'], task['id'], child.run['id'], result['scene_hash'], json.dumps(result), time.time()))
+                bound.append(result)
+                if index < 2:
+                    assert reviews.replan_completion(child.run, result) is None
+                    runtime.vision.delivered(task['id'], child.run['id'], [image['observation_id']])
+                    reviews.delivered(child.run['id'], result['review_key'])
+
+            before = store.agents.get_run(session['id'], child.run['id'])
+            completion = reviews.replan_completion(child.run, bound[-1])
+            assert completion['reason'] == 'ineffective_repair'
+            assert completion['ineffective_cleanup_comparisons'] == [item['review_key'] for item in bound]
+            assert completion['status'] == 'blocked' and not bound[-1]['constructive_correction']
+            assert 'NO tool calls' in json.loads(reviews.context(bound[-1], child.document,
+                replan=completion)['content'])['instruction']
+            assert reviews.replan_completion({**child.run, 'id': 'another-run'}, bound[-1]) is None
+
+            with store.lock, store.connection:
+                store.connection.execute('UPDATE draft_reviews SET observed_at=NULL WHERE review_key=?', (bound[1]['review_key'],))
+            assert reviews.replan_completion(child.run, bound[-1]) is None
+            reviews.delivered(child.run['id'], bound[1]['review_key'])
+
+            error = child.call('move_elements', {'ids': ['absent'], 'dx': 1, 'dy': 0}, 'cleanup-error')
+            assert error['ok'] is False and reviews.replan_completion(child.run, bound[-1]) is None
+            messages = runtime.memory.prepare_messages(task['id'], child.agent['agent_id'], child.run['id'],
+                'current-state', child.document, [])
+            assert any(item.get('tool_call_id') == 'cleanup-error' and json.loads(item['content']) == error for item in messages)
+            runtime.memory.delivered(child.run['id'], messages)
+            assert reviews.replan_completion(child.run, bound[-1]) == completion
+            assert store.agents.get_run(session['id'], child.run['id'])['prepared'] == before['prepared']
+            assert store.agents.get_run(session['id'], child.run['id'])['draft'] == before['draft']
+            assert store.get_document(session['document']['id']) == session['document']
+            child.call('move_elements', {'ids': [ids[-1]], 'dx': 10, 'dy': 0}, 'later-change')
+            assert reviews.replan_completion(child.run, bound[-1]) is None
         finally:
             await runtime.close()
             store.close()

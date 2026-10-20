@@ -41,3 +41,17 @@ def test_non_visual_results_keep_their_complete_summary_and_error():
     expected = copy.deepcopy(agent['latest_result'])
     assert agent_progress(agent)['latest_result'] == expected
     assert input_progress(expected)['error'] == expected['error']
+
+
+def test_abandoned_private_review_becomes_a_historical_index():
+    fixture = json.loads((Path(__file__).parent / 'fixtures/main-progress-context.json').read_text(encoding='utf-8'))
+    agent = copy.deepcopy(fixture['prompt']['child_agents'][0])
+    agent['latest_result']['rejected_reason'] = '放弃候选草稿，按当前共享画布重新绘制'
+    original = copy.deepcopy(agent)
+    projected = agent_progress(agent)['latest_result']
+    assert projected['workspace_status'] == 'discarded'
+    assert projected['rejected_reason'] == original['latest_result']['rejected_reason']
+    assert projected['error'] == original['latest_result']['error']
+    assert projected['completion'] == input_progress(original['latest_result'])['completion']
+    assert 'findings' not in projected['completion'] and 'summary' not in projected
+    assert agent == original
