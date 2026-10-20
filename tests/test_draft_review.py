@@ -28,6 +28,27 @@ def test_child_handoff_requires_unresolved_work_and_main_completion_remains_whol
         validate_tool('finish_drawing', {'summary': '尚有阻碍', 'completion_status': 'blocked', 'unresolved': ['需要修改']})
 
 
+def test_planning_without_prepared_actions_does_not_masquerade_as_a_completed_visual_review(tmp_path, native_drawing_child):
+    async def check():
+        store = StudioStore(tmp_path / 'planning.sqlite3')
+        runtime = DrawingRuntime(store, ModelSettings(store))
+        session = store.create_session()
+        task = store.create_task(session['id'])
+        config = ModelConfig(provider='ollama', model='llama3.1', api_base='http://localhost:11434')
+        try:
+            child = native_drawing_child(store, runtime, session, task)
+            assert await runtime.children.draft_reviews.review(child.run, config) is None
+            assert await runtime.children.draft_reviews.review(child.run, config, {'repeated_read': {'tool_name': 'inspect_scene'}}) is None
+            completion = await runtime.children.draft_reviews.review(child.run, config, {'completion_candidate': True})
+            assert completion['ok'] and completion['review_key'] is None
+            assert store.connection.execute('SELECT count(*) FROM draft_reviews').fetchone()[0] == 0
+            assert store.connection.execute('SELECT count(*) FROM tool_logs WHERE kind=?', ('draft_review_context',)).fetchone()[0] == 0
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())
+
+
 def test_draft_baseline_includes_inherited_pending_work_and_blocked_handoff_is_durable(tmp_path, native_drawing_child):
     async def check():
         path = tmp_path / 'baseline.sqlite3'

@@ -143,7 +143,8 @@ class DraftReview:
 
     async def review(self, run, config, reason=None):
         if not run['prepared']:
-            return {'ok': True, 'status': 'ready', 'review_key': None, 'scope': 'no prepared drawing changes'}
+            return ({'ok': True, 'status': 'ready', 'review_key': None, 'scope': 'no prepared drawing changes'}
+                    if reason and reason.get('completion_candidate') else None)
         self.begin(run)
         document, observations, references, digest, key = await self._inputs(run, config)
         with self.store.lock:
