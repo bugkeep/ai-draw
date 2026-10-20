@@ -12,6 +12,7 @@ from .store import StudioStore, VersionConflict
 from .memory import MEMORY_TOOLS
 from .reference_images import IMAGE_QUERY_TOOLS, TRACE_TOOLS
 from .draft_review import DraftReview
+from .reference_work import ReferenceWork
 
 
 class AgentManager:
@@ -54,6 +55,7 @@ class AgentManager:
 
     async def spawn_agent(self, session_id: str, task_id: str, call_id: str,
                            args: dict, config: ModelConfig) -> dict:
+        ReferenceWork.load(self.references, task_id, args['message'])
         nickname = args.get("nickname") or f"Artist-{call_id[-6:]}"
         agent = self.records.create_agent(session_id, task_id, call_id, args["message"], nickname,
                                           args.get("relevant_ids", []))
@@ -64,6 +66,7 @@ class AgentManager:
 
     async def send_input(self, session_id: str, task_id: str, call_id: str,
                          args: dict, config: ModelConfig) -> dict:
+        ReferenceWork.load(self.references, task_id, args['message'])
         agent_id = args["agent_id"]
         async with self.controls.setdefault(agent_id, asyncio.Lock()):
             agent = self.records.enqueue_input(session_id, task_id, agent_id, call_id,
@@ -226,6 +229,7 @@ class AgentManager:
             self.store.log_tool(run['owner_task_id'], run['agent_id'], 0, 'agent_result', result)
             await self._notify(session_id, run['agent_id'], result)
             return
+        source_work = ReferenceWork.load(self.references, run['owner_task_id'], run['message'])
         round_number = 0
         restored_history = recent_tool_messages(run['conversation'])
         while True:
@@ -245,6 +249,8 @@ class AgentManager:
                 document = {**run['document'], 'elements': run['draft'], 'selection': run['selection']}
                 pictures, observations = await self.vision.context(
                     run['owner_task_id'], run['agent_id'], run['id'], document)
+                if source_work:
+                    source_work.prepare_source(run['id'])
                 references, reference_ids = await self.references.prepare_context(run['owner_task_id'], run['id'])
                 repeated = self.memory.repeated_read(run['id'], f"{run['id']}:{len(run['prepared'])}")
                 review = await self.draft_reviews.review(run, models.settings,
@@ -267,7 +273,8 @@ class AgentManager:
                             run['owner_task_id'], run['agent_id'], run['id'], document)
                     run['conversation'] = history
                 messages = self.memory.prepare_messages(run['owner_task_id'], run['agent_id'], run['id'],
-                    f"{run['id']}:{len(run['prepared'])}", document, models.child_messages(run, agent)) + references + pictures
+                    f"{run['id']}:{len(run['prepared'])}", document, models.child_messages(run, agent,
+                        source_work.context() if source_work else None)) + references + pictures
                 if review:
                     messages.append(self.draft_reviews.context(review, document))
                 message = await models.respond(run["owner_task_id"], run["agent_id"], round_number,

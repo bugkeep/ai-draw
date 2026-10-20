@@ -254,13 +254,16 @@ class DrawingAgents:
         return [{"role": "system", "content": MAIN_SYSTEM},
                 {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)}, *copy.deepcopy(exchange)]
 
-    def child_messages(self, run: dict, agent: dict) -> list[dict]:
+    def child_messages(self, run: dict, agent: dict, source_work: dict | None = None) -> list[dict]:
         prompt = {
             "agent_id": run["agent_id"], "input_id": run["input_id"], "run_id": run["id"],
             "goal": run["message"], "previous_work_summary": agent["summary"],
             "scene": scene_context({**run["document"], "elements": run["draft"], "selection": run["selection"]}),
             "relevant_ids": run["relevant_ids"], "prepared_action_count": len(run["prepared"]),
         }
+        if source_work:
+            prompt['goal'] = source_work['goal']
+            prompt[source_work['kind']] = source_work
         if run["relevant_ids"]:
             live_ids = {item['id'] for item in run['draft'] if not item.get('isDeleted')}
             relevant_ids = [element_id for element_id in run['relevant_ids'] if element_id in live_ids]
