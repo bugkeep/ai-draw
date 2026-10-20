@@ -14,6 +14,7 @@ from .eraser import element_geometry, filled_path
 from .pen import path_elements
 from .settings import ModelConfig
 from .prompts import MAIN_SYSTEM, CHILD_SYSTEM
+from .tool_feedback import DRAWING_GUIDANCE
 from .store import StudioStore
 
 
@@ -235,7 +236,7 @@ class DrawingAgents:
         results = self.store.agents.task_results(session_id, task_id)
         children = self.store.agents.list_agents(session_id)
         prompt = {
-            "request": request, "canvas": scene_context(document),
+            "request": request, "drawing_guidance": DRAWING_GUIDANCE, "canvas": scene_context(document),
             "recent_conversation": [{"role": item["role"], "content": item["content"]} for item in history],
             "child_agents": [agent for agent in children if agent['owner_task_id'] == task_id],
             "available_child_agents": [{key: agent[key] for key in ('agent_id', 'nickname', 'state')}
@@ -258,6 +259,7 @@ class DrawingAgents:
         prompt = {
             "agent_id": run["agent_id"], "input_id": run["input_id"], "run_id": run["id"],
             "goal": run["message"], "previous_work_summary": agent["summary"],
+            "drawing_guidance": DRAWING_GUIDANCE,
             "scene": scene_context({**run["document"], "elements": run["draft"], "selection": run["selection"]}),
             "relevant_ids": run["relevant_ids"], "prepared_action_count": len(run["prepared"]),
         }

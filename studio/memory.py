@@ -7,6 +7,7 @@ from collections import Counter
 from .agent_store import stable_id
 from .actions import element_fingerprint
 from .path_recall import recall_path_geometry
+from .tool_feedback import image_coordinate_feedback
 
 
 MEMORY_TOOLS = {'search_memory', 'recall_memory', 'compact_context'}
@@ -79,11 +80,12 @@ def bounded_summary(value):
     return summary
 
 
-def tool_summary(name, output):
+def tool_summary(name, output, arguments=None):
     if name == 'inspect_scene' and output.get('ok') and 'scene_state' in output.get('scene', {}):
         scene = output['scene']
         return {**output, 'scene': {**scene, 'elements': [brief(item) for item in scene['elements']]}}
-    return bounded_summary(output)
+    return {**bounded_summary(output), **(image_coordinate_feedback(name, arguments)
+        if output.get('ok') is True and arguments is not None else {})}
 
 
 def present_inspection(output):
@@ -210,12 +212,13 @@ class AgentMemory:
 
     def register(self, task_id, actor_id, caller_id, call_id, name, arguments, output, state_key):
         memory_ref = stable_id('memory', f'{caller_id}/{call_id}')
-        summary = tool_summary(name, output)
-        summary_json = json.dumps(summary, ensure_ascii=False)
         request = json.loads(arguments) if output.get('ok') is True else arguments
+        summary = tool_summary(name, output, request if isinstance(request, dict) else None)
+        summary_json = json.dumps(summary, ensure_ascii=False)
         query_key = query_identity(name, request, output)
         with self.store.lock, self.store.connection:
-            self.store.connection.execute('INSERT OR IGNORE INTO agent_memories VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)',
+            self.store.connection.execute('INSERT INTO agent_memories VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL) '
+                'ON CONFLICT(caller_id,call_id) DO UPDATE SET summary=excluded.summary',
                 (memory_ref, self._session(task_id), task_id, actor_id, 'tool', caller_id, call_id, name,
                  state_key, query_key, summary_json, json.dumps({'request': brief(request)}, ensure_ascii=False),
                  ' '.join([name, *search_terms(request), *search_terms(output)]).casefold(),
@@ -226,6 +229,8 @@ class AgentMemory:
         memory_ref = self.register(task_id, actor_id, caller_id, call_id, name, arguments, output, state_key)
         if output.get('ok') is False:
             return {**output, 'memory_ref': memory_ref}
+        request = json.loads(arguments)
+        coordinates = image_coordinate_feedback(name, request)
         with self.store.lock:
             repeated = self.store.connection.execute(
                 'SELECT count(*) FROM agent_memories WHERE caller_id=? AND state_key=? AND is_error=0 '
@@ -243,7 +248,7 @@ class AgentMemory:
                             'Exact original geometry remains available with point_tolerance=0.'}
                        if name == 'recall_memory' and repeated > 1 else {})}
         if len(json.dumps(output, ensure_ascii=False)) > 5000 or name == 'inspect_scene':
-            context = {'ok': True, 'memory_ref': memory_ref, 'compressed': True, 'summary': tool_summary(name, output),
+            context = {'ok': True, 'memory_ref': memory_ref, 'compressed': True, 'summary': tool_summary(name, output, request),
                     'same_state_query_count': repeated,
                     'retrieval': ('Follow summary.scene.next_page to inspect additional current objects; restart at offset 0 after edits. '
                                   if name == 'inspect_scene' else '') +
@@ -251,7 +256,8 @@ class AgentMemory:
                                  'Use search_memory for object names and older records. ' + role_guidance + ' ' +
                                  'Repeated queries of unchanged content provide no new evidence.'}
             return present_inspection(context) if name == 'inspect_scene' else context
-        return {**output, 'memory_ref': memory_ref, **({'same_state_query_count': repeated} if repeated > 1 else {})}
+        return {**output, 'memory_ref': memory_ref, **coordinates,
+                **({'same_state_query_count': repeated} if repeated > 1 else {})}
 
     def _index_older(self, task_id, actor_id):
         session_id = self._session(task_id)
