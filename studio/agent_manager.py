@@ -173,6 +173,13 @@ class AgentManager:
                if (assessment.get('revision') or {}).get('change') in {'ineffective', 'regressed'}
                    and review.get('constructive_correction') else {})}}
 
+    def _review_history(self, run, review, history):
+        if (not review or review['status'] == 'error'
+                or self.draft_reviews.observed(run['id'], review.get('review_key'))):
+            return history
+        history = self.memory.fold_reads(run['id'], history, checkpoint=True)
+        return self.memory.repair_checkpoint(run['id'], history) if review['status'] == 'repair' else history
+
     async def _work(self, session_id: str, task_id: str, agent_id: str, config: ModelConfig) -> None:
         try:
             while True:
@@ -265,9 +272,8 @@ class AgentManager:
                     await self._notify(session_id, run['agent_id'], result)
                     return
                 if review and review['status'] != 'error':
-                    history = self.memory.fold_reads(run['id'], history, checkpoint=True)
+                    history = self._review_history(run, review, history)
                     if review['status'] == 'repair':
-                        history = self.memory.repair_checkpoint(run['id'], history)
                         await self.draft_reviews.focus(run, review)
                         pictures, observations = await self.vision.context(
                             run['owner_task_id'], run['agent_id'], run['id'], document)
