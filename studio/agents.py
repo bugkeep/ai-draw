@@ -206,6 +206,23 @@ def prepare_drawing_tool(name: str, arguments: dict, document: dict,
 
 
 
+def main_replan_ids(messages):
+    content = messages[1].get('content') if len(messages) > 1 else None
+    if not isinstance(content, str):
+        return []
+    try:
+        prompt = json.loads(content)
+    except json.JSONDecodeError:
+        return []
+    children = prompt.get('child_agents') if isinstance(prompt, dict) else None
+    if not isinstance(children, list):
+        return []
+    results = [agent.get('latest_result') for agent in children if isinstance(agent, dict)]
+    return [result.get('run_id') for result in results if isinstance(result, dict)
+            and isinstance(result.get('completion'), dict)
+            and result['completion'].get('reason') == 'ineffective_repair']
+
+
 class DrawingAgents:
     def __init__(self, store: StudioStore, settings: ModelConfig):
         self.store = store
@@ -276,9 +293,7 @@ class DrawingAgents:
         outputs = [item for item in messages if item.get("role") == "tool"]
         text_messages = [{**item, 'content': [part for part in item['content'] if part.get('type') == 'text']}
                          if isinstance(item.get('content'), list) else item for item in messages]
-        main_prompt = json.loads(messages[1]['content']) if not child else {}
-        replan_ids = [(agent.get('latest_result') or {}).get('run_id') for agent in main_prompt.get('child_agents', [])
-                      if ((agent.get('latest_result') or {}).get('completion') or {}).get('reason') == 'ineffective_repair']
+        replan_ids = main_replan_ids(messages) if not child else []
         self.store.log_tool(task_id, agent_id, round_number, "model_context", {
             "message_count": len(messages), "character_count": len(json.dumps(text_messages, ensure_ascii=False)),
             "image_observation_ids": observation_ids or [],

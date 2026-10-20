@@ -1,0 +1,67 @@
+{
+  "scope": "Actual recorded reviewer responses for schema/transport checks; not artwork acceptance",
+  "source_run": "completion-routes-final-20261020",
+  "source_implementation_sha256": "fc018c487adb872cfa58c0b66d22775da2cb379cedfe2351d4e716c2cc26d020",
+  "cases": [
+    {
+      "name": "status",
+      "expected_route": "reply",
+      "expected_acceptance": true,
+      "response": {
+        "content": "",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "id": "call_82rhi1cnjiczi41eilpre490",
+            "function": {
+              "arguments": "{\"requested_output\": \"reply\", \"accepted\": true, \"reason\": \"用户仅询问当前画布状态且明确不要修改；回复说明画布为空、没有任何图形，与可见对象数为 0、无选中对象的实际状态一致，也未声称进行了修改。\"}",
+              "name": "report_reply_completion"
+            },
+            "type": "function"
+          }
+        ]
+      },
+      "arguments_sha256": "ee0fc8bb77fb4c89444f52c722e63cf360998e36d07231a01bb49d32ea463b26"
+    },
+    {
+      "name": "rectangle",
+      "expected_route": "canvas",
+      "expected_acceptance": false,
+      "response": {
+        "content": "",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "id": "call_0k7wbn5hio5f46f2mcimfda3",
+            "function": {
+              "arguments": "{\"requested_output\": \"canvas\", \"accepted\": false, \"reason\": \"The user requested drawing a rectangle, but the canvas has no visible objects and there is no tool evidence that any rectangle was created. The reply's claim that the rectangle is complete is unsupported.\"}",
+              "name": "report_reply_completion"
+            },
+            "type": "function"
+          }
+        ]
+      },
+      "arguments_sha256": "c71319254b9934b2645c9118c56bc86969e54a61f3eba753b069dfd0c1b9b1db"
+    },
+    {
+      "name": "hallucinated-state",
+      "expected_route": "reply",
+      "expected_acceptance": false,
+      "response": {
+        "content": "",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "id": "call_id0blxt000oqbsj53dcd49f2",
+            "function": {
+              "arguments": "{\"requested_output\": \"reply\", \"accepted\": false, \"reason\": \"用户只要求说明当前画布对象且不修改；实际画布状态显示可见对象数为 0，回复却称有三个人物，与证据不符。\"}",
+              "name": "report_reply_completion"
+            },
+            "type": "function"
+          }
+        ]
+      },
+      "arguments_sha256": "b1626a8471ebbf404fd01afd2938b1630dcf3a0db9e403bc2748ff731b78fde1"
+    }
+  ]
+}

@@ -19,7 +19,8 @@ from .vision import CanvasVision
 from .memory import AgentMemory, MEMORY_TOOLS
 from .reference_images import IMAGE_QUERY_TOOLS, TRACE_TOOLS, ReferenceImages
 from .result_review import AgentResultReview
-from .quality import DrawingQuality
+from .quality import DrawingQuality, review_scene_key
+from .completion import ReplyCompletion
 
 
 class DrawingRuntime:
@@ -32,6 +33,7 @@ class DrawingRuntime:
         self.vision = CanvasVision(store)
         self.result_reviews = AgentResultReview(store, self.vision)
         self.quality = DrawingQuality(store, self.vision)
+        self.reply_completion = ReplyCompletion(store, self.vision, self.quality)
         self.memory = AgentMemory(store)
         self.references = ReferenceImages(store)
         self.children = AgentManager(store, settings, self.vision, self.memory, self.references)
@@ -191,20 +193,13 @@ class DrawingRuntime:
                 if not reply:
                     raise ValueError("主 Agent 未返回工具调用或完成说明。")
                 try:
-                    self.vision.require_review(task_id, f'main:{task_id}', self.store.get_document(document_id))
+                    completion = await self._complete_task(agents, task_id, session_id, document_id, reply)
                 except ValueError as error:
-                    turns.append([response, {'role': 'user', 'content': str(error)}])
+                    completion = {'ok': False, 'error': str(error)}
+                if not completion['ok']:
+                    turns.append([response, {'role': 'user', 'content': json.dumps(completion, ensure_ascii=False)}])
                     continue
-                try:
-                    quality = await self.quality.assess(task_id, agents.settings)
-                except ValueError as error:
-                    quality = {'ok': False, 'error': str(error)}
-                if not quality['ok']:
-                    turns.append([response, {'role': 'user', 'content': json.dumps(quality, ensure_ascii=False)}])
-                    continue
-                runs = self.store.agents.task_runs(session_id, task_id)
-                partial = any(run["status"] in {"failed", "paused", "queued", "running"} for run in runs)
-                return reply, partial
+                return completion['summary'], completion['partial']
             exchange = [response]
             errors = False
             completed = None
@@ -238,6 +233,25 @@ class DrawingRuntime:
                         for agent in self.store.agents.list_agents(session_id))
                 and not self.store.agents.pending_results(session_id, task_id=task_id))
 
+    async def _complete_task(self, models, task_id, session_id, document_id, summary):
+        if not self._child_work_settled(session_id, task_id):
+            raise ValueError('Settle active Agents and pending results before completing')
+        self.vision.require_review(task_id, f'main:{task_id}', self.store.get_document(document_id))
+        review = await self.reply_completion.assess(task_id, models.settings, summary)
+        if review is None or review.get('requested_output') == 'canvas':
+            review = await self.quality.assess(task_id, models.settings)
+        if not review['ok']:
+            return review
+        if not self._child_work_settled(session_id, task_id):
+            raise ValueError('Child work changed during completion review; settle current work before completing')
+        if review_scene_key(self.store.get_document(document_id)) != review['scene_key']:
+            raise ValueError('Canvas changed during completion review; inspect the current image before completing')
+        runs = self.store.agents.task_runs(session_id, task_id)
+        return {'ok': True, 'summary': summary,
+            **({'quality_review_key': review['review_key']} if 'review_key' in review else
+               {'reply_review_key': review['reply_review_key']}),
+            'partial': any(run['status'] in {'failed', 'paused', 'queued', 'running'} for run in runs)}
+
     async def call_main_tool(self, models: DrawingAgents, task_id: str, session_id: str,
                              document_id: str, call: dict, round_number: int = 0,
                              *, completion_error: str = "") -> dict:
@@ -257,18 +271,7 @@ class DrawingRuntime:
                 if name == "finish_drawing":
                     if completion_error:
                         raise ValueError(completion_error)
-                    active = [agent["agent_id"] for agent in self.store.agents.list_agents(session_id)
-                              if agent["owner_task_id"] == task_id and agent["state"] == "Running"]
-                    pending = self.store.agents.pending_results(session_id, task_id=task_id)
-                    if active or pending:
-                        raise ValueError(f"Settle active Agents and pending results before completing: {active}, "
-                                         f"{[item['id'] for item in pending]}")
-                    self.vision.require_review(task_id, caller_id, self.store.get_document(document_id))
-                    quality = await self.quality.assess(task_id, models.settings)
-                    runs = self.store.agents.task_runs(session_id, task_id)
-                    output = ({"ok": True, "summary": args["summary"], "quality_review_key": quality['review_key'],
-                        "partial": any(run["status"] in {"failed", "paused", "queued", "running"} for run in runs)}
-                        if quality['ok'] else quality)
+                    output = await self._complete_task(models, task_id, session_id, document_id, args['summary'])
                 elif name in MEMORY_TOOLS:
                     output = self.memory.call(task_id, 'main', name, args, self.store.get_document(document_id))
                 elif name == 'view_canvas':
