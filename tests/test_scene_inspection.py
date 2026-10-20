@@ -43,6 +43,11 @@ def test_filtered_pages_retrieve_every_current_object_without_repeating_or_modif
     first = inspect(document, {'query': 'face', 'limit': 7})
     with pytest.raises(ValueError, match='inspection filters differ'):
         inspect(document, {**first['next_page'], 'query': 'Face stroke 1'})
+    changed_filters = {**first['next_page'], 'query': 'Face stroke 1', 'offset': 0}
+    with pytest.raises(ValueError, match="expected_scene_state='' "):
+        inspect(document, changed_filters)
+    refreshed = inspect(document, {**changed_filters, 'expected_scene_state': ''})
+    assert refreshed['offset'] == 0 and refreshed['matching_count'] == 11
 
 
 def test_private_draft_changes_invalidate_pages_even_without_a_document_version_change():

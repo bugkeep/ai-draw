@@ -6,11 +6,12 @@ export function activityPhase(value) {
   if (value.phase === 'research') text = '正在检索并筛选绘图参考资料'
   if (value.phase === 'observing') text = '正在查看当前画布图片'
   if (value.phase === 'quality_review') text = '正在检查画面质量'
+  if (value.phase === 'draft_review') text = '正在复查草稿并确定下一步修正'
   if (value.phase === 'model_request') text = value.agent_id === 'main' ? '主 Agent 正在思考' : '子 Agent 正在准备画笔动作'
   if (['model_wait', 'model_retry'].includes(value.phase)) text = '模型连接正在限流，按顺序恢复请求'
   if (value.phase === 'agent_state') {
     const name = value.nickname || '子 Agent'
-    if (value.result?.status === 'failed') text = `${name} 未完成，正在等待主 Agent 处理`
+    if (value.result?.status === 'failed' || value.result?.completion?.status === 'blocked') text = `${name} 未完成，正在等待主 Agent 处理`
     else if (value.state === 'Shutdown') text = `${name} 已暂停，进度已保存`
     else if (value.result?.result_id) text = `${name} 已准备绘图，正在等待提交`
     else if (value.state === 'Running') text = `${name} 正在准备绘图${value.queued_inputs > 1 ? `，还有 ${value.queued_inputs - 1} 条输入排队` : ''}`

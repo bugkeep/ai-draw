@@ -46,6 +46,10 @@ class AgentStore:
                 task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
                 payload TEXT NOT NULL, created_at REAL NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS agent_completion_notes (
+                run_id TEXT PRIMARY KEY REFERENCES agent_runs(id) ON DELETE CASCADE,
+                payload TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS agent_tool_calls (
                 caller_id TEXT NOT NULL, call_id TEXT NOT NULL,
                 task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -233,8 +237,8 @@ class AgentStore:
     def save_response(self, run: dict, message: dict) -> None:
         with self.lock, self.connection:
             self.connection.execute(
-                "UPDATE agent_runs SET pending_response=?,updated_at=? WHERE id=?",
-                (self.encode(message), time.time(), run["id"]),
+                "UPDATE agent_runs SET pending_response=?,conversation=?,updated_at=? WHERE id=?",
+                (self.encode(message), self.encode(run['conversation']), time.time(), run["id"]),
             )
             self.connection.execute(
                 "INSERT INTO agent_messages(agent_id,run_id,task_id,payload,created_at) VALUES(?,?,?,?,?)",
@@ -302,7 +306,7 @@ class AgentStore:
                 (self.encode(conversation), time.time(), run_id),
             )
 
-    def complete_run(self, session_id: str, run_id: str, summary: str, error: str = "") -> dict:
+    def complete_run(self, session_id: str, run_id: str, summary: str, error: str = "", *, completion=None) -> dict:
         summary, error = summary[:1000], error[:1500]
         with self.lock, self.connection:
             run = self.get_run(session_id, run_id)
@@ -326,16 +330,20 @@ class AgentStore:
                 (run["agent_id"],),
             ).fetchone()
             self.connection.execute("UPDATE agent_sessions SET summary=? WHERE id=?", (summary or error, run["agent_id"]))
+            if completion is not None:
+                self.connection.execute('INSERT INTO agent_completion_notes VALUES(?,?) '
+                    'ON CONFLICT(run_id) DO UPDATE SET payload=excluded.payload', (run_id, self.encode(completion)))
             self._touch(run["agent_id"], "Running" if more else "Final")
         return self.run_summary(self.get_run(session_id, run_id))
 
-    @staticmethod
-    def run_summary(run: dict) -> dict:
+    def run_summary(self, run: dict) -> dict:
+        with self.lock:
+            row = self.connection.execute('SELECT payload FROM agent_completion_notes WHERE run_id=?', (run['id'],)).fetchone()
         return {"agent_id": run["agent_id"], "input_id": run["input_id"], "run_id": run["id"],
                 "status": run["status"], "summary": run["summary"], "error": run["error"],
                 "goal": run["message"][:240],
                 "result_id": run["result_id"], "action_count": len(run["prepared"]),
-                "revision": run["result_revision"]}
+                "revision": run["result_revision"], **({'completion': json.loads(row['payload'])} if row else {})}
 
     def observed_results(self, session_id: str, agent_id: str, after: int = 0) -> list[dict]:
         with self.lock:

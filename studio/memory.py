@@ -14,6 +14,30 @@ READ_TOOLS = {'inspect_scene', 'view_canvas', 'view_agent_result', 'view_referen
               'search_memory', 'recall_memory', 'read_reference', 'search_references', 'search_reference_images'}
 
 
+def completed_checkpoint_calls(message):
+    try:
+        note = json.loads(message.get('content', '')) if message.get('role') == 'user' else None
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(note, dict) or not isinstance(note.get('completed_drawing_tools'), list):
+        return []
+    if not isinstance(note.get('function_call_outputs'), list):
+        return []
+    outputs = {item.get('call_id'): item.get('output') for item in note['function_call_outputs'] if isinstance(item, dict)}
+    calls = []
+    for call in note['completed_drawing_tools']:
+        if not isinstance(call, dict) or not isinstance(call.get('call_id'), str) or not isinstance(call.get('name'), str):
+            return []
+        try:
+            output = json.loads(outputs.get(call['call_id'], ''))
+        except (ValueError, TypeError):
+            return []
+        if not isinstance(output, dict) or output.get('ok') is not True:
+            return []
+        calls.append(call)
+    return calls
+
+
 def query_identity(name, request, output):
     # Compare evidence rather than optional/default argument spelling. Keep object
     # geometry, page cursors and image identities; only transport metadata varies.
@@ -424,7 +448,23 @@ class AgentMemory:
         return [*messages, {'role': 'user', 'content': json.dumps(
             self.snapshot(task_id, actor_id, caller_id, state_key, document), ensure_ascii=False)}, *extra]
 
-    def fold_reads(self, caller_id, messages):
+    def repeated_read(self, caller_id, state_key):
+        with self.store.lock:
+            unread = self.store.connection.execute('SELECT 1 FROM agent_memories WHERE caller_id=? '
+                'AND is_error=1 AND observed_at IS NULL LIMIT 1', (caller_id,)).fetchone()
+            latest = self.store.connection.execute('SELECT * FROM agent_memories WHERE caller_id=? AND state_key=? '
+                "AND kind='tool' ORDER BY created_at DESC LIMIT 1", (caller_id, state_key)).fetchone()
+            if unread or latest is None or latest['is_error'] or latest['tool_name'] not in READ_TOOLS:
+                return None
+            count, observed = self.store.connection.execute('SELECT count(*),sum(observed_at IS NOT NULL) '
+                'FROM agent_memories WHERE caller_id=? AND state_key=? AND query_key=? AND is_error=0',
+                (caller_id, state_key, latest['query_key'])).fetchone()
+        if count < 2 or not observed:
+            return None
+        return {'tool_name': latest['tool_name'], 'same_evidence_reads': count,
+                'memory_ref': latest['id'], 'request': json.loads(latest['payload'])['request']}
+
+    def fold_reads(self, caller_id, messages, *, checkpoint=False):
         """Keep the latest equivalent successful read, backed by this caller's receipts.
 
         This only edits model input. Original calls/results remain in SQLite; reads
@@ -439,7 +479,7 @@ class AgentMemory:
                               for call in item.get('tool_calls', []))
         with self.store.lock:
             rows = self.store.connection.execute(
-                'SELECT m.call_id,m.tool_name,m.state_key,m.query_key,c.arguments FROM agent_memories m '
+                'SELECT m.call_id,m.tool_name,m.state_key,m.query_key,m.observed_at,c.arguments FROM agent_memories m '
                 'JOIN agent_tool_calls c ON c.caller_id=m.caller_id AND c.call_id=m.call_id '
                 'WHERE m.caller_id=? AND m.is_error=0 '
                 'AND m.call_id IN (SELECT value FROM json_each(?))',
@@ -448,7 +488,7 @@ class AgentMemory:
         receipts = {row['call_id']: row for row in rows if row['tool_name'] in READ_TOOLS}
         # Only fold complete adjacent assistant/tool exchanges. Mixed batches keep
         # every write/error and its original arguments, even when a read is folded.
-        batches, inspections, index = [], set(), 0
+        batches, inspections, archived, index = [], set(), set(), 0
         while index < len(messages):
             message = messages[index]
             calls = message.get('tool_calls', []) if message.get('role') == 'assistant' else []
@@ -474,9 +514,11 @@ class AgentMemory:
                         eligible[call['id']] = (receipt['tool_name'], receipt['state_key'], receipt['query_key'])
                         if receipt['tool_name'] == 'inspect_scene':
                             inspections.add(call['id'])
+                        if checkpoint and receipt['observed_at'] is not None:
+                            archived.add(call['id'])
                 batches.append((index, end, eligible))
             index = end
-        seen, remove = set(), set()
+        seen, remove = set(), set(archived)
         for _, _, eligible in reversed(batches):
             for call_id, key in reversed(list(eligible.items())):
                 if key in seen:
@@ -497,18 +539,90 @@ class AgentMemory:
                 remaining = [call for call in message['tool_calls'] if call.get('id') not in remove]
                 message = {**message, 'tool_calls': remaining}
                 if not remaining:
+                    if checkpoint:
+                        continue
                     message.pop('tool_calls')
                     if not message.get('content'):
                         continue
             result.append(message)
+        if archived:
+            retained, total = [], len(archived)
+            for message in result:
+                try:
+                    note = json.loads(message.get('content', '')) if message.get('role') == 'user' else None
+                except (TypeError, ValueError):
+                    note = None
+                if (isinstance(note, dict) and set(note) == {'read_checkpoint'}
+                        and note['read_checkpoint'].get('caller_id') == caller_id):
+                    total += note['read_checkpoint']['archived_count']
+                else:
+                    retained.append(message)
+            result = [*retained, {'role': 'user', 'content': json.dumps({'read_checkpoint': {
+                'caller_id': caller_id, 'archived_count': total,
+                'instruction': 'Earlier successful reads and read-only deliberation are archived in SQLite. '
+                    'The current input, working notes, draft, unread outputs/errors and independent draft review remain authoritative. '
+                    'Use search_memory/recall_memory for a specific missing fact; do not redo already prepared drawing actions.'}}, ensure_ascii=False)}]
         return result
 
     def delivered(self, caller_id, messages):
         call_ids = {message['tool_call_id'] for message in messages if message.get('role') == 'tool'}
+        for message in messages:
+            for call in completed_checkpoint_calls(message):
+                with self.store.lock:
+                    receipt = self.store.connection.execute('SELECT 1 FROM agent_tool_calls WHERE caller_id=? '
+                        "AND call_id=? AND name=? AND json_extract(output,'$.ok')=1",
+                        (caller_id, call['call_id'], call['name'])).fetchone()
+                if receipt:
+                    call_ids.add(call['call_id'])
         with self.store.lock, self.store.connection:
             for call_id in call_ids:
                 self.store.connection.execute('UPDATE agent_memories SET observed_at=? WHERE caller_id=? AND call_id=?',
                                              (time.time(), caller_id, call_id))
+
+    def repair_checkpoint(self, caller_id, messages):
+        with self.store.lock:
+            rows = self.store.connection.execute('SELECT m.call_id,m.observed_at,c.name,c.arguments '
+                'FROM agent_memories m JOIN agent_tool_calls c ON c.caller_id=m.caller_id AND c.call_id=m.call_id '
+                'WHERE m.caller_id=?', (caller_id,)).fetchall()
+        receipts = {row['call_id']: row for row in rows}
+        result, archived, index = [], 0, 0
+        while index < len(messages):
+            message = messages[index]
+            calls = message.get('tool_calls', []) if message.get('role') == 'assistant' else []
+            end = index + 1
+            while calls and end < len(messages) and messages[end].get('role') == 'tool':
+                end += 1
+            outputs = messages[index + 1:end]
+            if (calls and len(calls) == len(outputs) and len({item['id'] for item in calls}) == len(calls)
+                    and {item['id'] for item in calls} == {item.get('tool_call_id') for item in outputs}
+                    and all((row := receipts.get(call['id'])) is not None and row['observed_at'] is not None
+                        and row['name'] == call['function']['name'] and row['arguments'] == call['function']['arguments']
+                        for call in calls)):
+                archived += len(calls)
+                index = end
+                continue
+            try:
+                note = json.loads(message.get('content', '')) if message.get('role') == 'user' else None
+            except (ValueError, TypeError):
+                note = None
+            completed = completed_checkpoint_calls(message)
+            if completed and all(
+                    (row := receipts.get(call['call_id'])) is not None and row['observed_at'] is not None
+                    and row['name'] == call['name'] for call in completed):
+                archived += len(completed)
+            elif (isinstance(note, dict) and set(note) == {'repair_checkpoint'}
+                    and note['repair_checkpoint'].get('caller_id') == caller_id):
+                archived += note['repair_checkpoint']['archived_count']
+            else:
+                result.append(message)
+            index += 1
+        if archived:
+            result.append({'role': 'user', 'content': json.dumps({'repair_checkpoint': {
+                'caller_id': caller_id, 'archived_count': archived,
+                'instruction': 'Already observed tool exchanges and their deliberation are archived in SQLite. '
+                    'Use the current assigned input, draft, target objects, working constraints and independent findings. '
+                    'All unread outputs/errors remain in this request. Prepared actions already exist; do not recreate them.'}}, ensure_ascii=False)})
+        return result
 
     def call(self, task_id, actor_id, name, arguments, document):
         if name == 'search_memory':

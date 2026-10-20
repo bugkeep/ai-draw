@@ -11,6 +11,7 @@ def capture_implementation(output_dir, *, snapshot=True):
         'scripts/evaluation_artifacts.py', 'scripts/evaluate_quality.py', 'scripts/evaluate_reference_polygon.py',
         'scripts/evaluate_prompt_context.py', 'scripts/evaluate_observed_coordinates.py',
         'scripts/evaluate_visual_grounding.py', 'scripts/evaluate_read_compaction.py',
+        'scripts/evaluate_reference_anchors.py', 'scripts/evaluate_draft_loop.py',
         'scripts/verify_browser.py', 'frontend-app/scripts/quality_evaluation.js'))
     implementation = {path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest() for path in files}
     if snapshot:

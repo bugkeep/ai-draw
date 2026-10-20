@@ -474,3 +474,118 @@ def test_trace_range_memory_survives_compaction_and_distinguishes_renamed_duplic
             await runtime.close()
             store.close()
     asyncio.run(check())
+
+
+def test_repeated_read_feedback_requires_observed_evidence_and_defers_to_unread_errors(tmp_path, native_drawing_child):
+    async def check():
+        store, runtime, session, task, _ = workspace(tmp_path / 'read-loop.sqlite3')
+        try:
+            child = native_drawing_child(store, runtime, session, task)
+            element_id = child.call('create_element', {'type': 'ellipse'}, 'circle')['changed_ids'][0]
+            state = f"{child.run['id']}:{len(child.run['prepared'])}"
+            for call_id in ['first', 'second']:
+                child.call('inspect_scene', {'limit': 1}, call_id)
+            assert runtime.memory.repeated_read(child.run['id'], state) is None
+            runtime.memory.delivered(child.run['id'], [{'role': 'tool', 'tool_call_id': 'first'}])
+            repeated = runtime.memory.repeated_read(child.run['id'], state)
+            assert repeated['tool_name'] == 'inspect_scene' and repeated['same_evidence_reads'] == 2
+            child.call('move_elements', {'ids': ['missing'], 'dx': 1, 'dy': 0}, 'error')
+            child.call('inspect_scene', {'limit': 1}, 'third')
+            assert runtime.memory.repeated_read(child.run['id'], state) is None
+            runtime.memory.delivered(child.run['id'], [{'role': 'tool', 'tool_call_id': 'error'}])
+            assert runtime.memory.repeated_read(child.run['id'], state)['same_evidence_reads'] == 3
+            assert runtime.memory.repeated_read('different-caller', state) is None
+            child.call('move_elements', {'ids': [element_id], 'dx': 1, 'dy': 0}, 'move')
+            assert runtime.memory.repeated_read(child.run['id'], f"{child.run['id']}:{len(child.run['prepared'])}") is None
+            assert len(store.connection.execute('SELECT * FROM agent_tool_calls WHERE caller_id=?',
+                (child.run['id'],)).fetchall()) == 6
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())
+
+
+def test_review_checkpoint_archives_observed_reads_and_preserves_unread_outputs_writes_and_errors(tmp_path, native_drawing_child):
+    async def check():
+        store, runtime, session, task, _ = workspace(tmp_path / 'read-checkpoint.sqlite3')
+        try:
+            child = native_drawing_child(store, runtime, session, task)
+            messages = []
+            def exchange(name, args, call_id, text='检查这些对象后继续。'):
+                output = child.call(name, args, call_id)
+                batch = [{'role': 'assistant', 'content': text, 'tool_calls': [{'id': call_id, 'type': 'function',
+                    'function': {'name': name, 'arguments': json.dumps(args)}}]},
+                    {'role': 'tool', 'tool_call_id': call_id, 'content': json.dumps(output)}]
+                messages.extend(batch)
+                return batch
+            write = exchange('create_element', {'type': 'ellipse'}, 'circle')
+            read = exchange('inspect_scene', {'limit': 1}, 'observed')
+            runtime.memory.delivered(child.run['id'], read)
+            error = exchange('move_elements', {'ids': ['missing'], 'dx': 1, 'dy': 0}, 'error')
+            unread = exchange('inspect_scene', {'limit': 1}, 'unread')
+            compact = runtime.memory.fold_reads(child.run['id'], messages, checkpoint=True)
+            assert [item['tool_call_id'] for item in compact if item.get('role') == 'tool'] == ['circle', 'error', 'unread']
+            assert all(item in compact for item in [*write, *error])
+            assert unread[0] in compact
+            assert read[0] not in compact
+            assert json.loads(compact[-1]['content'])['read_checkpoint']['archived_count'] == 1
+            assert runtime.memory.fold_reads(child.run['id'], compact, checkpoint=True) == compact
+            runtime.memory.delivered(child.run['id'], unread)
+            compact = runtime.memory.fold_reads(child.run['id'], compact, checkpoint=True)
+            assert [item['tool_call_id'] for item in compact if item.get('role') == 'tool'] == ['circle', 'error']
+            assert json.loads(compact[-1]['content'])['read_checkpoint']['archived_count'] == 2
+            assert store.connection.execute('SELECT count(*) FROM agent_tool_calls WHERE caller_id=?',
+                (child.run['id'],)).fetchone()[0] == 4
+            mixed = [{'role': 'assistant', 'content': '需要保留的修改与错误说明。',
+                'tool_calls': [*write[0]['tool_calls'], *read[0]['tool_calls'], *error[0]['tool_calls']]},
+                write[1], read[1], error[1]]
+            mixed_compact = runtime.memory.fold_reads(child.run['id'], mixed, checkpoint=True)
+            assert mixed_compact[0]['content'] == mixed[0]['content']
+            assert [item['id'] for item in mixed_compact[0]['tool_calls']] == ['circle', 'error']
+            assert write[1] in mixed_compact and error[1] in mixed_compact
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())
+
+
+def test_focused_repair_archives_observed_geometry_and_errors_but_delivers_unread_errors_in_full(tmp_path, native_drawing_child):
+    async def check():
+        store, runtime, session, task, _ = workspace(tmp_path / 'repair-checkpoint.sqlite3')
+        try:
+            child = native_drawing_child(store, runtime, session, task)
+            args = {'type': 'freedraw', 'points': [[index, index % 9] for index in range(700)]}
+            output = child.call('create_element', args, 'curve')
+            exchange = [{'role': 'assistant', 'tool_calls': [{'id': 'curve', 'type': 'function',
+                'function': {'name': 'create_element', 'arguments': json.dumps(args)}}]},
+                {'role': 'tool', 'tool_call_id': 'curve', 'content': json.dumps(output)}]
+            compact = compact_drawing_exchange(exchange)
+            assert compact != exchange
+            assert runtime.memory.repair_checkpoint(child.run['id'], compact) == compact
+            runtime.memory.delivered(child.run['id'], [{'role': 'user', 'content': json.dumps({
+                'completed_drawing_tools': [{'call_id': 'curve', 'name': 'create_element'}]})}])
+            assert store.connection.execute('SELECT observed_at FROM agent_memories WHERE caller_id=? AND call_id=?',
+                (child.run['id'], 'curve')).fetchone()[0] is None
+            runtime.memory.delivered(child.run['id'], compact)
+            args = {'ids': ['missing'], 'dx': 1, 'dy': 0}
+            error = child.call('move_elements', args, 'bad-move')
+            failed = [{'role': 'assistant', 'content': '需要修正目标编号。', 'tool_calls': [{'id': 'bad-move',
+                'type': 'function', 'function': {'name': 'move_elements', 'arguments': json.dumps(args)}}]},
+                {'role': 'tool', 'tool_call_id': 'bad-move', 'content': json.dumps(error)}]
+            checkpoint = runtime.memory.repair_checkpoint(child.run['id'], [*compact, *failed])
+            assert all(message in checkpoint for message in failed)
+            assert json.loads(checkpoint[-1]['content'])['repair_checkpoint']['archived_count'] == 1
+            runtime.memory.delivered(child.run['id'], checkpoint)
+            checkpoint = runtime.memory.repair_checkpoint(child.run['id'], checkpoint)
+            assert not any(item.get('role') == 'tool' for item in checkpoint)
+            assert json.loads(checkpoint[-1]['content'])['repair_checkpoint']['archived_count'] == 2
+            assert runtime.memory.repair_checkpoint(child.run['id'], checkpoint) == checkpoint
+            memory_ref = store.connection.execute('SELECT id FROM agent_memories WHERE caller_id=? AND call_id=?',
+                (child.run['id'], 'bad-move')).fetchone()[0]
+            assert json.loads(runtime.memory.recall(task['id'], child.agent['agent_id'], {
+                'memory_ref': memory_ref, 'section': 'output'}, child.document)['text']) == error
+            assert len(child.run['prepared']) == 1 and len(child.run['draft']) == 1
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())

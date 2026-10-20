@@ -86,7 +86,9 @@ def scene_context(document: dict[str, Any], ids: list[str] | None = None, query:
         state = hashlib.sha256(json.dumps([document['id'], elements, document['selection'], ids or [], query, region],
             ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode('utf-8')).hexdigest()
         if expected_scene_state and expected_scene_state != state:
-            raise ValueError('Scene changed or inspection filters differ; inspect again from offset 0 to obtain current object IDs')
+            raise ValueError("Scene changed or inspection filters differ; restart with offset=0 AND "
+                "expected_scene_state='' (or omit the token). The old token is bound to the previous exact "
+                "ids/query/region and scene. Copy next_page unchanged only to continue that same query.")
     if ids:
         by_id = {element["id"]: element for element in elements}
         if set(ids) - set(by_id):
@@ -255,7 +257,8 @@ class DrawingAgents:
                       observation_ids: list[str] | None = None,
                       reference_image_ids: list[str] | None = None,
                       result_observation_ids: list[str] | None = None,
-                      quality_review_keys: list[str] | None = None) -> dict:
+                      quality_review_keys: list[str] | None = None,
+                      draft_review_keys: list[str] | None = None) -> dict:
         started = time.perf_counter()
         session_id = self.store.get_task(task_id)["session_id"]
         document_id = self.store.session_document_id(session_id)
@@ -275,6 +278,7 @@ class DrawingAgents:
             "image_observation_ids": observation_ids or [],
             "result_observation_ids": result_observation_ids or [],
             "quality_review_keys": quality_review_keys or [],
+            "draft_review_keys": draft_review_keys or [],
             "reference_image_view_ids": reference_image_ids or [],
             "tool_output_ids": [item["tool_call_id"] for item in outputs],
             "tool_error_ids": [item["tool_call_id"] for item in outputs

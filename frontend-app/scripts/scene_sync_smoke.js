@@ -119,6 +119,9 @@ try {
   }
   for (let index = 0; index < 30; index += 1) await edit()
   await Promise.all([revision(page, document.version), revision(viewer, document.version)])
+  const settled = (await request(`/api/studio/sessions/${first.id}`)).document
+  assert.equal(settled.version, document.version, 'Applying remote updates must not save an extra local change')
+  assert.deepEqual(settled.selection, [elements[0].id], 'The editor must preserve the remote selection')
   assert.deepEqual(geometry((await exported(page)).elements), geometry(document.elements))
   assert.deepEqual(geometry((await exported(viewer)).elements), geometry(document.elements))
 

@@ -83,6 +83,7 @@ Agent 可以通过 `search_references` 使用免费的公共搜索查阅具体�
 | `studio/agents.py`、`studio/agent_tools.py` | 主 Agent 工具循环所用上下文、模型请求和工具定义 |
 | `studio/prompts.py` | 主 Agent 与绘图子 Agent 的职责、阶段交付与审图规则 |
 | `studio/agent_manager.py` | 子 Agent 身份、输入排队、并发执行、等待和关闭恢复 |
+| `studio/draft_review.py` | 当前子 Agent 输入的独立草稿复查、状态缓存与具体修正依据 |
 | `studio/agent_store.py` | Agent 私有上下文、执行检查点、调用幂等和绘图结果 |
 | `studio/memory.py` | 成功工具摘要、工作记忆、历史检索、精确取回和未读错误补充 |
 | `studio/llm.py`、`studio/settings.py` | 多厂商模型请求、连接验证和加密配置 |

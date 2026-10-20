@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { CaptureUpdateAction, DefaultSidebar, Excalidraw } from '@excalidraw/excalidraw'
 import { useNavigate } from 'react-router-dom'
 import '@excalidraw/excalidraw/index.css'
@@ -111,11 +112,11 @@ export default function App() {
       suppressRef.current = true
       clearTimeout(suppressTimerRef.current)
       try {
-        apiRef.current.updateScene({
+        flushSync(() => apiRef.current.updateScene({
           elements: strokeSceneRef.current.base(displayed.elements, true),
           appState: { selectedElementIds: Object.fromEntries(displayed.selection.map((id) => [id, true])) },
           captureUpdate: CaptureUpdateAction.NEVER,
-        })
+        }))
       } finally {
         const api = apiRef.current, generation = generationRef.current
         suppressTimerRef.current = setTimeout(() => {

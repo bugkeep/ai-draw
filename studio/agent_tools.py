@@ -82,11 +82,27 @@ class InspectScene(ToolInput):
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=12, ge=1, le=50, description='Objects per page; follow next_page to inspect all matches.')
     expected_scene_state: str = Field(default='', pattern=r'^(?:[0-9a-f]{64})?$',
-        description='Use the scene_state returned by a previous page. If the canvas or private draft changed, restart at offset 0.')
+        description="Copy next_page unchanged to continue the same query. For a new query/ids/region or changed draft, "
+                    "restart with offset=0 AND expected_scene_state='' (or omit the token).")
 
 
 class FinishDrawing(ToolInput):
     summary: str = Field(min_length=1)
+
+
+class FinishChildDrawing(FinishDrawing):
+    completion_status: Literal['ready', 'blocked'] = Field(default='ready',
+        description='ready requests independent review of this pass. blocked hands an explicitly unfinished '
+                    'candidate back to the main Agent; it is not approval of this pass or the whole artwork.')
+    unresolved: list[str] = Field(default_factory=list)
+
+    @model_validator(mode='after')
+    def check_unresolved(self):
+        if self.completion_status == 'blocked' and not any(item.strip() for item in self.unresolved):
+            raise ValueError('A blocked input needs explicit unresolved items for the main Agent')
+        if self.completion_status == 'ready' and self.unresolved:
+            raise ValueError('Use completion_status=blocked when unresolved input requirements remain')
+        return self
 
 
 class ViewCanvas(ToolInput):
@@ -251,12 +267,12 @@ LIFECYCLE_INPUTS = {
     "view_agent_result": ViewAgentResult,
     "reject_agent_result": RejectAgentResult,
 }
-CHILD_INPUTS = {**DRAWING_INPUTS, **REFERENCE_INPUTS, **MEMORY_INPUTS}
+CHILD_INPUTS = {**DRAWING_INPUTS, **REFERENCE_INPUTS, **MEMORY_INPUTS, 'finish_drawing': FinishChildDrawing}
 CHILD_TOOL_NAMES = frozenset(CHILD_INPUTS)
 CHILD_PEN_TOOLS = frozenset({'draw_paths', 'reshape_path'})
 MAIN_INPUTS = {**{name: model for name, model in CHILD_INPUTS.items() if name not in CHILD_PEN_TOOLS},
                **LIFECYCLE_INPUTS, 'create_element': MainCreateElement, 'create_elements': MainCreateElements,
-               'create_reference_layout': CreateReferenceLayout}
+               'create_reference_layout': CreateReferenceLayout, 'finish_drawing': FinishDrawing}
 MAIN_TOOL_NAMES = frozenset(MAIN_INPUTS)
 
 
@@ -338,9 +354,14 @@ CHILD_TOOLS = [definition('finish_drawing',
     'Inspect the actual current private-draft image, fix concrete defects within the assigned structure, '
     'then put this call last with a concise summary of the prepared changes. The main Agent combines regions, '
     'reviews the full artwork and assigns later passes through new inputs. All tool errors must reach your next context '
-    'before completing. Drawing changes since the last image require another inspection.', FinishDrawing)
+    'before completing. Drawing changes since the last image require another inspection. '
+    'Runtime independently reviews this assigned pass before accepting ready. Blocking findings return to your context; '
+    'repair them. If a concrete prerequisite/constraint prevents completion, use completion_status=blocked with explicit '
+    'unresolved items to hand the unfinished candidate back to the main Agent.', FinishChildDrawing)
     if item['function']['name'] == 'finish_drawing' else item for item in DRAWING_TOOLS
-] + REFERENCE_TOOLS + MEMORY_TOOL_DEFINITIONS
+] + REFERENCE_TOOLS + [{**item, 'function': {**item['function'],
+    'description': item['function']['description'].replace('delegate extensive geometry work to a child.',
+        'you cannot delegate; complete your assigned input or report its concrete blocker.')}} for item in MEMORY_TOOL_DEFINITIONS]
 MAIN_TOOLS = [{**item, 'function': {**item['function'],
     'parameters': tool_parameters(MAIN_INPUTS[item['function']['name']].model_json_schema()),
     **({'description': 'Create simple geometric shapes, labels or diagram connectors. '

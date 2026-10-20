@@ -35,6 +35,10 @@
 
 一页对象具有完全相同的类型或样式属性时，上下文将它们提取到 `scene.element_defaults`；每个 `scene.elements` 条目继承这些属性，自身属性优先。编号、名称、位置、尺寸、点数和分页仍逐项保留。把公共属性与每个条目合并可还原完整摘要，数据库中保存的摘要与原始工具返回继续保持原格式。
 
+子 Agent 获得有效的当前草稿复查后，runtime 可以保存一次读取检查点：将已经实际发送过的成功读取及对应的纯读取推演移出近期对话，保留当前输入、工作记忆、当前图片和复查意见。未读返回、全部工具错误、修改操作及混合批次中的修改说明继续保留；原调用与模型回答仍在 SQLite，可按需检索。`read_checkpoint` 记录已归档数量，不重复添加相同提醒。压缩后的对话和下一条真实模型返回在同一事务中保存，关闭恢复不会重新加入已经归档的读取。
+
+复查明确要求修改时，runtime 还会附上缺陷涉及的当前对象和局部图片，将已经读过的完整工具过程归档为 `repair_checkpoint`。这包含已经送达过的旧错误和修改过程；尚未读到的错误及返回继续完整提供，后续仍可检索旧错误原文。长参数工具的完成摘要与原始工具消息均记录实际发送状态。修正动作保存后再次复查当前图片，检查是否修复目标缺陷及是否产生新损坏。
+
 每轮默认对象概览保留最多 12 个已选中或最近使用的对象，并提供全部对象的类型数量和继续检索入口。概览明确标注是否还有其他内容；不在概览中的对象仍然保存在画布上。
 
 `inspect_scene` 返回结构化对象分页，可以组合对象编号、名称文字和画布区域进行过滤。默认每页 12 个对象，可通过 `limit` 选择至多 50 个；`matching_count` 表示全部符合条件的对象数量，沿 `summary.scene.next_page` 可以取回全部匹配对象。每页的准确编号和下一页参数完整保留在上下文中，较长的路径点继续通过 `recall_memory` 按对象检索。分页只控制单次返回大小，不限制对象数量和绘图动作数量。
@@ -64,6 +68,14 @@ python -m scripts.evaluate_scene_paging --database runs/scene-paging.sqlite3 --o
 ```bash
 python -m scripts.evaluate_read_compaction --source-database runs/archived.sqlite3 --run-id run_example --database runs/read-diagnostic.sqlite3 --output-dir runs/read-diagnostic
 ```
+
+纠错闭环诊断使用原数据库的只读备份，在新数据库中恢复一条真实的未完成子 Agent 输入，沿用原目标、上下文、私有草稿和模型配置。它记录复查、错误反馈、下一批原生修改及前后 PNG；第一批新增动作保存后或子 Agent 交回结果后停止。该诊断不启动主 Agent，也不将删除错误线条或交回阻碍视为整幅作品完成。
+
+```bash
+python -m scripts.evaluate_draft_loop --source-database runs/stalled.sqlite3 --run-id run_example --database runs/loop-diagnostic.sqlite3 --output-dir runs/loop-diagnostic
+```
+
+加上 `--until-terminal` 可以继续执行实际修正和后续复查，直到这条子 Agent 输入结束。它仍然不代表主 Agent 已审阅提交，或整幅作品已经通过验收。
 
 单元检查使用实际 SQLite 与原生对象，覆盖完整原文和点列取回、超出摘要条目的对象检索、未读错误、重复查询、工作记忆版本、任务顺序与子 Agent 私有上下文恢复。
 
