@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from server.app import create_app
 from studio.actions import create_native_element, element_fingerprint
+from studio.quality import review_scene_key
 from .evaluate_memory import execute
 
 
@@ -73,9 +74,19 @@ def main():
         delivered = {(entry['agent_id'], call_id) for entry in logs if entry['kind'] == 'model_context'
                      for call_id in entry['payload'].get('tool_error_ids', [])}
         quality_reviews = [(index, entry['payload']) for index, entry in enumerate(logs) if entry['kind'] == 'quality_review']
+        quality_feedback = [(index, entry['payload']) for index, entry in enumerate(logs)
+                            if entry['kind'] in {'quality_review', 'quality_schema_error'}]
         reviewed_contexts = [(index, entry['payload']) for index, entry in enumerate(logs)
                              if entry['agent_id'] == 'main' and entry['kind'] == 'model_context'
                              and entry['payload'].get('quality_review_keys')]
+        successful_stage = [(index, review) for index, review in quality_reviews if review['result']['ok'] and any(
+            index < context_index and review['review_key'] in context['quality_review_keys']
+            for context_index, context in reviewed_contexts)]
+        successful_finishes = [outputs[(entry['agent_id'], entry['payload']['call_id'])]
+            for entry in calls if entry['agent_id'] == 'main' and entry['payload']['name'] == 'finish_drawing'
+            and outputs.get((entry['agent_id'], entry['payload']['call_id']), {}).get('ok')]
+        final_reviews = [review for _, review in quality_reviews if review['result']['ok']
+                         and review['result']['scene_key'] == review_scene_key(final)]
         undone = store.history_step(document_id, 'undo')
         redone = store.history_step(document_id, 'redo')
         checks = {
@@ -98,12 +109,15 @@ def main():
             'actual_draft_pixels_enter_child_context': any(entry['agent_id'] != 'main' and entry['kind'] == 'model_context'
                 and entry['payload'].get('image_observation_ids') for entry in logs),
             'tool_errors_reach_context': set(errors) <= delivered,
-            'independent_stage_review_reaches_actual_main_context': bool(quality_reviews) and any(
+            'independent_stage_feedback_reaches_actual_main_context': bool(quality_feedback) and any(
                 first_submission is not None and first_submission < review_index < context_index
                 and review['review_key'] in context['quality_review_keys']
-                for review_index, review in quality_reviews for context_index, context in reviewed_contexts),
-            'successful_stage_review_reused_at_completion': len(quality_reviews) == 1 and quality_reviews[0][1]['result']['ok']
-                and sum(entry['agent_id'] == 'quality' and entry['kind'] == 'llm_response' for entry in logs) == 2,
+                for review_index, review in quality_feedback for context_index, context in reviewed_contexts),
+            'independent_review_validates_completion': bool(final_reviews) and all(
+                finish.get('quality_review_key') in {item['review_key'] for item in final_reviews} for finish in successful_finishes),
+            'successful_stage_review_reused_when_available': all(
+                finish.get('quality_review_key') in {review['review_key'] for _, review in successful_stage}
+                for finish in successful_finishes) if successful_stage else True,
             'undo_restores_original_scene': undone['elements'] == before['elements'],
             'redo_restores_edited_scene': redone['elements'] == final['elements'],
         }
@@ -120,6 +134,7 @@ def main():
                   'pages': [{'actor_id': entry['agent_id'], 'offset': page['offset'], 'returned_count': page['returned_count'],
                              'matching_count': page['matching_count'], 'scene_state': page['scene_state']} for entry, page in pages],
                   'checks': checks, 'tool_error_count': len(errors), 'passed': all(checks.values()),
+                  'stage_reuse_applicable': bool(successful_stage),
                   'scope': 'real model child pagination and exact-object editing; not whole-art visual acceptance'}
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')

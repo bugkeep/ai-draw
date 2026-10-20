@@ -112,13 +112,17 @@ def test_reviewer_receives_its_own_full_schema_error_only_for_the_same_task_pixe
             assert json.loads(messages[-1]['content'])['assessment_format_repair'] == failure
             assert failure['review_response'] == fixture['response']
             assert runtime.quality.current_review(task['id'], config, initial)[1] is None
-            assert runtime.quality.context(task['id'], config, initial) == ([], [])
+            main_feedback, keys = runtime.quality.context(task['id'], config, initial)
+            assert keys == [key]
+            assert json.loads(main_feedback[-1]['content'])['current_drawing_review_error'] == failure
             assert len(assessment_messages([])) == 2
             changed_key, _ = runtime.quality.current_review(task['id'], config.model_copy(update={'model': 'another-model'}), initial)
             assert runtime.quality.schema_feedback(task['id'], changed_key) is None
+            assert runtime.quality.context(task['id'], config.model_copy(update={'model': 'another-model'}), initial) == ([], [])
             changed = store.commit_action(initial['id'], {'kind': 'create_element', 'args': {'type': 'ellipse'}}, {})['document']
             changed_key, _ = runtime.quality.current_review(task['id'], config, changed)
             assert runtime.quality.schema_feedback(task['id'], changed_key) is None
+            assert runtime.quality.context(task['id'], config, changed) == ([], [])
             later = store.create_task(session['id'])
             runtime.quality.begin(later['id'], initial, '画一个圆')
             assert runtime.quality.schema_feedback(later['id'], key) is None

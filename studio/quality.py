@@ -190,7 +190,14 @@ class DrawingQuality:
     def context(self, task_id, config, document):
         key, result = self.current_review(task_id, config, document)
         if result is None:
-            return [], []
+            feedback = self.schema_feedback(task_id, key)
+            if feedback is None:
+                return [], []
+            return [{'role': 'user', 'content': json.dumps({'current_drawing_review_error': feedback['result'],
+                'review_key': key, 'instruction': 'The current independent review returned an invalid report, so '
+                    'no drawing approval exists. Read the complete error and original response below. '
+                    'This is a review-format error, not evidence that the drawing needs a repair. '
+                    'The next independent assessment will use this feedback to correct its report.'}, ensure_ascii=False)}], [key]
         instruction = ('The actual current drawing passed independent review for this user request. '
                        'Settle any outstanding work and finish promptly; avoid introducing unrelated cosmetic changes.'
                        if result['ok'] else
