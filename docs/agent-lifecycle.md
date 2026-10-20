@@ -29,7 +29,7 @@
 | `apply_agent_result` | `result_id` | 主 Agent 查看当前候选图后接受结果，执行器依次提交尚未提交的动作 |
 | `reject_agent_result` | `result_id`、`reason` | 主 Agent 拒绝未提交部分，并保存原因；已提交内容保留在画布 |
 
-子 Agent 具有 `draw_paths`、`reshape_path`、`create_elements`、`create_element`、`select_elements`、`move_elements`、`update_elements`、`delete_elements`、`inspect_scene` 与本轮完成信号 `finish_drawing`。工具名称与参数在每次执行前校验，子 Agent 无法创建或控制其他 Agent。
+子 Agent 具有 `draw_paths`、`reshape_path`、`create_elements`、`create_element`、`select_elements`、`move_elements`、`update_elements`、`delete_elements` 与 `inspect_scene` 等绘图工具。工具名称与参数在每次执行前校验，子 Agent 无法创建或控制其他 Agent。
 
 每轮主 Agent 上下文默认附上一份可提交结果的候选图片。图片根据最新共享画布和该结果的剩余动作生成，保留其他 Agent 或用户后来增加的图形，并在绘制前检查全部目标及依赖。主 Agent 可以提交该结果、用 `view_agent_result` 查看另一个结果或局部图片，或通过 `reject_agent_result` 退回有问题的结果。
 
@@ -39,7 +39,7 @@
 
 画布概况保留近期对象和选择状态。`inspect_scene` 支持按 `ids`、名称文字与画布区域分页读取当前对象，因此较早的图形可以继续被定位和修改。`include_geometry=true` 将完整点列保存到原始结果，当前上下文继续使用结构化元数据；精确点列通过 `recall_memory` 按对象分页取回，再交给 `reshape_path`。
 
-`finish_drawing` 的 `summary` 是完成后的简短说明。该工具应位于本轮全部绘图工具之后；前面的任何工具失败，都会返回对应的 `function_call_output` 并要求 Agent 读取错误后继续处理。主 Agent 仍有运行工作或待处理结果时，完成信号也会返回错误。成功的完成信号允许省去一轮仅返回文本的模型调用。
+模型回复没有 `tool_calls` 时交付本次候选；`tool_calls` 缺失、`null` 或空数组具有相同含义。主 Agent 的候选经过整幅画图片评审，通过后才能完成任务；未通过的完整缺陷反馈进入下一次上下文，继续调用工具修正。仍有运行子 Agent 或待处理结果时，主 Agent 需要先处理这些工作。每个工具错误保持原 `call_id`，完整进入下一次真实模型请求。`completion_candidate` 记录自然交付信号及检查结果。
 
 子 Agent 的草稿在完成当前输入前经过独立图片复查。`DraftReview` 使用同一模型连接、独立且无绘图工具的上下文，检查当前输入的完成标准、开始时的私有草稿、当前全图、所需局部图和该子 Agent 实际查看的参考图。检查只针对本次输入及新增损坏；构图阶段可以留待后续补充五官，局部修改无需修复无关旧内容。返回包含 `ready`、`repair` 或 `blocked`、可见依据、具体缺陷、当前对象编号和下一步建议。子 Agent 的大量历史工具记录不进入复查请求。
 
@@ -53,13 +53,13 @@
 
 发生实际图形变化后，复查可比较同一输入中上一份已经送达的草稿与当前草稿，并返回 `revision`。`change` 区分 `preparation`、`improved`、`ineffective` 和 `regressed`；无效修正或退步需要给出不同的 `next_strategy`。上一份图片及少量动作类型、对象名称进入检查请求，长参数和几何继续留在 SQLite。比较只使用本次运行的完整草稿图片，当前对象编号会重新核对。
 
-仅删除或擦除旧线条时继续准备绘图。存在新绘制、重塑、移动等实际修正，且独立图片判断为无效或退步时，runtime 将本次输入交回主 Agent：执行进入 Final，`completion.status="blocked"`、`reason="ineffective_repair"`、`stopped_by="runtime_visual_review"`，同时保存原动作、具体问题与下一种方法。该转换根据图片和动作语义判断，不设置调用次数或时间期限。存在未读工具错误时先完整送达，再交回。
+仅删除或擦除旧线条时继续准备绘图。存在新绘制、重塑、移动等实际修正，且独立图片判断为无效或退步时，反馈提供不同的 `next_strategy`，子 Agent 可以继续使用工具修正。子 Agent 返回空工具调用后才交付该输入；当前候选仍未通过时保存 `completion.status="blocked"`，适用时包含 `reason="ineffective_repair"`、原动作、具体问题与下一种方法。不设置调用次数或时间期限。未读工具错误始终完整进入下一次模型请求。
 
 主 Agent 从结果 JSON 读取问题与下一种方法，审阅候选，调整参考证据、当前阶段或具体部位，再复用原子 Agent 或安排新工作。`model_context.replan_run_ids` 从实际发送的主 Agent 上下文提取，记录哪些未完成交回已经进入模型请求。主 Agent 保留整幅作品的目标与待办事项，当前阶段结束不代表整幅作品通过。
 
 同一份候选只有局部需要修正时，调度流程应保留待提交结果，使用 `send_input` 给原子 Agent 指派一个具体部位。下一条私有草稿继承该 Agent 尚未提交的结果，继续使用原对象编号，并记录提交依赖。主 Agent 审阅修正后的组合，按依赖顺序提交。`reject_agent_result` 放弃该结果的全部剩余动作；拒绝后的结果不会进入后续输入的起始草稿，因此该工具用于放弃整份候选。
 
-子 Agent 使用 `finish_drawing({"summary":"…","completion_status":"ready"})` 请求完成本次输入，省略 `completion_status` 时同样按 `ready` 处理。图片复查不通过时，真实工具返回携带完整问题，要求下一轮读取并修正。确实缺少前置条件或输入要求冲突时，子 Agent 在读取当前复查后可以使用 `completion_status="blocked"` 和非空 `unresolved` 数组交回未完成工作。该输入进入 Final，其结果保留已准备动作，并附 `completion.status="blocked"`；主 Agent 需要处理阻碍、调整输入或安排修正，并继续审阅候选图片。执行结束不等于绘画通过。
+子 Agent 返回没有工具调用的简短说明后结束当前输入，图片复查为候选附上 `ready` 或 `blocked` 标记。未通过的候选保留已准备动作，`unresolved`、`findings` 和 `next_action` 保存具体未解决问题；评审请求或格式出错时，`review_error` 保留完整错误与原始响应。主 Agent 需要阅读这些内容，处理阻碍、调整输入或安排修正，并继续审阅候选图片。局部输入结束与整幅作品通过分别记录。
 
 `draft_review_baselines` 保存每条输入实际开始时的私有草稿，包括前序尚未提交的依赖结果。`draft_reviews` 保存复查、对应图片和发送状态，`agent_completion_notes` 保存完成或阻碍说明。关闭恢复保留这些记录；主 Agent 的整幅画质量检查与共享画布提交仍按原流程执行。纯资料研究输入没有绘图动作时不增加草稿复查请求。
 
@@ -106,7 +106,7 @@ stateDiagram-v2
 
 主 Agent 可以在一个结果完成后立即审核并提交，其余 Agent 继续准备。主 Agent 回复最终内容前，runtime 检查是否还有本任务的运行工作或待审核结果。运行工作需要完成或关闭，结果需要提交或明确拒绝。
 
-完成调度由同一个入口处理普通回复和 `finish_drawing`。有画布修改、选择修改、绘图工具尝试或私有绘图动作时，沿用独立图片评审。起始与当前画布一致且没有绘图工作时，harness 检查原始要求、拟发送的文字、当前图片及本任务实际结果：说明、状态和报告请求可以通过文字检查完成；任何绘图或混合请求仍转入原有图片评审。文字检查不会把旧的图片评审改成通过。
+完成调度由模型的空工具调用触发。有画布修改、选择修改、绘图工具尝试或私有绘图动作时，沿用独立图片评审。起始与当前画布一致且没有绘图工作时，harness 检查原始要求、拟发送的文字、当前图片及本任务实际结果：说明、状态和报告请求可以通过文字检查完成；任何绘图或混合请求仍转入图片评审。文字检查不会把旧的图片评审改成通过。绘图候选没有说明文字时仍检查实际图片，通过后采用评审摘要；说明类请求需要提供所要求的回复内容。
 
 文字检查使用当前任务、画布、回复内容、证据和模型配置生成缓存标识，修改回复后重新检查。格式错误完整返回后续上下文，并在再次检查时交给评审模型修正格式。完成前再次核对画布与子 Agent 状态；评审期间画布变化时要求检查当前内容。
 

@@ -86,25 +86,6 @@ class InspectScene(ToolInput):
                     "restart with offset=0 AND expected_scene_state='' (or omit the token).")
 
 
-class FinishDrawing(ToolInput):
-    summary: str = Field(min_length=1)
-
-
-class FinishChildDrawing(FinishDrawing):
-    completion_status: Literal['ready', 'blocked'] = Field(default='ready',
-        description='ready requests independent review of this pass. blocked hands an explicitly unfinished '
-                    'candidate back to the main Agent; it is not approval of this pass or the whole artwork.')
-    unresolved: list[str] = Field(default_factory=list)
-
-    @model_validator(mode='after')
-    def check_unresolved(self):
-        if self.completion_status == 'blocked' and not any(item.strip() for item in self.unresolved):
-            raise ValueError('A blocked input needs explicit unresolved items for the main Agent')
-        if self.completion_status == 'ready' and self.unresolved:
-            raise ValueError('Use completion_status=blocked when unresolved input requirements remain')
-        return self
-
-
 class ViewCanvas(ToolInput):
     region: CanvasRegion | None = None
 
@@ -248,7 +229,6 @@ DRAWING_INPUTS = {
     "update_elements": UpdateElements,
     "delete_elements": DeleteElements,
     "inspect_scene": InspectScene,
-    "finish_drawing": FinishDrawing,
     "view_canvas": ViewCanvas,
 }
 REFERENCE_INPUTS = {
@@ -267,12 +247,12 @@ LIFECYCLE_INPUTS = {
     "view_agent_result": ViewAgentResult,
     "reject_agent_result": RejectAgentResult,
 }
-CHILD_INPUTS = {**DRAWING_INPUTS, **REFERENCE_INPUTS, **MEMORY_INPUTS, 'finish_drawing': FinishChildDrawing}
+CHILD_INPUTS = {**DRAWING_INPUTS, **REFERENCE_INPUTS, **MEMORY_INPUTS}
 CHILD_TOOL_NAMES = frozenset(CHILD_INPUTS)
 CHILD_PEN_TOOLS = frozenset({'draw_paths', 'reshape_path'})
 MAIN_INPUTS = {**{name: model for name, model in CHILD_INPUTS.items() if name not in CHILD_PEN_TOOLS},
                **LIFECYCLE_INPUTS, 'create_element': MainCreateElement, 'create_elements': MainCreateElements,
-               'create_reference_layout': CreateReferenceLayout, 'finish_drawing': FinishDrawing}
+               'create_reference_layout': CreateReferenceLayout}
 MAIN_TOOL_NAMES = frozenset(MAIN_INPUTS)
 
 
@@ -332,7 +312,6 @@ DRAWING_TOOLS = [
     definition("update_elements", "Update existing ids using patch, including text, position, size and colors.", UpdateElements),
     definition("delete_elements", "Delete existing objects by ids.", DeleteElements),
     definition("inspect_scene", "Read a structured page of CURRENT object IDs and metadata with memory_ref. Optional ids requests specific objects; query is a literal case-insensitive name/text substring, so use search_memory for multiple search words. Optional region x/y/width/height finds objects intersecting the same coordinates as view_canvas. Filters combine. Follow scene.next_page unchanged to retrieve every match; the page carries a scene_state which detects intervening canvas or private-draft edits. Restart from offset 0 after such edits. Pages limit response size, not the number of drawing objects or actions. include_geometry=true saves full points in the raw SQLite record while context contains object metadata. For precise current points, call recall_memory with element_id and follow its point pages.", InspectScene),
-    definition("finish_drawing", "Finish after inspecting the latest actual canvas image, with a brief summary in the user's language. Any drawing changes since the last image require another visual inspection before completion. Put this last; preceding tools must succeed. Main Agents must settle child work and results. Main completion runs an independent visual review against the user request and initial canvas; blocking findings return as a tool error with concrete repairs. Repair the drawing and inspect it before trying again; the same unchanged scene reuses its review. Tool errors always return to your context. Do not claim visual quality from object names or counts.", FinishDrawing),
 ]
 LIFECYCLE_TOOLS = [
     definition("spawn_agent", "Start a persistent child Agent asynchronously. Return agent_id, nickname, input_id and run_id immediately. Assign a self-contained drawing goal with shared layout bounds and connector positions, or a research goal with source requirements. Children return private drawing results or research summaries for your review.", SpawnAgent),
@@ -349,17 +328,7 @@ MEMORY_TOOL_DEFINITIONS = [
     definition('recall_memory', 'Retrieve precisely what is needed. Pass element_id for CURRENT native geometry, with point_offset/point_limit pages and total point_count; all pages are available. Pass memory_ref for a saved summary, original tool arguments or full output, with offset/max_chars JSON text pages. Historical records do not prove current geometry. Prefer one object over a broad full-scene geometry query; delegate extensive geometry work to a child.', RecallMemory),
     definition('compact_context', 'Save durable structured working memory before replacing conversational detail: goal, decisions/constraints, completed work, pending work, important object IDs and optional evidence_refs containing exact memory_ref values already returned to you. Put web reference_id and drawing result_id values in summary or constraints. Use the current working_memory revision. Successful calls replace earlier conversational detail with these notes; complete raw calls remain searchable in SQLite. Current errors still reach the next context in full. Notes are not a drawing commit or proof of completion.', CompactContext),
 ]
-CHILD_TOOLS = [definition('finish_drawing',
-    'Publish the prepared result for this child input once its assigned structure and drawing-pass criterion are met. '
-    'Inspect the actual current private-draft image, fix concrete defects within the assigned structure, '
-    'then put this call last with a concise summary of the prepared changes. The main Agent combines regions, '
-    'reviews the full artwork and assigns later passes through new inputs. All tool errors must reach your next context '
-    'before completing. Drawing changes since the last image require another inspection. '
-    'Runtime independently reviews this assigned pass before accepting ready. Blocking findings return to your context; '
-    'repair them. If a concrete prerequisite/constraint prevents completion, use completion_status=blocked with explicit '
-    'unresolved items to hand the unfinished candidate back to the main Agent.', FinishChildDrawing)
-    if item['function']['name'] == 'finish_drawing' else item for item in DRAWING_TOOLS
-] + REFERENCE_TOOLS + [{**item, 'function': {**item['function'],
+CHILD_TOOLS = DRAWING_TOOLS + REFERENCE_TOOLS + [{**item, 'function': {**item['function'],
     'description': item['function']['description'].replace('delegate extensive geometry work to a child.',
         'you cannot delegate; complete your assigned input or report its concrete blocker.')}} for item in MEMORY_TOOL_DEFINITIONS]
 MAIN_TOOLS = [{**item, 'function': {**item['function'],

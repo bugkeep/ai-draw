@@ -72,7 +72,7 @@ class ReplyCompletion:
         document = self.store.get_document(baseline['document']['id'])
         if review_scene_key(document) != review_scene_key(baseline['document']):
             return None
-        writes = (set(DRAWING_INPUTS) - {'inspect_scene', 'view_canvas', 'finish_drawing'}) | TRACE_TOOLS | {'apply_agent_result'}
+        writes = (set(DRAWING_INPUTS) - {'inspect_scene', 'view_canvas'}) | TRACE_TOOLS | {'apply_agent_result'}
         with self.store.lock:
             calls = self.store.connection.execute('SELECT call_id,name,output FROM agent_tool_calls WHERE task_id=?',
                                                   (task_id,)).fetchall()
@@ -84,7 +84,7 @@ class ReplyCompletion:
         if committed or prepared or any(row['name'] in writes for row in calls):
             return None
         errors = [{'call_id': row['call_id'], 'name': row['name'], 'output': json.loads(row['output'])}
-                  for row in calls if row['name'] != 'finish_drawing' and row['output'] is not None
+                  for row in calls if row['output'] is not None
                   and json.loads(row['output']).get('ok') is False]
         history = self.store.context_messages(self.store.get_task(task_id)['session_id'], task_id)
         return {'current_user_request': baseline['request'],

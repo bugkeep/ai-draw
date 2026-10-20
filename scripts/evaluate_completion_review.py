@@ -31,16 +31,41 @@ async def evaluate(args):
         pictures, ids = await runtime.vision.context(task_id, 'main', f'main:{task_id}', document)
         model = DrawingAgents(store, config)
         # This is an actual image request. No synthetic model reply or delivered marker is substituted.
-        await model.respond(task_id, 'main', 1, [{'role': 'system', 'content':
+        response = await model.respond(task_id, 'main', 1, [{'role': 'system', 'content':
             'Describe the supplied actual canvas briefly. This is a read-only verification; do not draw or call any tools.'},
             *pictures], observation_ids=ids)
         runtime.vision.delivered(task_id, f'main:{task_id}', ids)
-        return model
+        return model, response
 
-    async def finish(task, models, call_id):
-        return await runtime.call_main_tool(models, task['id'], task['session_id'],
-            store.session_document_id(task['session_id']), {'id': call_id,
-                'function': {'name': 'finish_drawing', 'arguments': json.dumps({'summary': '完成本轮指定内容。'})}})
+    async def candidate(task, models, response):
+        if response.get('tool_calls'):
+            raise ValueError('Read-only verification returned tool calls instead of a natural candidate')
+        result = await runtime._complete_task(models, task['id'], task['session_id'],
+            store.session_document_id(task['session_id']), str(response.get('content') or '').strip())
+        store.log_tool(task['id'], 'main', 0, 'completion_candidate', {
+            'source': 'no_tool_calls', 'origin': 'explicit_runtime_boundary_verification', 'result': result})
+        return result
+
+    async def send_feedback(task, models, result):
+        document = store.get_document(store.session_document_id(task['session_id']))
+        feedback, keys = runtime.quality.context(task['id'], config, document)
+        pictures, ids = await runtime.vision.context(task['id'], 'main', f"main:{task['id']}", document)
+        response = await models.respond(task['id'], 'main', 2, [{'role': 'system', 'content':
+            'Read the supplied whole-image review and describe its concrete outstanding defects or report-format error. '
+            'This is a read-only verification; do not draw or call tools.'},
+            {'role': 'user', 'content': json.dumps(result, ensure_ascii=False)}, *feedback, *pictures],
+            observation_ids=ids, quality_review_keys=keys)
+        runtime.vision.delivered(task['id'], f"main:{task['id']}", ids)
+        return response
+
+    async def review_candidate(task, models, response):
+        errors = []
+        output = await candidate(task, models, response)
+        while output.get('error_kind') == 'assessment_format':
+            errors.append(output)
+            response = await send_feedback(task, models, output)
+            output = await candidate(task, models, response)
+        return output, errors
 
     def quality_requests(task_id):
         return sum(item['agent_id'] == 'quality' and item['kind'] == 'llm_response'
@@ -55,24 +80,28 @@ async def evaluate(args):
         native = json.loads(args.rejected_artwork.read_text(encoding='utf-8'))
         document = store.save_snapshot(session['document']['id'], 0, native['elements'], [])
         history = store.get_history(document['id'], 'undo')
-        models = await show_main(task['id'], document)
-        output = await finish(task, models, 'reject-incomplete-art')
-        checks['incomplete_artwork_rejected_at_finish'] = output.get('ok') is False and bool(output.get('assessment'))
+        models, response = await show_main(task['id'], document)
+        output, schema_errors = await review_candidate(task, models, response)
+        checks['incomplete_artwork_rejected_at_candidate'] = output.get('ok') is False and bool(output.get('assessment'))
         count = quality_requests(task['id'])
-        repeated = await finish(task, models, 'same-image-retry')
+        repeated = await candidate(task, models, response)
         checks['unchanged_negative_review_reused_without_request'] = (
-            repeated.get('cached') is True and repeated.get('ok') is False and quality_requests(task['id']) == count == 2)
+            repeated.get('cached') is True and repeated.get('ok') is False and quality_requests(task['id']) == count)
         checks['review_did_not_change_artwork_or_history'] = (
             store.get_document(document['id']) == document and store.get_history(document['id'], 'undo') == history)
+        await send_feedback(task, models, output)
         logs = store.tool_logs(task['id'])
-        checks['failure_in_full_tool_output'] = output.get('ok') is False and bool(output.get('assessment')) and any(item['kind'] == 'function_call_output' and
-            json.loads(item['payload']['output']).get('assessment') == output.get('assessment') for item in logs)
+        checks['failure_returned_in_full_and_sent_to_main_context'] = (
+            output.get('ok') is False and bool(output.get('assessment')) and any(
+                item['kind'] == 'completion_candidate' and item['payload']['result'] == output for item in logs)
+            and any(item['kind'] == 'model_context' and output['review_key'] in item['payload'].get('quality_review_keys', [])
+                    for item in logs))
         contexts = [item['payload'] for item in logs if item['kind'] == 'quality_context']
         checks['independent_review_uses_images_without_drawing_tool_history'] = (
-            len(contexts) == 1 and bool(contexts[0]['image_observation_ids']) and
-            not contexts[0]['drawing_tool_history_included'] and contexts[0]['message_count'] == 2)
+            bool(contexts) and all(bool(item['image_observation_ids']) and not item['drawing_tool_history_included']
+                and item['message_count'] == (3 if item['schema_feedback_included'] else 2) for item in contexts))
         reports.append({'case': 'previous_actual_incomplete_artwork', 'session_id': session['id'],
-                        'task_id': task['id'], 'output': output})
+                        'task_id': task['id'], 'output': output, 'schema_errors': schema_errors})
 
         local = store.create_session('局部精确编辑完成检查')
         red = create_native_element({'type': 'ellipse', 'name': '红色圆', 'x': 40, 'y': 60,
@@ -86,17 +115,22 @@ async def evaluate(args):
         runtime.quality.begin(edit['id'], before, request)
         after = store.commit_action(before['id'], {'kind': 'move_elements', 'args': {
             'ids': [red['id']], 'dx': 20, 'dy': 0}}, {})['document']
-        models = await show_main(edit['id'], after)
-        passed = await finish(edit, models, 'approve-precise-edit')
-        checks['correct_local_edit_approved_at_finish'] = passed.get('ok') is True and bool(passed.get('quality_review_key'))
+        models, response = await show_main(edit['id'], after)
+        passed, schema_errors = await review_candidate(edit, models, response)
+        checks['correct_local_edit_approved_at_candidate'] = passed.get('ok') is True and bool(passed.get('quality_review_key'))
         current = store.get_document(after['id'])
         checks['original_ids_and_other_object_preserved'] = (current['elements'][0]['id'] == red['id'] and
             current['elements'][0]['x'] == red['x'] + 20 and
             element_fingerprint(current['elements'][1]) == element_fingerprint(blue))
+        count = quality_requests(edit['id'])
         cached = await runtime.quality.assess(edit['id'], config)
-        checks['unchanged_positive_review_reused_without_request'] = cached.get('ok') is True and cached.get('cached') is True and quality_requests(edit['id']) == 2
+        empty_summary = await runtime._complete_task(models, edit['id'], edit['session_id'], after['id'], '')
+        checks['unchanged_positive_review_reused_without_request'] = cached.get('ok') is True and cached.get('cached') is True and quality_requests(edit['id']) == count
+        checks['empty_candidate_text_uses_approved_image_summary'] = (
+            empty_summary.get('ok') is True and empty_summary['summary'] == cached['assessment']['summary'])
         checks['reviews_isolated_between_tasks'] = cached.get('review_key') != output.get('review_key')
-        reports.append({'case': 'precise_local_edit', 'session_id': local['id'], 'task_id': edit['id'], 'output': cached})
+        reports.append({'case': 'precise_local_edit', 'session_id': local['id'], 'task_id': edit['id'],
+                        'output': cached, 'schema_errors': schema_errors})
         result = {'provider': config.provider, 'model': config.model, 'checks': checks, 'results': reports,
             'passed': all(checks.values()), 'latency_ms': round((time.perf_counter() - started) * 1000, 1),
             'tool_origin': 'explicit_runtime_calls_after_actual_main_model_image_delivery',

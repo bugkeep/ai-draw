@@ -5,7 +5,7 @@ import json
 from .actions import apply_action, matches_fingerprint
 from .agent_tools import validate_tool
 from .agents import DrawingAgents, prepare_drawing_tool, recent_tool_messages, validate_child_tool
-from .errors import AgentOutputError, validation_summary
+from .errors import validation_summary
 from .settings import ModelConfig, ModelSettings
 from .research import DrawingResearch, RESEARCH_TOOLS
 from .store import StudioStore, VersionConflict
@@ -154,24 +154,22 @@ class AgentManager:
         self.draft_reviews.begin(run)
         return run
 
-    async def _completion(self, models, run, args):
+    async def _completion(self, models, run, summary):
         review = await self.draft_reviews.review(run, models.settings, {'completion_candidate': True})
-        blocked = args.get('completion_status') == 'blocked'
-        if not review['ok'] and (not blocked or not self.draft_reviews.observed(run['id'], review.get('review_key'))):
-            return {'ok': False, 'error': 'This assigned pass has not passed private-draft review. '
-                'Read these findings, correct the concrete defect and inspect the changed image. '
-                'If a concrete prerequisite/constraint prevents completion, explicitly hand it back with '
-                'completion_status=blocked and unresolved items after reading this feedback.', 'draft_review': review}
         assessment = review.get('assessment') or {}
-        return {'ok': True, 'summary': args['summary'], 'completion': {
-            'status': 'blocked' if blocked else 'ready', 'unresolved': args.get('unresolved', []),
+        replan = self.draft_reviews.replan_completion(run, review)
+        return {'summary': summary or assessment.get('visible_state') or review.get('error') or '未准备绘图修改。',
+            'completion': {
+            'status': 'ready' if review['ok'] else 'blocked',
+            'unresolved': [finding['defect'] for finding in assessment.get('findings', [])]
+                or ([review['error']] if review.get('error') else []),
             'review_key': review.get('review_key'), 'review_status': review['status'],
             'visible_state': assessment.get('visible_state', review.get('error', '')),
             'findings': assessment.get('findings', []),
-            **({'reason': 'ineffective_repair', 'revision': assessment['revision'],
-                'next_strategy': assessment['revision']['next_strategy']}
-               if (assessment.get('revision') or {}).get('change') in {'ineffective', 'regressed'}
-                   and review.get('constructive_correction') else {})}}
+            'next_action': assessment.get('next_action', ''),
+            **(replan or {}),
+            **({'review_error': review} if review['status'] == 'error' else {}),
+            'source': 'no_tool_calls'}}
 
     def _review_history(self, run, review, history):
         if (not review or review['status'] == 'error'
@@ -262,15 +260,6 @@ class AgentManager:
                 repeated = self.memory.repeated_read(run['id'], f"{run['id']}:{len(run['prepared'])}")
                 review = await self.draft_reviews.review(run, models.settings,
                     {'repeated_read': repeated} if repeated else self.draft_reviews.follow_up(run))
-                completion = self.draft_reviews.replan_completion(run, review) if review else None
-                if completion:
-                    summary = completion['visible_state'] + '\n' + completion['next_strategy']
-                    result = self.records.complete_run(session_id, run['id'], summary, completion=completion)
-                    self.store.log_tool(run['owner_task_id'], run['agent_id'], round_number,
-                        'agent_replan_handoff', {'run_id': run['id'], 'completion': completion})
-                    self.store.log_tool(run['owner_task_id'], run['agent_id'], round_number, 'agent_result', result)
-                    await self._notify(session_id, run['agent_id'], result)
-                    return
                 if review and review['status'] != 'error':
                     history = self._review_history(run, review, history)
                     if review['status'] == 'repair':
@@ -296,31 +285,19 @@ class AgentManager:
             calls = message.get("tool_calls", [])
             if not calls:
                 summary = str(message.get("content") or "").strip()
-                if not summary:
-                    raise AgentOutputError("子 Agent 未返回工具调用或完成说明。")
                 if run['prepared']:
                     self.vision.require_review(run['owner_task_id'], run['id'], {
                         **run['document'], 'elements': run['draft'], 'selection': run['selection']})
-                completion = await self._completion(models, run, {'summary': summary})
-                if not completion['ok']:
-                    notice = {'role': 'user', 'content': json.dumps({'draft_completion_deferred':
-                        completion['draft_review'].get('review_key'), 'instruction': completion['error']}, ensure_ascii=False)}
-                    if notice not in history:
-                        history.append(notice)
-                    self.records.finish_response(run['id'], history)
-                    self.store.log_tool(run['owner_task_id'], run['agent_id'], round_number,
-                        'draft_completion_deferred', {'run_id': run['id'], **completion})
-                    continue
-                result = self.records.complete_run(session_id, run["id"], summary, completion=completion['completion'])
+                completion = await self._completion(models, run, summary)
+                self.store.log_tool(run['owner_task_id'], run['agent_id'], round_number,
+                    'completion_candidate', {'run_id': run['id'], 'source': 'no_tool_calls', 'result': completion})
+                result = self.records.complete_run(session_id, run["id"], completion['summary'], completion=completion['completion'])
                 self.store.log_tool(run["owner_task_id"], run["agent_id"], round_number, "agent_result", result)
                 await self._notify(session_id, run["agent_id"], result)
                 return
             exchange = [message]
-            errors = False
-            completed_summary = None
-            completed_info = None
             compacted = False
-            for index, call in enumerate(calls):
+            for call in calls:
                 name, raw_args = call["function"]["name"], call["function"]["arguments"]
                 self.store.log_tool(run["owner_task_id"], run["agent_id"], round_number, "function_call", {
                     "type": "function_call", "call_id": call["id"], "name": name,
@@ -332,15 +309,7 @@ class AgentManager:
                     try:
                         validate_child_tool(name)
                         args = json.loads(raw_args)
-                        if name == "finish_drawing":
-                            args = validate_tool(name, args, child=True)
-                            if errors or index != len(calls) - 1:
-                                raise ValueError("Read all tool errors before completing; finish_drawing must be last.")
-                            if run['prepared']:
-                                self.vision.require_review(run['owner_task_id'], run['id'], {
-                                    **run['document'], 'elements': run['draft'], 'selection': run['selection']})
-                            output = await self._completion(models, run, args)
-                        elif name in MEMORY_TOOLS:
+                        if name in MEMORY_TOOLS:
                             args = validate_tool(name, args, child=True)
                             output = self.memory.call(run['owner_task_id'], run['agent_id'], name, args, {
                                 **run['document'], 'elements': run['draft'], 'selection': run['selection']})
@@ -381,10 +350,6 @@ class AgentManager:
                             run["prepared"].extend(actions)
                     except (ValueError, KeyError, TypeError) as exc:
                         output = {"ok": False, "error": validation_summary(exc)}
-                errors = errors or output.get("ok") is False
-                if name == "finish_drawing" and output.get("ok"):
-                    completed_summary = output["summary"]
-                    completed_info = output.get('completion')
                 compacted = compacted or name == 'compact_context' and output.get('ok') is True
                 if not cached:
                     self.records.finish_call(run["id"], call["id"], output, run)
@@ -398,8 +363,3 @@ class AgentManager:
                 })
                 await asyncio.sleep(0)
             self.records.finish_response(run["id"], recent_tool_messages(([] if compacted else history) + exchange))
-            if completed_summary is not None and not errors:
-                result = self.records.complete_run(session_id, run["id"], completed_summary, completion=completed_info)
-                self.store.log_tool(run["owner_task_id"], run["agent_id"], round_number, "agent_result", result)
-                await self._notify(session_id, run["agent_id"], result)
-                return

@@ -196,6 +196,12 @@ python -m scripts.verify_history_migration --source-database runs/studio.sqlite3
 python -m scripts.evaluate_completion_review --rejected-artwork PATH.excalidraw --drawing-request "该作品原本应完成的绘图要求" --database runs/completion-review.sqlite3 --output runs/completion-review.json
 ```
 
+自然交付流程以模型回复中没有工具调用为候选信号。当前真实模型边界检查为 10/10 项通过：拒绝实际缺陷人物图、把完整评审交给下一次模型请求、允许正确局部移动、保持其他对象与历史、复用当前评审并隔离任务。没有说明文字的绘图候选通过图片检查后使用评审摘要。记录为 `runs/natural-completion-boundary-r2-20261020.json`，该检查显式调用实际完成入口，完整成图质量单独验收。
+
+评审格式错误保持未通过状态，完整响应进入后续上下文。边界检查按相同流程发送实际反馈，再请求更正报告，原始格式错误保存在结果的 `schema_errors` 和 SQLite 中；评分提示与五个视觉维度保持固定。独立评审请求不包含绘图工具历史，格式恢复只附加该评审自己的错误。
+
+同版本的完整分页编辑流程为 17/17 项通过，用时 139.44 秒：子 Agent 通过自然回复交付局部候选，主 Agent 预览和提交，当前整图通过独立评审后完成，其他笔画与撤销重做保留。记录为 `runs/natural-completion-scene-paging-20261020.json`。后端检查为 226 项通过；两轮实际说明请求也完成，画布保持不变，记录为 `runs/natural-completion-reply-20261020.json`。这些检查验证自然交付与编辑行为，整幅作品的质量和延迟继续按题目评测。
+
 五类题材仍分别验收。没有独立检查的旧版本山水测试完成于 486.77 秒，但桥岸连接和线条质量仍不满意；同版本捧杯人物在最后保存活动为 3,162.60 秒时仍有头颈比例及握杯关系缺陷，评测进程退出后通过项目的中断恢复流程核实为 `cancelled`。现场及中断过程记录为 `runs/drawing-quality-preview-20261020/portrait-with-prop-cancelled.json`、原生文件和 PNG。它不是完成延迟或成功作品。其余题材的新版实际绘图继续单独评测，不以编辑功能检查代替视觉验收。
 
 新的 `evaluate_quality` 运行会将实际使用的实现文件复制到输出目录的 `implementation/`，与 SHA-256 一起保存。重新检查已有任务时保留原绘图实现、原要求与题目标识，当前评测实现及题目标识另外记录；缺少旧版本标识时保留未知状态，不把当前代码当成旧任务的绘图版本。

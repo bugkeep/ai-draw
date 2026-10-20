@@ -82,9 +82,9 @@ def main():
         successful_stage = [(index, review) for index, review in quality_reviews if review['result']['ok'] and any(
             index < context_index and review['review_key'] in context['quality_review_keys']
             for context_index, context in reviewed_contexts)]
-        successful_finishes = [outputs[(entry['agent_id'], entry['payload']['call_id'])]
-            for entry in calls if entry['agent_id'] == 'main' and entry['payload']['name'] == 'finish_drawing'
-            and outputs.get((entry['agent_id'], entry['payload']['call_id']), {}).get('ok')]
+        successful_candidates = [entry['payload']['result'] for entry in logs
+            if entry['agent_id'] == 'main' and entry['kind'] == 'completion_candidate'
+            and entry['payload']['source'] == 'no_tool_calls' and entry['payload']['result'].get('ok')]
         final_reviews = [review for _, review in quality_reviews if review['result']['ok']
                          and review['result']['scene_key'] == review_scene_key(final)]
         undone = store.history_step(document_id, 'undo')
@@ -113,11 +113,12 @@ def main():
                 first_submission is not None and first_submission < review_index < context_index
                 and review['review_key'] in context['quality_review_keys']
                 for review_index, review in quality_feedback for context_index, context in reviewed_contexts),
-            'independent_review_validates_completion': bool(final_reviews) and all(
-                finish.get('quality_review_key') in {item['review_key'] for item in final_reviews} for finish in successful_finishes),
+            'independent_review_validates_completion': bool(final_reviews) and bool(successful_candidates) and all(
+                candidate.get('quality_review_key') in {item['review_key'] for item in final_reviews}
+                for candidate in successful_candidates),
             'successful_stage_review_reused_when_available': all(
-                finish.get('quality_review_key') in {review['review_key'] for _, review in successful_stage}
-                for finish in successful_finishes) if successful_stage else True,
+                candidate.get('quality_review_key') in {review['review_key'] for _, review in successful_stage}
+                for candidate in successful_candidates) if successful_stage else True,
             'undo_restores_original_scene': undone['elements'] == before['elements'],
             'redo_restores_edited_scene': redone['elements'] == final['elements'],
         }

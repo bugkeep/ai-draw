@@ -70,9 +70,11 @@ def test_reply_evidence_uses_actual_current_task_errors_and_preserved_canvas(tmp
                 'id': 'foreign', 'function': {'name': 'inspect_scene', 'arguments': json.dumps({'ids': ['foreign']})}})
             assert runtime.reply_completion.candidate(task['id']) == evidence
             blocked = await runtime.call_main_tool(models, task['id'], session['id'], session['document']['id'], {
-                'id': 'finish-error', 'function': {'name': 'finish_drawing', 'arguments': json.dumps({'summary': '说明'})}},
-                completion_error='Read every tool error before completing.')
-            assert not blocked['ok'] and runtime.reply_completion.candidate(task['id']) == evidence
+                'id': 'unknown', 'function': {'name': 'unknown_tool', 'arguments': '{}'}})
+            assert not blocked['ok']
+            current = runtime.reply_completion.candidate(task['id'])
+            assert current == {**evidence, 'tool_errors': [*evidence['tool_errors'],
+                {'call_id': 'unknown', 'name': 'unknown_tool', 'output': blocked}]}
         finally:
             await runtime.close()
             store.close()

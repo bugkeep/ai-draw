@@ -326,25 +326,24 @@ def test_completion_validates_child_work_and_preserves_tool_errors(tmp_path):
         store, runtime, session, task = workspace(tmp_path)
         models = DrawingAgents(store, ModelConfig(provider="local", model="drawing-model", api_base="http://localhost:1234/v1"))
 
-        async def call(call_id, name, arguments, **kwargs):
+        async def call(call_id, name, arguments):
             return await runtime.call_main_tool(models, task["id"], session["id"], session["document"]["id"], {
                 "id": call_id, "function": {"name": name, "arguments": json.dumps(arguments)},
-            }, **kwargs)
+            })
 
         invalid = await call("invalid", "move_elements", {"ids": ["missing"], "dx": 10, "dy": 0})
         assert invalid["ok"] is False and "not found" in invalid["error"].lower()
-        refused = await call("finish-with-error", "finish_drawing", {"summary": "完成"},
-                             completion_error="Read and handle every tool error before completing.")
-        assert refused["ok"] is False and "error" in refused["error"]
         child = store.agents.create_agent(session["id"], task["id"], "spawn", "绘制房屋", "House", [])
-        assert not (await call("finish-running", "finish_drawing", {"summary": "完成"}))["ok"]
+        with pytest.raises(ValueError, match='Settle active Agents'):
+            await runtime._complete_task(models, task['id'], session['id'], session['document']['id'], '完成')
         run = start_run(store, runtime, session, task, child)
         native_tool(store, run, "create", "create_element", {"type": "rectangle"})
         result = store.agents.complete_run(session["id"], run["id"], "房屋已准备")
-        assert not (await call("finish-pending", "finish_drawing", {"summary": "完成"}))["ok"]
+        with pytest.raises(ValueError, match='Settle active Agents'):
+            await runtime._complete_task(models, task['id'], session['id'], session['document']['id'], '完成')
         await runtime.apply_result(task["id"], session["id"], session["document"]["id"], result["result_id"])
-        unreviewed = await call("finish", "finish_drawing", {"summary": "完成"})
-        assert not unreviewed['ok'] and 'visual observation' in unreviewed['error']
+        with pytest.raises(ValueError, match='visual observation'):
+            await runtime._complete_task(models, task['id'], session['id'], session['document']['id'], '完成')
         errors = [json.loads(item["payload"]["output"]) for item in store.tool_logs(task["id"])
                   if item["kind"] == "function_call_output" and item["payload"]["call_id"] == "invalid"]
         assert errors == [invalid]

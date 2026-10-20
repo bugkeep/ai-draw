@@ -370,7 +370,7 @@ class DraftReview:
         document = {**run['document'], 'elements': run['draft'], 'selection': run['selection']}
         if unread or result['scene_hash'] != scene_digest(document) or result.get('selection') != document['selection']:
             return None
-        return {'status': 'blocked', 'reason': 'ineffective_repair', 'stopped_by': 'runtime_visual_review',
+        return {'status': 'blocked', 'reason': 'ineffective_repair',
                 'unresolved': [finding['defect'] for finding in assessment['findings']],
                 'review_key': result['review_key'], 'review_status': result['status'],
                 'visible_state': assessment['visible_state'], 'findings': assessment['findings'],
@@ -414,11 +414,12 @@ class DraftReview:
             'current_repair_targets': objects,
             'instruction': 'This independent review concerns your current input/pass and exact current draft, not the whole artwork. '
                 'Correct its concrete blocking finding using current IDs/images, rather than repeating unchanged broad reads. '
-                'Cleanup before redrawing is preparation; the main Agent handles a change of approach after an ineffective attempted correction. '
+                'Cleanup before redrawing is preparation. An ineffective correction needs the supplied different next strategy; '
+                'continue with your tools or explain the concrete issue to the main Agent. '
                 'Use canvas_region for a focused view_canvas when needed. A drawing change invalidates these findings. '
-                'When ready, finish this input; the main Agent still reviews and submits the result. '
-                'If a concrete prerequisite/constraint prevents completion, use finish_drawing with completion_status=blocked '
-                'and explicit unresolved items so the main Agent can take over. Never claim a blocked result is complete.'}, ensure_ascii=False)}
+                'Return a concise summary without tool calls to hand this input back; the main Agent still reviews and submits the result. '
+                'Include any unresolved issue in that summary. Runtime attaches the current scoped findings and marks '
+                'an unapproved draft blocked. Never claim a blocked result is complete.'}, ensure_ascii=False)}
 
     async def focus(self, run, result):
         if result['status'] != 'repair' or self.observed(run['id'], result.get('review_key')):

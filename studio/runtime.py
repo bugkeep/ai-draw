@@ -190,26 +190,21 @@ class DrawingRuntime:
                     }, ensure_ascii=False)}])
                     continue
                 reply = str(response.get("content") or "").strip()
-                if not reply:
-                    raise ValueError("主 Agent 未返回工具调用或完成说明。")
                 try:
                     completion = await self._complete_task(agents, task_id, session_id, document_id, reply)
                 except ValueError as error:
                     completion = {'ok': False, 'error': str(error)}
+                self.store.log_tool(task_id, 'main', round_number, 'completion_candidate', {
+                    'source': 'no_tool_calls', 'summary': reply, 'result': completion})
                 if not completion['ok']:
                     turns.append([response, {'role': 'user', 'content': json.dumps(completion, ensure_ascii=False)}])
                     continue
                 return completion['summary'], completion['partial']
             exchange = [response]
             errors = False
-            completed = None
             compacted = False
-            for index, call in enumerate(calls):
-                completion_error = ("Read and handle every tool error before completing."
-                                    if errors else "finish_drawing must be the last tool call in the response."
-                                    if index != len(calls) - 1 else "")
-                output = await self.call_main_tool(agents, task_id, session_id, document_id, call, round_number,
-                                                   completion_error=completion_error)
+            for call in calls:
+                output = await self.call_main_tool(agents, task_id, session_id, document_id, call, round_number)
                 current = self.store.get_document(document_id)
                 context_output = self.memory.for_context(task_id, 'main', f'main:{task_id}', call['id'],
                     call['function']['name'], call['function']['arguments'], output, f"{document_id}:{current['version']}")
@@ -219,14 +214,10 @@ class DrawingRuntime:
                 if call['function']['name'] == 'apply_agent_result' and output.get('ok') and output.get('changed_ids'):
                     review_pending = True
                 compacted = compacted or call['function']['name'] == 'compact_context' and output.get('ok') is True
-                if call["function"]["name"] == "finish_drawing" and output.get("ok"):
-                    completed = output
             if compacted:
                 turns.clear()
             turns.append(exchange)
             last_tools_failed = errors
-            if completed is not None and not errors:
-                return completed["summary"], completed["partial"]
 
     def _child_work_settled(self, session_id: str, task_id: str) -> bool:
         return (not any(agent['owner_task_id'] == task_id and agent['state'] == 'Running'
@@ -242,6 +233,10 @@ class DrawingRuntime:
             review = await self.quality.assess(task_id, models.settings)
         if not review['ok']:
             return review
+        if not summary:
+            if review.get('requested_output') == 'reply':
+                return {'ok': False, 'error': 'Provide the requested conversation reply before completing.'}
+            summary = review['assessment']['summary']
         if not self._child_work_settled(session_id, task_id):
             raise ValueError('Child work changed during completion review; settle current work before completing')
         if review_scene_key(self.store.get_document(document_id)) != review['scene_key']:
@@ -253,8 +248,7 @@ class DrawingRuntime:
             'partial': any(run['status'] in {'failed', 'paused', 'queued', 'running'} for run in runs)}
 
     async def call_main_tool(self, models: DrawingAgents, task_id: str, session_id: str,
-                             document_id: str, call: dict, round_number: int = 0,
-                             *, completion_error: str = "") -> dict:
+                             document_id: str, call: dict, round_number: int = 0) -> dict:
         caller_id = f"main:{task_id}"
         name, raw_args = call["function"]["name"], call["function"]["arguments"]
         self.store.agents.check_task(session_id, task_id)
@@ -268,11 +262,7 @@ class DrawingRuntime:
         if not cached:
             try:
                 args = validate_tool(name, json.loads(raw_args))
-                if name == "finish_drawing":
-                    if completion_error:
-                        raise ValueError(completion_error)
-                    output = await self._complete_task(models, task_id, session_id, document_id, args['summary'])
-                elif name in MEMORY_TOOLS:
+                if name in MEMORY_TOOLS:
                     output = self.memory.call(task_id, 'main', name, args, self.store.get_document(document_id))
                 elif name == 'view_canvas':
                     output = await self.vision.observe(task_id, 'main', caller_id,

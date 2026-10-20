@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from studio.agent_tools import validate_tool
+from studio.agent_tools import CHILD_TOOLS, MAIN_TOOLS, validate_tool
 from studio.actions import element_fingerprint
 from studio.draft_review import DraftAssessment, DraftFinding, DraftRegion, DraftRevision, parse_draft_assessment
 from studio.runtime import DrawingRuntime
@@ -15,19 +15,11 @@ from studio.store import StudioStore
 from studio.vision import scene_digest
 
 
-def test_child_handoff_requires_unresolved_work_and_main_completion_remains_whole_request():
-    assert validate_tool('finish_drawing', {'summary': '轮廓已准备'}, child=True).get('completion_status', 'ready') == 'ready'
-    assert validate_tool('finish_drawing', {'summary': '等待主 Agent 调整区域', 'completion_status': 'blocked',
-        'unresolved': ['原区域与要求保留的对象重叠']}, child=True)['completion_status'] == 'blocked'
-    for args in [
-        {'summary': '尚有阻碍', 'completion_status': 'blocked'},
-        {'summary': '尚有阻碍', 'completion_status': 'blocked', 'unresolved': [' ']},
-        {'summary': '尚有阻碍', 'completion_status': 'ready', 'unresolved': ['结构待修改']},
-    ]:
-        with pytest.raises(ValueError):
-            validate_tool('finish_drawing', args, child=True)
+@pytest.mark.parametrize('child,tools', [(False, MAIN_TOOLS), (True, CHILD_TOOLS)])
+def test_drawing_candidates_use_natural_completion_instead_of_a_completion_tool(child, tools):
+    assert 'finish_drawing' not in {item['function']['name'] for item in tools}
     with pytest.raises(ValueError):
-        validate_tool('finish_drawing', {'summary': '尚有阻碍', 'completion_status': 'blocked', 'unresolved': ['需要修改']})
+        validate_tool('finish_drawing', {'summary': '完成'}, child=child)
 
 
 def test_planning_without_prepared_actions_does_not_masquerade_as_a_completed_visual_review(tmp_path, native_drawing_child):
@@ -223,7 +215,7 @@ def test_replan_uses_saved_current_run_feedback_and_waits_for_full_tool_error_de
                     result['review_key'], task['id'], child.run['id'], result['scene_hash'], json.dumps(result), time.time()))
             completion = reviews.replan_completion(child.run, result)
             assert completion['status'] == 'blocked' and completion['reason'] == 'ineffective_repair'
-            assert completion['stopped_by'] == 'runtime_visual_review' and completion['next_strategy']
+            assert completion['next_strategy']
             assert reviews.replan_completion({**child.run, 'id': 'foreign-run'}, result) is None
             assert reviews.replan_completion({**child.run, 'selection': []}, result) is None
             error = child.call('move_elements', {'ids': ['missing'], 'dx': 1, 'dy': 0}, 'bad-move')
