@@ -6,7 +6,7 @@ import json
 import time
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from .errors import validation_summary
 from .llm import ModelGateway, ModelGatewayError
@@ -33,7 +33,8 @@ class DraftFinding(BaseModel):
     model_config = ConfigDict(extra='forbid')
     defect: str = Field(min_length=1)
     repair: str = Field(min_length=1)
-    object_ids: list[str] = Field(default_factory=list)
+    object_ids: list[str] = Field(default_factory=list,
+        validation_alias=AliasChoices('object_ids', 'objectIds'))
     draft_region: DraftRegion | None = None
 
 

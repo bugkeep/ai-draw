@@ -8,7 +8,7 @@ import pytest
 
 from studio.agent_tools import validate_tool
 from studio.actions import element_fingerprint
-from studio.draft_review import DraftAssessment, DraftRegion, DraftRevision, parse_draft_assessment
+from studio.draft_review import DraftAssessment, DraftFinding, DraftRegion, DraftRevision, parse_draft_assessment
 from studio.runtime import DrawingRuntime
 from studio.settings import ModelConfig, ModelSettings
 from studio.store import StudioStore
@@ -137,6 +137,21 @@ def test_recorded_draft_review_requires_current_object_ids_and_concrete_finding(
                  {'x': 0, 'y': 0, 'width': float('inf'), 'height': 100}]:
         with pytest.raises(ValueError):
             DraftRegion.model_validate(area)
+
+
+def test_draft_finding_normalizes_object_id_spelling_without_weakening_validation():
+    values = {'defect': '背景线穿过主体', 'repair': '修复前后遮挡关系'}
+    for key in ('object_ids', 'objectIds'):
+        finding = DraftFinding.model_validate({**values, key: ['current-object']})
+        assert finding.model_dump() == {**values, 'object_ids': ['current-object'], 'draft_region': None}
+    assert 'objectIds' not in DraftFinding.model_json_schema()['properties']
+    for invalid in [{'object_ids': ['one'], 'objectIds': ['two']},
+                    {'objectIds': 'one'}, {'objectIDs': ['one']}]:
+        with pytest.raises(ValueError):
+            DraftFinding.model_validate({**values, **invalid})
+    with pytest.raises(ValueError, match='no blocking finding'):
+        DraftAssessment.model_validate({'status': 'ready', 'visible_state': '主体仍有遮挡问题',
+            'findings': [{**values, 'objectIds': ['current-object']}], 'next_action': '修复遮挡'})
 
 
 def test_compacted_conversation_and_actual_pending_response_survive_shutdown_together(tmp_path, native_drawing_child):
