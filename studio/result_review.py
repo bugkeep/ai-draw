@@ -9,6 +9,32 @@ class AgentResultReview:
         self.store = store
         self.vision = vision
 
+    def repair_context(self, task_id, result_id):
+        task, result = self._result(task_id, result_id)
+        if result['task_id'] != task_id or not result['run_id'] or result['committed_count'] >= len(result['actions']):
+            return None
+        run = self.store.agents.get_run(task['session_id'], result['run_id'])
+        completion = self.store.agents.run_summary(run).get('completion') or {}
+        if completion.get('reason') != 'ineffective_repair':
+            return None
+        document = self.store.get_document(self.store.session_document_id(task['session_id']))
+        shared = {item['id'] for item in document['elements'] if not item.get('isDeleted')}
+        visible = {item['id'] for item in run['draft'] if not item.get('isDeleted')}
+        targets = {key for finding in completion.get('findings', []) for key in finding.get('object_ids', [])}
+        private_targets = sorted((targets & visible) - shared)
+        if not private_targets:
+            return None
+        return {'result_id': result['id'], 'run_id': result['run_id'], 'agent_id': result['agent_id'],
+            'targets_present_only_in_pending_draft': private_targets,
+            'continue_with': {'tool': 'send_input', 'agent_id': result['agent_id'],
+                              'relevant_ids': sorted(targets & visible)},
+            'next_strategy': completion['next_strategy'],
+            'instruction': 'This is an UNFINISHED private candidate. These repair targets do NOT exist on the shared canvas. '
+                'To edit them, KEEP this result pending and send ONE targeted correction to this SAME agent; '
+                'its next private draft inherits them. Do not reject_agent_result before editing these IDs. '
+                'Rejecting abandons this workspace; a rebuild must then use current shared-canvas IDs '
+                'and cannot edit these discarded private IDs.'}
+
     def _result(self, task_id, result_id):
         task = self.store.get_task(task_id)
         result = self.store.agents.get_result(task['session_id'], result_id)
@@ -96,6 +122,9 @@ class AgentResultReview:
                        'instruction': 'This candidate combines the current canvas with only this result\'s pending actions. '
                            'It is separate from the actual shared canvas image. Other pending results need their own preview; '
                            'call view_agent_result to choose another result or a close-up.'}
+            repair = self.repair_context(task_id, result_id)
+            if repair:
+                heading['private_repair_workspace'] = repair
             return [{'role': 'user', 'content': json.dumps(heading, ensure_ascii=False)}, *messages], {caller_id: observations}
         return ([{'role': 'user', 'content': json.dumps({'result_preview_errors': errors}, ensure_ascii=False)}]
                 if errors else []), {}

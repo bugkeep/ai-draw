@@ -13,12 +13,22 @@ from .llm import ModelGateway
 from .eraser import element_geometry, filled_path
 from .pen import path_elements
 from .settings import ModelConfig
-from .prompts import MAIN_SYSTEM, CHILD_SYSTEM
+from .prompts import MAIN_SYSTEM, CHILD_SYSTEM, TOOL_GUIDANCE
 from .tool_feedback import DRAWING_GUIDANCE
+from .progress_context import agent_progress, input_progress, result_progress, PROGRESS_RETRIEVAL
 from .store import StudioStore
 
 
 TOOL_DEFINITIONS = CHILD_TOOLS
+
+
+def context_tools(*, child=False):
+    tools = copy.deepcopy(CHILD_TOOLS if child else MAIN_TOOLS)
+    for tool in tools:
+        function = tool['function']
+        if function['name'] in TOOL_GUIDANCE:
+            function['description'] = TOOL_GUIDANCE[function['name']]
+    return tools
 
 
 def compact_drawing_exchange(turn: list[dict]) -> list[dict]:
@@ -238,19 +248,20 @@ class DrawingAgents:
         prompt = {
             "request": request, "drawing_guidance": DRAWING_GUIDANCE, "canvas": scene_context(document),
             "recent_conversation": [{"role": item["role"], "content": item["content"]} for item in history],
-            "child_agents": [agent for agent in children if agent['owner_task_id'] == task_id],
+            "child_agents": [agent_progress(agent) for agent in children if agent['owner_task_id'] == task_id],
             "available_child_agents": [{key: agent[key] for key in ('agent_id', 'nickname', 'state')}
                                        for agent in children if agent['owner_task_id'] != task_id],
             "research_references": self.store.research_references(task_id),
             "task_progress": {
-                "inputs": self.store.agents.task_runs(session_id, task_id),
-                "submitted_results": [result for result in results
+                "inputs": [input_progress(run) for run in self.store.agents.task_runs(session_id, task_id)],
+                "submitted_results": [result_progress(result) for result in results
                                       if result["committed_count"] == result["action_count"] and not result["rejected_reason"]],
-                "rejected_results": [result for result in results if result["rejected_reason"]],
+                "rejected_results": [result_progress(result) for result in results if result["rejected_reason"]],
                 "committed_actions": sum(result["committed_count"] for result in results),
             },
-            "pending_results": [self.store.agents.result_summary(item)
+            "pending_results": [result_progress(self.store.agents.result_summary(item))
                                 for item in self.store.agents.pending_results(session_id, task_id=task_id)],
+            "progress_details": PROGRESS_RETRIEVAL,
         }
         return [{"role": "system", "content": MAIN_SYSTEM},
                 {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)}, *copy.deepcopy(exchange)]
@@ -258,11 +269,22 @@ class DrawingAgents:
     def child_messages(self, run: dict, agent: dict, source_work: dict | None = None) -> list[dict]:
         prompt = {
             "agent_id": run["agent_id"], "input_id": run["input_id"], "run_id": run["id"],
-            "goal": run["message"], "previous_work_summary": agent["summary"],
+            "goal": run["message"],
             "drawing_guidance": DRAWING_GUIDANCE,
             "scene": scene_context({**run["document"], "elements": run["draft"], "selection": run["selection"]}),
             "relevant_ids": run["relevant_ids"], "prepared_action_count": len(run["prepared"]),
         }
+        previous = agent.get('latest_result')
+        if previous and previous.get('rejected_reason'):
+            prompt['previous_result'] = {key: previous[key] for key in (
+                'run_id', 'result_id', 'rejected_reason', 'committed_count', 'action_count')}
+            prompt['previous_result']['instruction'] = (
+                'This previous candidate was abandoned. Its unsubmitted private changes are not inherited. '
+                'Use the current goal, current draft and relevant_elements as the available workspace; '
+                'previous private object IDs must not be treated as current objects. '
+                'Committed shared-canvas changes remain. Historical records stay in SQLite for explicit retrieval.')
+        else:
+            prompt['previous_work_summary'] = agent['summary']
         if source_work:
             prompt['goal'] = source_work['goal']
             prompt[source_work['kind']] = source_work
@@ -283,7 +305,8 @@ class DrawingAgents:
                       reference_image_ids: list[str] | None = None,
                       result_observation_ids: list[str] | None = None,
                       quality_review_keys: list[str] | None = None,
-                      draft_review_keys: list[str] | None = None) -> dict:
+                      draft_review_keys: list[str] | None = None,
+                      draft_handoff_review_keys: list[str] | None = None) -> dict:
         started = time.perf_counter()
         session_id = self.store.get_task(task_id)["session_id"]
         document_id = self.store.session_document_id(session_id)
@@ -299,12 +322,15 @@ class DrawingAgents:
         text_messages = [{**item, 'content': [part for part in item['content'] if part.get('type') == 'text']}
                          if isinstance(item.get('content'), list) else item for item in messages]
         replan_ids = main_replan_ids(messages) if not child else []
+        tools = context_tools(child=child)
         self.store.log_tool(task_id, agent_id, round_number, "model_context", {
             "message_count": len(messages), "character_count": len(json.dumps(text_messages, ensure_ascii=False)),
             "image_observation_ids": observation_ids or [],
             "result_observation_ids": result_observation_ids or [],
             "quality_review_keys": quality_review_keys or [],
             "draft_review_keys": draft_review_keys or [],
+            "draft_handoff_review_keys": draft_handoff_review_keys or [],
+            "tool_prompt_sha256": hashlib.sha256(json.dumps(tools, sort_keys=True).encode()).hexdigest(),
             "replan_run_ids": replan_ids,
             "reference_image_view_ids": reference_image_ids or [],
             "tool_output_ids": [item["tool_call_id"] for item in outputs],
@@ -312,7 +338,7 @@ class DrawingAgents:
                                if json.loads(item["content"]).get("ok") is False],
         })
         response = await self.gateway.complete(
-            messages, CHILD_TOOLS if child else MAIN_TOOLS,
+            messages, tools,
             on_retry=model_retry, on_state=model_state,
         )
         message = response.choices[0].message.model_dump(exclude_none=True)

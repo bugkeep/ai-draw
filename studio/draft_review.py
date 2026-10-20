@@ -403,23 +403,35 @@ class DraftReview:
         return None
 
     @staticmethod
-    def context(result, document=None):
+    def context(result, document=None, *, replan=None):
         targets = {key for finding in (result.get('assessment') or {}).get('findings', [])
                    for key in finding['object_ids']}
         objects = [{**{key: item.get(key) for key in ('id', 'type', 'x', 'y', 'width', 'height', 'angle',
                     'strokeColor', 'backgroundColor', 'strokeWidth', 'opacity')},
                     'name': item.get('customData', {}).get('name', ''), 'point_count': len(item.get('points', []))}
                    for item in document['elements'] if item['id'] in targets and not item.get('isDeleted')] if document else []
+        instruction = 'This independent review concerns your current input/pass and exact current draft, not the whole artwork. '
+        if replan:
+            instruction += (
+                'The saved before/after image comparison found this constructive correction ineffective or regressed. '
+                'Hand this unfinished input back to the main Agent now: return a concise honest summary with NO tool calls. '
+                'State the unresolved defect and the supplied different next_strategy so the main Agent can revise the assignment. '
+                'Do not continue this local repair loop. Your prepared actions remain saved for the main Agent to inspect; '
+                'handing back does not submit them or approve the artwork. ')
+        else:
+            instruction += (
+                'Correct its concrete blocking finding using current IDs/images, rather than repeating unchanged broad reads. '
+                'Cleanup before redrawing is preparation. Use the supplied different next strategy for an ineffective correction. '
+                'Use canvas_region for a focused view_canvas when needed. A drawing change invalidates these findings. '
+                'Return a concise summary without tool calls when handing this input back. ')
+        instruction += (
+            'The main Agent still reviews and submits the result. Include any unresolved issue in your summary. '
+            'Runtime attaches the current scoped findings and marks an unapproved draft blocked. '
+            'Never claim a blocked result is complete.')
         return {'role': 'user', 'content': json.dumps({'current_private_draft_review': result,
             'current_repair_targets': objects,
-            'instruction': 'This independent review concerns your current input/pass and exact current draft, not the whole artwork. '
-                'Correct its concrete blocking finding using current IDs/images, rather than repeating unchanged broad reads. '
-                'Cleanup before redrawing is preparation. An ineffective correction needs the supplied different next strategy; '
-                'continue with your tools or explain the concrete issue to the main Agent. '
-                'Use canvas_region for a focused view_canvas when needed. A drawing change invalidates these findings. '
-                'Return a concise summary without tool calls to hand this input back; the main Agent still reviews and submits the result. '
-                'Include any unresolved issue in that summary. Runtime attaches the current scoped findings and marks '
-                'an unapproved draft blocked. Never claim a blocked result is complete.'}, ensure_ascii=False)}
+            **({'main_replan_request': {key: replan[key] for key in ('reason', 'review_key', 'next_strategy')}} if replan else {}),
+            'instruction': instruction}, ensure_ascii=False)}
 
     async def focus(self, run, result):
         if result['status'] != 'repair' or self.observed(run['id'], result.get('review_key')):

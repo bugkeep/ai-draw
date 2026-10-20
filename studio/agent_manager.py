@@ -270,12 +270,14 @@ class AgentManager:
                 messages = self.memory.prepare_messages(run['owner_task_id'], run['agent_id'], run['id'],
                     f"{run['id']}:{len(run['prepared'])}", document, models.child_messages(run, agent,
                         source_work.context() if source_work else None)) + references + pictures
+                replan = self.draft_reviews.replan_completion(run, review) if review else None
                 if review:
-                    messages.append(self.draft_reviews.context(review, document))
+                    messages.append(self.draft_reviews.context(review, document, replan=replan))
                 message = await models.respond(run["owner_task_id"], run["agent_id"], round_number,
                                                messages, child=True,
                                                observation_ids=observations, reference_image_ids=reference_ids,
-                                               draft_review_keys=[review['review_key']] if review and review.get('review_key') else [])
+                                               draft_review_keys=[review['review_key']] if review and review.get('review_key') else [],
+                                               draft_handoff_review_keys=[replan['review_key']] if replan else [])
                 self.vision.delivered(run['owner_task_id'], run['id'], observations)
                 self.references.delivered(run['owner_task_id'], run['id'], reference_ids)
                 self.memory.delivered(run['id'], messages)
