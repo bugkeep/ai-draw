@@ -1,6 +1,8 @@
 import json
 
 from .actions import apply_action, matches_fingerprint
+from .agent_tools import ViewAgentResult
+from .private_workspace import PrivateWorkspaceContext, workspace_descendant, workspace_heads
 from .store import VersionConflict
 
 
@@ -8,6 +10,7 @@ class AgentResultReview:
     def __init__(self, store, vision):
         self.store = store
         self.vision = vision
+        self.private_workspaces = PrivateWorkspaceContext(store)
 
     def repair_context(self, task_id, result_id):
         task, result = self._result(task_id, result_id)
@@ -97,13 +100,21 @@ class AgentResultReview:
         pending = self.store.agents.pending_results(task['session_id'], task_id=task_id)
         with self.store.lock:
             request = self.store.connection.execute(
-                "SELECT arguments FROM agent_tool_calls WHERE task_id=? AND caller_id=? AND name='view_agent_result' "
-                "AND output IS NOT NULL AND json_extract(output,'$.ok')=1 ORDER BY created_at DESC LIMIT 1",
+                "SELECT arguments,created_at FROM agent_tool_calls WHERE task_id=? AND caller_id=? AND name='view_agent_result' "
+                "AND output IS NOT NULL ORDER BY rowid DESC LIMIT 1",
                 (task_id, f'main:{task_id}'),
             ).fetchone()
-        arguments = json.loads(request['arguments']) if request else {}
+        arguments = {}
+        if request:
+            try:
+                arguments = ViewAgentResult.model_validate_json(request['arguments']).model_dump()
+            except ValueError:
+                request = None
         requested = arguments.get('result_id')
-        candidates = [item['id'] for item in pending]
+        candidates = [item['id'] for item in workspace_heads(pending)]
+        descendant = workspace_descendant(requested, pending) if requested else None
+        if descendant and request['created_at'] < descendant['created_at']:
+            requested = None
         if requested:
             try:
                 _, result = self._result(task_id, requested)
@@ -111,12 +122,23 @@ class AgentResultReview:
                 result = None
             if result and result['committed_count'] < len(result['actions']):
                 candidates = [requested, *[result_id for result_id in candidates if result_id != requested]]
+            elif result and descendant:
+                candidates = [descendant['id'], *[result_id for result_id in candidates if result_id != descendant['id']]]
         errors = []
         for result_id in candidates:
             try:
                 proposed, result = self.proposed(task_id, result_id)
             except (KeyError, ValueError, VersionConflict) as error:
                 errors.append({'result_id': result_id, 'error': str(error)})
+                result = next((item for item in pending if item['id'] == result_id), None)
+                if result and result['depends_on']:
+                    snapshot = self.private_workspaces.context(task_id, result, errors)
+                    if snapshot:
+                        repair = self.repair_context(task_id, result_id)
+                        if repair:
+                            snapshot.append({'role': 'user', 'content': json.dumps(
+                                {'private_repair_workspace': repair}, ensure_ascii=False)})
+                        return snapshot, {}
                 continue
             caller_id = self.caller_id(task_id, result)
             if result_id == requested and arguments.get('region'):
@@ -130,7 +152,14 @@ class AgentResultReview:
                        'instruction': 'This candidate combines the current canvas with only this result\'s pending actions. '
                            'It is separate from the actual shared canvas image. Other pending results need their own preview; '
                            'call view_agent_result to choose another result or a close-up.'}
-            repair = self.repair_context(task_id, result_id)
+            descendant = workspace_descendant(result_id, pending)
+            if descendant:
+                heading['newer_private_workspace_result_id'] = descendant['id']
+                heading['instruction'] += (
+                    ' This explicitly requested image depicts an older dependency. It does not depict the latest '
+                    'private workspace. Its old repair findings and object IDs must not be reused for current repairs; '
+                    'use the newer private result and current child findings.')
+            repair = self.repair_context(task_id, result_id) if not descendant else None
             if repair:
                 for message in messages:
                     for part in message['content']:
