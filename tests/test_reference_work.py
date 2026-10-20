@@ -26,12 +26,18 @@ def test_invalid_reference_inputs_do_not_spawn_or_enqueue_and_other_inputs_remai
     async def check():
         store, runtime, session, task, plan, message = workspace(tmp_path)
         try:
-            for ordinary in ['Draw a pine tree', '{not json', '[]', '{"kind":"research"}']:
+            for ordinary in ['Draw a pine tree', '{not json', '[]', '{"kind":"research"}',
+                             '{"kind":null,"goal":"Research a pine tree"}']:
                 assert ReferenceWork.load(runtime.references, task['id'], ordinary) is None
             config = ModelConfig(provider='ollama', model='unused', api_base='http://localhost:11434')
             value = json.loads(message)
             for invalid in [{**value, 'reference_layout_id': 'layout_' + '0' * 32},
-                            {**value, 'reference_view_id': 'another-callers-view'}, {**value, 'goal': ' '}]:
+                            {**value, 'reference_view_id': 'another-callers-view'}, {**value, 'goal': ' '},
+                            {**value, 'kind': 'reference_guided_drawing',
+                             'reference_view_id': 'another-callers-view', 'coordinate_space': 'image_normalized'},
+                            {**value, 'kind': 'reference_guided_drawing'},
+                            {key: item for key, item in value.items() if key != 'kind'},
+                            {key: item for key, item in value.items() if key != 'reference_layout_id'}]:
                 with pytest.raises((ValueError, KeyError)):
                     await runtime.children.spawn_agent(session['id'], task['id'], 'invalid-source',
                         {'message': json.dumps(invalid)}, config)
@@ -41,10 +47,11 @@ def test_invalid_reference_inputs_do_not_spawn_or_enqueue_and_other_inputs_remai
                 ReferenceWork.load(runtime.references, store.create_task(other['id'])['id'], message)
             agent = store.agents.create_agent(session['id'], task['id'], 'original', 'Original drawing', 'Artist', [])
             before = store.agents.get_agent(session['id'], agent['agent_id'])
-            with pytest.raises(ValueError):
-                await runtime.children.send_input(session['id'], task['id'], 'invalid-queued-input', {
-                    'agent_id': agent['agent_id'], 'message': json.dumps({**value, 'extra': True})}, config)
-            assert store.agents.get_agent(session['id'], agent['agent_id']) == before
+            for invalid in [{**value, 'extra': True}, {**value, 'kind': 'reference_guided_drawing'}]:
+                with pytest.raises(ValueError):
+                    await runtime.children.send_input(session['id'], task['id'], 'invalid-queued-input', {
+                        'agent_id': agent['agent_id'], 'message': json.dumps(invalid)}, config)
+                assert store.agents.get_agent(session['id'], agent['agent_id']) == before
         finally:
             await runtime.close()
             store.close()

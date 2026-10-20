@@ -25,7 +25,11 @@ class ReferenceWork:
             value = json.loads(message)
         except (ValueError, TypeError):
             return None
-        if not isinstance(value, dict) or value.get('kind') != 'reference_guided_repair':
+        if not isinstance(value, dict):
+            return None
+        kind = value.get('kind')
+        if ('reference_layout_id' not in value
+                and not (isinstance(kind, str) and kind.startswith('reference_guided_'))):
             return None
         return cls(images, task_id, ReferenceWorkInput.model_validate(value))
 
