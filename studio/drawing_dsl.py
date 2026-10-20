@@ -519,19 +519,6 @@ def parse_report(content, run):
         'unbound_form_ids': sorted(missing), 'checks_are_artist_claims': True}
 
 
-def report_context(spec):
-    stage = next(item for item in spec.composition.stages if item.id == spec.stage_id)
-    return {'format': {'protocol': 'drawspec/1', 'kind': 'report', 'summary': '<brief visible result>',
-        'bindings': [{'form_id': '<declared form ID>', 'object_ids': ['<current native ID>']}],
-        'checks': [{'constraint_id': '<relation/proportion/stage ID>', 'status': 'addressed|unresolved|unchanged',
-                    'evidence': '<visible evidence or remaining defect>'}], 'unresolved': ['<unfinished work, or empty array>']},
-        'required_form_ids': spec.form_ids or stage.form_ids or [item.id for item in spec.composition.forms],
-        'stage_criteria': stage.criteria,
-        'instruction': 'When returning without tools, output this JSON report alone. Never invent native IDs or claim '
-            'whole-artwork approval. Include unfinished work explicitly. Your checks are claims for review, not approval. '
-            'Runtime supplies identities, composition revision, native result ID and current image evidence.'}
-
-
 def result_evidence(store, run, report, review_key):
     document = {**run['document'], 'elements': run['draft'], 'selection': run['selection']}
     digest = scene_digest(document)

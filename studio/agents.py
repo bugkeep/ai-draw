@@ -17,7 +17,8 @@ from .prompts import MAIN_SYSTEM, CHILD_SYSTEM, TOOL_GUIDANCE
 from .tool_feedback import DRAWING_GUIDANCE
 from .progress_context import agent_progress, input_progress, result_progress, PROGRESS_RETRIEVAL
 from .store import StudioStore
-from .drawing_dsl import assignment, assignment_goal, latest_spec, report_context
+from .drawing_dsl import assignment, assignment_goal, latest_spec
+from .child_harness import report_context
 
 
 TOOL_DEFINITIONS = CHILD_TOOLS

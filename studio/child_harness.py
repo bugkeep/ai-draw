@@ -4,6 +4,27 @@ from .drawing_dsl import assignment
 from .vision import scene_digest
 
 
+def report_context(spec):
+    stage = next(item for item in spec.composition.stages if item.id == spec.stage_id)
+    return {'format': {'protocol': 'drawspec/1', 'kind': 'report', 'summary': '<brief visible result>',
+        'bindings': [{'form_id': '<declared form ID>', 'object_ids': ['<current native ID>']}],
+        'checks': [{'constraint_id': '<relation/proportion/stage ID>', 'status': 'addressed|unresolved|unchanged',
+                    'evidence': '<visible evidence or remaining defect>'}], 'unresolved': ['<unfinished work, or empty array>']},
+        'required_form_ids': spec.form_ids or stage.form_ids or [item.id for item in spec.composition.forms],
+        'stage_criteria': stage.criteria,
+        'allowed_constraint_ids': {
+            'proportions': [item.id for item in spec.composition.proportions],
+            'relations': [item.id for item in spec.composition.relations],
+            'stages': [item.id for item in spec.composition.stages]},
+        'instruction': 'When returning without tools, output one valid JSON object with double-quoted keys/strings, '
+            'without prose or code fences. For checks.constraint_id, copy an exact ID from allowed_constraint_ids; '
+            'use a stage ID for that stage\'s visible criteria. Describe other observations in summary/unresolved. '
+            'Include only checks you can support with actual evidence; checks may be empty. '
+            'Copy current native object IDs for bindings. Never claim whole-artwork approval. '
+            'Include unfinished work explicitly. Your checks are claims for review, not approval. '
+            'Runtime supplies identities, composition revision, native result ID and current image evidence.'}
+
+
 def repair_context(reviews, review, document, replan=None):
     message = reviews.context(review, document)
     if replan:

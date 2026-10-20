@@ -191,6 +191,14 @@ python -m scripts.evaluate_agent_lifecycle
 python -m scripts.evaluate_agent_continuation --database runs/continuation-check.sqlite3 --output-dir runs/continuation-check
 ```
 
+回报格式恢复可以从真实失败的 `llm_response` 记录继续原子 Agent。诊断要求保留的私有原生草稿与该响应前实际送达的全图完全一致，再在独立数据库副本中恢复原会话检查点；主 Agent 不启动，协议校验和图片评审保持原样。需要使用尚不存在的数据库及输出目录：
+
+```bash
+python -m scripts.evaluate_child_report_recovery --source-database runs/source.sqlite3 --run-id <run_id> --response-log-id <log_id> --database runs/report-check.sqlite3 --output-dir runs/report-check
+```
+
+输出分别记录真实模型调用、格式错误、tokens、耗时和原生草稿是否变化。协议回报通过与作品质量验收分别记录。
+
 启动使用独立数据库的服务后，可以检查主 Agent 自主调用工具完成组合绘图：
 
 ```bash
