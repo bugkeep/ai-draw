@@ -200,7 +200,32 @@ class AgentManager:
             async with self.changed:
                 self.changed.notify_all()
 
+    def _initial_target_blocker(self, run):
+        targets = set(run['relevant_ids'])
+        if (not targets or run['prepared'] or run['conversation'] or run['pending_response'] is not None
+                or targets & {item['id'] for item in run['draft'] if not item.get('isDeleted')}):
+            return None
+        with self.store.lock:
+            started = self.store.connection.execute(
+                'SELECT 1 FROM agent_tool_calls WHERE caller_id=? LIMIT 1', (run['id'],)).fetchone()
+        if started:
+            return None
+        return {'status': 'blocked', 'reason': 'missing_edit_targets', 'stopped_by': 'runtime_input_validation',
+                'unresolved': ['None of the assigned edit targets exists in this input\'s starting private draft. '
+                    'Use current object IDs, retain the pending candidate when repairing it, or explicitly plan new work.'],
+                'missing_ids': sorted(targets),
+                'available_object_count': sum(not item.get('isDeleted') for item in run['draft'])}
+
     async def _execute_run(self, models: DrawingAgents, session_id: str, run: dict) -> None:
+        blocker = self._initial_target_blocker(run)
+        if blocker:
+            summary = 'Assigned edit targets are absent; no drawing or model request was started.'
+            result = self.records.complete_run(session_id, run['id'], summary, completion=blocker)
+            self.store.log_tool(run['owner_task_id'], run['agent_id'], 0, 'agent_input_blocked', {
+                'run_id': run['id'], 'completion': blocker})
+            self.store.log_tool(run['owner_task_id'], run['agent_id'], 0, 'agent_result', result)
+            await self._notify(session_id, run['agent_id'], result)
+            return
         round_number = 0
         restored_history = recent_tool_messages(run['conversation'])
         while True:

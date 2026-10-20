@@ -216,10 +216,13 @@ class DrawingAgents:
                       history: list[dict], exchange: list[dict]) -> list[dict]:
         session_id = self.store.get_task(task_id)["session_id"]
         results = self.store.agents.task_results(session_id, task_id)
+        children = self.store.agents.list_agents(session_id)
         prompt = {
             "request": request, "canvas": scene_context(document),
             "recent_conversation": [{"role": item["role"], "content": item["content"]} for item in history],
-            "child_agents": self.store.agents.list_agents(session_id),
+            "child_agents": [agent for agent in children if agent['owner_task_id'] == task_id],
+            "available_child_agents": [{key: agent[key] for key in ('agent_id', 'nickname', 'state')}
+                                       for agent in children if agent['owner_task_id'] != task_id],
             "research_references": self.store.research_references(task_id),
             "task_progress": {
                 "inputs": self.store.agents.task_runs(session_id, task_id),
