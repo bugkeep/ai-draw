@@ -31,6 +31,10 @@
 
 `inspect_scene`、`view_canvas`、`search_memory` 与 `recall_memory` 的查询条件及次数按当前内容标识保存。会话压缩后仍会提供最近已查询范围；图形发生变化后，查询属于新的内容状态。重复调用仍有完整记录。
 
+准备模型上下文时，运行时会合并同一调用方、同一内容状态下返回相同证据的成功只读调用，只保留最新一组调用与结果。新记录按完整返回计算证据标识，省略默认参数或读取缓存不会制造另一份相同证据；不同分页、对象几何、选择状态和图片编号仍分别保留。合并依据是 SQLite 中实际成功的调用记录，原始日志和历史原文继续可检索。混合批次中的修改操作、工具错误、原始错误参数及未配对消息均保留，绘图次数与请求持续时间不受影响。子 Agent 的检索提示只要求处理本人负责的修改或说明阻碍，不会要求它再派子 Agent。
+
+一页对象具有完全相同的类型或样式属性时，上下文将它们提取到 `scene.element_defaults`；每个 `scene.elements` 条目继承这些属性，自身属性优先。编号、名称、位置、尺寸、点数和分页仍逐项保留。把公共属性与每个条目合并可还原完整摘要，数据库中保存的摘要与原始工具返回继续保持原格式。
+
 每轮默认对象概览保留最多 12 个已选中或最近使用的对象，并提供全部对象的类型数量和继续检索入口。概览明确标注是否还有其他内容；不在概览中的对象仍然保存在画布上。
 
 `inspect_scene` 返回结构化对象分页，可以组合对象编号、名称文字和画布区域进行过滤。默认每页 12 个对象，可通过 `limit` 选择至多 50 个；`matching_count` 表示全部符合条件的对象数量，沿 `summary.scene.next_page` 可以取回全部匹配对象。每页的准确编号和下一页参数完整保留在上下文中，较长的路径点继续通过 `recall_memory` 按对象检索。分页只控制单次返回大小，不限制对象数量和绘图动作数量。
@@ -53,6 +57,12 @@
 python -m pytest -q tests/test_memory.py tests/test_scene_inspection.py --basetemp runs/pytest-memory
 python -m scripts.evaluate_memory --database runs/memory-evaluation.sqlite3 --output runs/memory-evaluation.json
 python -m scripts.evaluate_scene_paging --database runs/scene-paging.sqlite3 --output runs/scene-paging.json
+```
+
+如需检查已结束任务中的重复读取，可使用只读续步诊断。它将终态任务数据库备份到一个新数据库，对同一草稿的原始上下文与合并后上下文分别请求一次真实模型，保存输入图片、原始回答、用量和下一步工具选择；不执行返回的工具，也不将结果视为作品验收或任务已恢复。
+
+```bash
+python -m scripts.evaluate_read_compaction --source-database runs/archived.sqlite3 --run-id run_example --database runs/read-diagnostic.sqlite3 --output-dir runs/read-diagnostic
 ```
 
 单元检查使用实际 SQLite 与原生对象，覆盖完整原文和点列取回、超出摘要条目的对象检索、未读错误、重复查询、工作记忆版本、任务顺序与子 Agent 私有上下文恢复。

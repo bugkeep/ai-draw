@@ -7,7 +7,7 @@ import pytest
 from studio.actions import create_native_element
 from studio.agents import DrawingAgents, prepare_drawing_tool, scene_context
 from studio.runtime import DrawingRuntime
-from studio.memory import tool_summary
+from studio.memory import present_inspection, tool_summary
 from studio.settings import ModelConfig, ModelSettings
 from studio.store import StudioStore
 
@@ -116,3 +116,18 @@ def test_cached_unpaged_inspections_keep_compact_summaries_after_upgrade():
     assert len(json.dumps(summary)) < 7000
     assert 'scene_state' not in summary.get('scene', {})
     assert len(output['scene']['elements']) == 44
+
+
+def test_factored_inspection_styles_reconstruct_every_property_without_changing_saved_summary():
+    document = drawing()
+    summary = tool_summary('inspect_scene', {'ok': True, 'scene': inspect(document, {'limit': 50})})
+    original = copy.deepcopy(summary)
+    presented = present_inspection(summary)
+    scene = presented['scene']
+    assert 'id' not in scene['element_defaults'] and 'name' not in scene['element_defaults']
+    assert [{**scene['element_defaults'], **item} for item in scene['elements']] == summary['scene']['elements']
+    assert {key: value for key, value in scene.items()
+        if key not in {'element_defaults', 'element_properties', 'elements'}} == {
+            key: value for key, value in summary['scene'].items() if key != 'elements'}
+    assert summary == original and present_inspection(presented) == presented
+    assert len(json.dumps(presented)) < len(json.dumps(summary)) * .8

@@ -167,6 +167,123 @@ def test_query_memory_survives_compaction_and_is_invalidated_by_canvas_changes(t
     asyncio.run(check())
 
 
+def test_equivalent_read_evidence_folds_without_losing_pages_edits_errors_or_scope(tmp_path):
+    async def check():
+        store, runtime, session, task, models = workspace(tmp_path / 'read-evidence.sqlite3')
+        caller = f"main:{task['id']}"
+        messages = [{'role': 'user', 'content': '保留原对象，检查后把左眼向右移动。'}]
+
+        async def exchange(name, arguments, call_id):
+            output = await call(runtime, models, session, task, name, arguments, call_id)
+            function = {'id': call_id, 'type': 'function', 'function': {
+                'name': name, 'arguments': json.dumps(arguments)}}
+            messages.extend([{'role': 'assistant', 'tool_calls': [function]},
+                             {'role': 'tool', 'tool_call_id': call_id, 'content': json.dumps(output)}])
+            return output
+
+        try:
+            created = await exchange('create_elements', {'items': [
+                {'type': 'ellipse', 'name': '左眼', 'x': 20, 'y': 30},
+                {'type': 'ellipse', 'name': '右眼', 'x': 70, 'y': 30}]}, 'eyes')
+            element_id = created['changed_ids'][0]
+            page = await exchange('inspect_scene', {'offset': 0, 'limit': 1}, 'page-first')
+            duplicate = await exchange('inspect_scene', {'offset': 0, 'limit': 1,
+                'query': '', 'ids': [], 'include_geometry': False}, 'page-equivalent')
+            assert page == duplicate
+            await exchange('inspect_scene', page['scene']['next_page'], 'page-second')
+            invalid = await exchange('move_elements', {'ids': ['missing-eye'], 'dx': 10, 'dy': 0}, 'bad-move')
+            assert invalid['ok'] is False
+            moved = await exchange('move_elements', {'ids': [element_id], 'dx': 10, 'dy': 0}, 'move-eye')
+            assert moved['ok'] is True
+            await exchange('inspect_scene', {'offset': 0, 'limit': 1}, 'changed-page')
+            await exchange('inspect_scene', {'offset': 0, 'limit': 1}, 'latest-page')
+            original = json.dumps(messages)
+            document = store.get_document(session['document']['id'])
+            compact = runtime.memory.prepare_messages(task['id'], 'main', caller,
+                f"{document['id']}:{document['version']}", document, messages)
+            ids = [item['tool_call_id'] for item in compact if item.get('role') == 'tool']
+            assert ids == ['eyes', 'page-equivalent', 'page-second', 'bad-move', 'move-eye', 'latest-page']
+            assert next(item['content'] for item in compact if item.get('tool_call_id') == 'bad-move') == json.dumps(invalid)
+            assert compact[0] == messages[0] and json.dumps(messages) == original
+            snapshot = json.loads(compact[-1]['content'])
+            assert snapshot['known_queries_in_current_state'][0]['repeat_count'] == 2
+            assert len(store.connection.execute('SELECT * FROM agent_tool_calls').fetchall()) == 8
+            assert store.get_document(document['id']) == document
+            # A foreign or later caller cannot reinterpret this caller's history.
+            future = store.create_task(session['id'])
+            assert runtime.memory.fold_reads(f"main:{future['id']}", messages) == messages
+            future_output = await call(runtime, models, session, future, 'inspect_scene', {'offset': 0, 'limit': 1}, 'future-page')
+            future_context = runtime.memory.for_context(future['id'], 'main', f"main:{future['id']}",
+                'future-page', 'inspect_scene', json.dumps({'offset': 0, 'limit': 1}), future_output,
+                f"{document['id']}:{document['version']}")
+            assert future_context['same_state_query_count'] == 1
+            runtime.memory.delivered(caller, compact)
+            recalled = runtime.memory.recall(task['id'], 'main', {
+                'memory_ref': store.connection.execute('SELECT id FROM agent_memories WHERE caller_id=? AND call_id=?',
+                    (caller, 'page-first')).fetchone()[0], 'section': 'output'}, document)
+            assert json.loads(recalled['text']) == page
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())
+
+
+def test_cached_canvas_reads_share_evidence_and_keep_the_latest_image_receipt(tmp_path):
+    async def check():
+        store, runtime, session, task, models = workspace(tmp_path / 'cached-reads.sqlite3')
+        try:
+            await call(runtime, models, session, task, 'create_element', {'type': 'ellipse'}, 'circle')
+            outputs = [await call(runtime, models, session, task, 'view_canvas', {}, call_id)
+                       for call_id in ['view-first', 'view-cached']]
+            assert outputs[0]['observation_id'] == outputs[1]['observation_id'] and outputs[1]['cached']
+            messages = [item for call_id, output in zip(['view-first', 'view-cached'], outputs)
+                        for item in [{'role': 'assistant', 'tool_calls': [{'id': call_id, 'type': 'function',
+                            'function': {'name': 'view_canvas', 'arguments': '{}'}}]},
+                                     {'role': 'tool', 'tool_call_id': call_id, 'content': json.dumps(output)}]]
+            compact = runtime.memory.fold_reads(f"main:{task['id']}", messages)
+            assert compact == messages[2:]
+            records = store.connection.execute('SELECT query_key FROM agent_memories WHERE tool_name=?', ('view_canvas',)).fetchall()
+            assert len(records) == 2 and records[0]['query_key'] == records[1]['query_key']
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())
+
+
+def test_child_read_folding_keeps_mixed_writes_and_errors_and_does_not_suggest_delegation(tmp_path, native_drawing_child):
+    async def check():
+        store, runtime, session, task, models = workspace(tmp_path / 'child-reads.sqlite3')
+        try:
+            child = native_drawing_child(store, runtime, session, task)
+            child.call('create_element', {'type': 'ellipse', 'name': '私有轮廓'}, 'outline')
+            calls, outputs = [], []
+            for name, args, call_id in [('inspect_scene', {'limit': 1}, 'inspect-old'),
+                    ('inspect_scene', {'limit': 1}, 'inspect-latest'),
+                    ('move_elements', {'ids': ['missing'], 'dx': 10, 'dy': 0}, 'bad-edit')]:
+                output = child.call(name, args, call_id)
+                calls.append({'id': call_id, 'type': 'function', 'function': {'name': name, 'arguments': json.dumps(args)}})
+                outputs.append({'role': 'tool', 'tool_call_id': call_id, 'content': json.dumps(output)})
+            messages = [{'role': 'assistant', 'content': '检查完成后清理当前轮廓。', 'tool_calls': calls}, *outputs]
+            compact = runtime.memory.fold_reads(child.run['id'], messages)
+            assert [item['id'] for item in compact[0]['tool_calls']] == ['inspect-latest', 'bad-edit']
+            assert compact[0]['content'] == messages[0]['content'] and compact[-1] == outputs[-1]
+            context = runtime.memory.for_context(task['id'], child.agent['agent_id'], child.run['id'],
+                'inspect-latest', 'inspect_scene', json.dumps({'limit': 1}), json.loads(outputs[1]['content']),
+                f"{child.run['id']}:{len(child.run['prepared'])}")
+            assert 'You cannot delegate' in context['retrieval'] and 'Delegate extensive' not in context['retrieval']
+            # Unmatched batches and duplicate protocol IDs are preserved verbatim.
+            assert runtime.memory.fold_reads(child.run['id'], messages[:-1]) == messages[:-1]
+            duplicate_ids = [*messages, *messages]
+            assert runtime.memory.fold_reads(child.run['id'], duplicate_ids) == duplicate_ids
+            renamed = [{**messages[0], 'tool_calls': [{**calls[0], 'function': {
+                **calls[0]['function'], 'name': 'delete_elements'}}, *calls[1:]]}, *outputs]
+            assert runtime.memory.fold_reads(child.run['id'], renamed) == renamed
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())
+
+
 def test_mixed_exchange_archives_successful_parameters_and_preserves_full_error(tmp_path, native_drawing_child):
     async def check():
         store, runtime, session, task, models = workspace(tmp_path / 'mixed.sqlite3')

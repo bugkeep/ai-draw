@@ -2,6 +2,7 @@ import hashlib
 import json
 import time
 import uuid
+from collections import Counter
 
 from .agent_store import stable_id
 from .actions import element_fingerprint
@@ -9,6 +10,18 @@ from .path_recall import recall_path_geometry
 
 
 MEMORY_TOOLS = {'search_memory', 'recall_memory', 'compact_context'}
+READ_TOOLS = {'inspect_scene', 'view_canvas', 'view_agent_result', 'view_reference_image',
+              'search_memory', 'recall_memory', 'read_reference', 'search_references', 'search_reference_images'}
+
+
+def query_identity(name, request, output):
+    # Compare evidence rather than optional/default argument spelling. Keep object
+    # geometry, page cursors and image identities; only transport metadata varies.
+    evidence = ({key: value for key, value in output.items()
+                 if key not in {'cached', 'latency_ms', 'preview_latency_ms'}}
+                if name in READ_TOOLS and output.get('ok') is True else request)
+    return hashlib.sha256(json.dumps([name, evidence], ensure_ascii=False,
+        sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
 def brief(value, *, depth=0):
@@ -47,6 +60,25 @@ def tool_summary(name, output):
         scene = output['scene']
         return {**output, 'scene': {**scene, 'elements': [brief(item) for item in scene['elements']]}}
     return bounded_summary(output)
+
+
+def present_inspection(output):
+    """Factor identical styles without dropping any summarized object property."""
+    body = output.get('summary', output)
+    scene = body.get('scene', {}) if isinstance(body, dict) else {}
+    elements = scene.get('elements', [])
+    if (not output.get('ok') or scene.get('element_defaults') or len(elements) < 2
+            or not all(isinstance(item, dict) for item in elements)):
+        return output
+    shared = {key: elements[0][key] for key in ('type', 'angle', 'strokeColor', 'backgroundColor',
+              'strokeWidth', 'opacity', 'version') if key in elements[0]
+              and all(key in item and item[key] == elements[0][key] for item in elements[1:])}
+    if not shared:
+        return output
+    compact = {**body, 'scene': {**scene, 'element_defaults': shared,
+        'element_properties': 'Each element inherits element_defaults; its own properties override defaults.',
+        'elements': [{key: value for key, value in item.items() if key not in shared} for item in elements]}}
+    return {**output, 'summary': compact} if 'summary' in output else compact
 
 
 def search_terms(value):
@@ -126,6 +158,7 @@ class AgentMemory:
             );
             CREATE INDEX IF NOT EXISTS idx_memory_scope ON agent_memories(session_id,actor_id,created_at);
             CREATE INDEX IF NOT EXISTS idx_memory_queries ON agent_memories(session_id,actor_id,state_key,query_key);
+            CREATE INDEX IF NOT EXISTS idx_memory_caller_queries ON agent_memories(caller_id,state_key,query_key);
             CREATE INDEX IF NOT EXISTS idx_memory_unread ON agent_memories(caller_id,is_error,observed_at);
             CREATE TABLE IF NOT EXISTS agent_working_memory (
                 session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -156,7 +189,7 @@ class AgentMemory:
         summary = tool_summary(name, output)
         summary_json = json.dumps(summary, ensure_ascii=False)
         request = json.loads(arguments) if output.get('ok') is True else arguments
-        query_key = hashlib.sha256(json.dumps([name, request], sort_keys=True).encode()).hexdigest()
+        query_key = query_identity(name, request, output)
         with self.store.lock, self.store.connection:
             self.store.connection.execute('INSERT OR IGNORE INTO agent_memories VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)',
                 (memory_ref, self._session(task_id), task_id, actor_id, 'tool', caller_id, call_id, name,
@@ -171,10 +204,13 @@ class AgentMemory:
             return {**output, 'memory_ref': memory_ref}
         with self.store.lock:
             repeated = self.store.connection.execute(
-                'SELECT count(*) FROM agent_memories WHERE session_id=? AND actor_id=? AND state_key=? '
+                'SELECT count(*) FROM agent_memories WHERE caller_id=? AND state_key=? AND is_error=0 '
                 'AND query_key=(SELECT query_key FROM agent_memories WHERE id=?)',
-                (self._session(task_id), actor_id, state_key, memory_ref),
+                (caller_id, state_key, memory_ref),
             ).fetchone()[0]
+        role_guidance = ('Delegate extensive geometry work to a child.' if actor_id == 'main' else
+                         'You cannot delegate. Make the concrete correction in your assigned region, '
+                         'finish when this pass meets its criterion, or report the actual blocker.')
         if name in MEMORY_TOOLS:
             return {**output, 'memory_ref': output.get('memory_ref', memory_ref),
                     **({'same_state_query_count': repeated,
@@ -183,13 +219,14 @@ class AgentMemory:
                             'Exact original geometry remains available with point_tolerance=0.'}
                        if name == 'recall_memory' and repeated > 1 else {})}
         if len(json.dumps(output, ensure_ascii=False)) > 5000 or name == 'inspect_scene':
-            return {'ok': True, 'memory_ref': memory_ref, 'compressed': True, 'summary': tool_summary(name, output),
+            context = {'ok': True, 'memory_ref': memory_ref, 'compressed': True, 'summary': tool_summary(name, output),
                     'same_state_query_count': repeated,
                     'retrieval': ('Follow summary.scene.next_page to inspect additional current objects; restart at offset 0 after edits. '
                                   if name == 'inspect_scene' else '') +
                                  'Use recall_memory with this memory_ref for saved output/arguments, or element_id for current geometry. '
-                                 'Use search_memory for object names and older records. Delegate extensive geometry work to a child. '
+                                 'Use search_memory for object names and older records. ' + role_guidance + ' ' +
                                  'Repeated queries of unchanged content provide no new evidence.'}
+            return present_inspection(context) if name == 'inspect_scene' else context
         return {**output, 'memory_ref': memory_ref, **({'same_state_query_count': repeated} if repeated > 1 else {})}
 
     def _index_older(self, task_id, actor_id):
@@ -372,6 +409,7 @@ class AgentMemory:
                           'completed work and remaining work before replacing conversational detail.'}
 
     def prepare_messages(self, task_id, actor_id, caller_id, state_key, document, messages):
+        messages = self.fold_reads(caller_id, messages)
         present = {message['tool_call_id'] for message in messages if message.get('role') == 'tool'}
         with self.store.lock:
             unread = self.store.connection.execute('SELECT m.id,c.* FROM agent_memories m JOIN agent_tool_calls c '
@@ -385,6 +423,85 @@ class AgentMemory:
                     {'role': 'tool', 'tool_call_id': row['call_id'], 'content': row['output']}])
         return [*messages, {'role': 'user', 'content': json.dumps(
             self.snapshot(task_id, actor_id, caller_id, state_key, document), ensure_ascii=False)}, *extra]
+
+    def fold_reads(self, caller_id, messages):
+        """Keep the latest equivalent successful read, backed by this caller's receipts.
+
+        This only edits model input. Original calls/results remain in SQLite; reads
+        still run normally, and writes, errors and unmatched protocol batches stay
+        intact. Equality includes the saved scene state and the complete evidence.
+        """
+        call_ids = [item['tool_call_id'] for item in messages if item.get('role') == 'tool']
+        if not call_ids:
+            return messages
+        output_counts = Counter(call_ids)
+        call_counts = Counter(call.get('id') for item in messages if item.get('role') == 'assistant'
+                              for call in item.get('tool_calls', []))
+        with self.store.lock:
+            rows = self.store.connection.execute(
+                'SELECT m.call_id,m.tool_name,m.state_key,m.query_key,c.arguments FROM agent_memories m '
+                'JOIN agent_tool_calls c ON c.caller_id=m.caller_id AND c.call_id=m.call_id '
+                'WHERE m.caller_id=? AND m.is_error=0 '
+                'AND m.call_id IN (SELECT value FROM json_each(?))',
+                (caller_id, json.dumps(call_ids)),
+            ).fetchall()
+        receipts = {row['call_id']: row for row in rows if row['tool_name'] in READ_TOOLS}
+        # Only fold complete adjacent assistant/tool exchanges. Mixed batches keep
+        # every write/error and its original arguments, even when a read is folded.
+        batches, inspections, index = [], set(), 0
+        while index < len(messages):
+            message = messages[index]
+            calls = message.get('tool_calls', []) if message.get('role') == 'assistant' else []
+            end = index + 1
+            while calls and end < len(messages) and messages[end].get('role') == 'tool':
+                end += 1
+            outputs = messages[index + 1:end]
+            ids = [call.get('id') for call in calls]
+            if (calls and len(ids) == len(set(ids)) and len(outputs) == len(calls)
+                    and set(ids) == {item.get('tool_call_id') for item in outputs}):
+                by_id = {item['tool_call_id']: item for item in outputs}
+                eligible = {}
+                for call in calls:
+                    receipt = receipts.get(call['id'])
+                    function = call.get('function', {})
+                    try:
+                        successful = json.loads(by_id[call['id']]['content']).get('ok') is True
+                    except (TypeError, ValueError, AttributeError):
+                        successful = False
+                    if (receipt and successful and output_counts[call['id']] == call_counts[call['id']] == 1
+                            and function.get('name') == receipt['tool_name']
+                            and function.get('arguments') == receipt['arguments']):
+                        eligible[call['id']] = (receipt['tool_name'], receipt['state_key'], receipt['query_key'])
+                        if receipt['tool_name'] == 'inspect_scene':
+                            inspections.add(call['id'])
+                batches.append((index, end, eligible))
+            index = end
+        seen, remove = set(), set()
+        for _, _, eligible in reversed(batches):
+            for call_id, key in reversed(list(eligible.items())):
+                if key in seen:
+                    remove.add(call_id)
+                seen.add(key)
+        if not remove and not inspections:
+            return messages
+        result = []
+        for message in messages:
+            if message.get('role') == 'tool' and message.get('tool_call_id') in remove:
+                continue
+            if message.get('role') == 'tool' and message.get('tool_call_id') in inspections:
+                output = json.loads(message['content'])
+                compact = present_inspection(output)
+                if compact != output:
+                    message = {**message, 'content': json.dumps(compact, ensure_ascii=False)}
+            if message.get('role') == 'assistant' and message.get('tool_calls'):
+                remaining = [call for call in message['tool_calls'] if call.get('id') not in remove]
+                message = {**message, 'tool_calls': remaining}
+                if not remaining:
+                    message.pop('tool_calls')
+                    if not message.get('content'):
+                        continue
+            result.append(message)
+        return result
 
     def delivered(self, caller_id, messages):
         call_ids = {message['tool_call_id'] for message in messages if message.get('role') == 'tool'}
