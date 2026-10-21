@@ -6,11 +6,35 @@
 
 An open-source AI drawing app. Draw with words, refine through conversation, and export editable artwork.
 
-[![Draw Agent Studio 操作演示](docs/assets/demo-preview.gif)](docs/assets/demo.mp4)
+[![纯语言绘制科研流程图：多模态 RAG 科研工作流](docs/assets/research-preview.gif)](docs/assets/research-demo.mp4?raw=true)
 
-[观看演示视频（37 秒）](docs/assets/demo.mp4) · [快速启动](#快速启动) · [反馈问题](https://github.com/bugkeep/ai-draw/issues)
+[科研流程图 · 2K 原片](docs/assets/research-demo.mp4?raw=true) · [纯语言绘画 · 2K 原片](docs/assets/language-demo.mp4?raw=true) · [手动完善草图 · 2K 原片](docs/assets/drawing-demo.mp4?raw=true) · [快速启动](#快速启动)
 
-演示使用真实模型，已剪去等待时间；动态预览使用 2 倍播放速度。
+用文字生成分组流程，补充并行分支、质量判断和反馈循环，整理成完整的科研流程示意图，再下载高清图片。[查看流程图](docs/assets/research-flowchart.png) · [下载 SVG 矢量图](docs/assets/research-flowchart.svg)
+
+<details>
+<summary>观看“海边灯塔”：全程通过文字完成绘画</summary>
+
+[![只用文字画出月光下的海边灯塔](docs/assets/language-preview.gif)](docs/assets/language-demo.mp4?raw=true)
+
+描述海边灯塔的场景，接着用文字完善灯塔、帆船和星星，调整海面配色，在同一张画布上完成整幅插画，再下载高清 PNG。
+
+[下载绘画视频 · 2K](docs/assets/language-demo.mp4?raw=true) · [下载灯塔图片](docs/assets/lighthouse.png)
+
+</details>
+
+<details>
+<summary>观看“向日葵窗台”：从草图到完整绘画</summary>
+
+[![从草图到完整绘画：向日葵窗台](docs/assets/drawing-preview.gif)](docs/assets/drawing-demo.mp4?raw=true)
+
+让 AI 生成基础轮廓，再在同一张画布上手动补画花瓣、上色、添加窗台和蝴蝶，最后下载高清 PNG。
+
+[下载绘画过程 · 2K](docs/assets/drawing-demo.mp4?raw=true) · [下载向日葵图片](docs/assets/sunflower.png)
+
+</details>
+
+动态预览展示精选片段，点击可下载 2K 完整视频。三段原片均为 2560 × 1440，已剪去等待时间并加速部分绘制过程。
 
 ## 可以做什么
 
@@ -48,10 +72,11 @@ python run.py
 ## 试着这样说
 
 ```text
-画一个蓝色圆形，名字叫主圆
-把它向右移动 80 像素
-把它改成红色
-撤销
+画一张多模态 RAG 科研流程图，按数据准备、检索与生成、评估与产出分组
+在评估部分加入质量判断、误差分析和返回查询改写的反馈循环
+画一幅海边灯塔插画：深蓝夜空、青蓝海面、白色灯塔和淡黄色月亮
+给灯塔加上暖黄色灯室，在海面添加一艘小帆船，天空点缀星星
+把海面改成更深的蓝绿色，让月光和灯光更加醒目
 ```
 
 也可以输入“用画笔画一张笑脸，展示作画过程”，或者描述一幅你想画的场景。完成后点击 **导出作品**，保存图片或继续编辑的文件。
