@@ -1,5 +1,7 @@
 # Draw Agent Studio 开发与验证
 
+**简体中文** · [English](development.en.md)
+
 Draw Agent Studio 是一个通过连续对话编辑同一张画布的开源绘图应用。用户可以描述图形、接着说“选中它”“向右移动 80 像素”“改成蓝色”，也可以直接使用 Excalidraw 选择和调整对象。Agent 的画笔轨迹按帧显示，完成后仍是可编辑的 Excalidraw 对象。
 
 目前支持矩形、椭圆、菱形、文字、线条、箭头和画笔对象，以及选择、移动、修改、删除、撤销和重做。常见的明确指令由本地绘图命令处理；复杂场景由主 Agent 调用工具创建子 Agent，并行准备动作。子 Agent 可以复用、继续接收输入、关闭和恢复，每条输入具有独立编号。主 Agent 审阅结构化摘要，再接受结果并逐步提交。子 Agent 的完整工具记录和上下文保存在 SQLite。
@@ -96,7 +98,7 @@ Agent 可以通过 `search_references` 使用免费的公共搜索查阅具体�
 | `scripts/` | 真实操作成功率与延迟评测 |
 
 会话、任务和绘图提交的处理方法见[架构说明](studio-architecture.md)，工具协议与状态转换见[子 Agent 生命周期](agent-lifecycle.md)。主 Agent 通过 [DrawSpec/1 美术 DSL](drawspec.md) 保存动态、主要形体、比例、连接、遮挡与阶段计划，并通过现有工具与子 Agent 通信。前端使用 [Excalidraw](https://github.com/excalidraw/excalidraw)，许可证为 MIT；本项目许可证见 [LICENSE](../LICENSE)。
-参与开发请阅读[贡献说明](../CONTRIBUTING.md)，需求与故障通过 GitHub Issue 管理，代码变更通过 Pull Request 审阅。
+参与开发请阅读[贡献说明](../CONTRIBUTING.zh-CN.md)，需求与故障通过 GitHub Issue 管理，代码变更通过 Pull Request 审阅。
 
 ## 验证
 

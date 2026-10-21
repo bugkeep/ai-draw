@@ -1,15 +1,16 @@
 ---
-name: 功能建议
-about: 描述希望改进的绘图体验
+name: Feature request (English)
+about: Suggest an improvement to the drawing experience
 title: "[Feature] "
 labels: enhancement
 ---
 
-## 使用场景
+## Use case
 
 
-## 期望行为
+## Proposed behavior
 
 
-## 验收方法
-请写清可验证的结果。
+## How to verify it
+
+Describe the result that would show the improvement works.

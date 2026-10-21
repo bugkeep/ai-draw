@@ -1,5 +1,7 @@
 # 部署 Draw Agent Studio
 
+**简体中文** · [English](deployment.en.md)
+
 安装 Python 3.11+ 与 Node.js 20.19+。建议使用独立 Python 环境，安装的 Uvicorn 包含 WebSocket 运行依赖。
 
 ```bash

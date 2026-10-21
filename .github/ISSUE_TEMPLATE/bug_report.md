@@ -1,19 +1,19 @@
 ---
-name: 故障报告
-about: 报告画布、对话或 Agent 执行问题
+name: Bug report (English)
+about: Report a canvas, conversation, or drawing-agent problem
 title: "[Bug] "
 labels: bug
 ---
 
-## 操作步骤
+## Steps to reproduce
 
 
-## 预期结果
+## Expected behavior
 
 
-## 实际结果
+## Actual behavior
 
 
-## 环境和任务状态
+## Environment and task status
 
-请填写浏览器、Python 和 Node.js 版本；如涉及 Agent，请附去除密钥后的任务状态或日志。
+Include your browser, operating system, Python version, and Node.js version. For drawing-agent problems, include the task status and relevant logs with API keys and private data removed.

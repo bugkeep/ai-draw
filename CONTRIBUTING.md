@@ -1,22 +1,66 @@
-# 参与 Draw Agent Studio 开发
+# Contributing
 
-欢迎通过 GitHub Issue 报告故障或讨论功能。请写清操作步骤、预期画面、实际画面、浏览器与服务端版本。涉及 Agent 的问题，请附上任务状态、画布对象信息和去除密钥后的日志；不要提交 `.env`、API Key 或用户画布数据。
+[简体中文](CONTRIBUTING.zh-CN.md) · **English**
 
-修改代码时，为当前任务使用一条分支，并在 Pull Request 中关联对应 Issue。提交前运行：
+Use [Issues](https://github.com/bugkeep/ai-draw/issues) to report bugs, suggest improvements, or share drawings. English and Chinese issue templates are available.
+
+## Report a problem
+
+Include the steps to reproduce, expected behavior, actual behavior, browser, Python version, and Node.js version. For drawing-agent problems, include the task status and relevant logs with credentials removed.
+
+Do not include `.env` files, API keys, private canvas data, or the application database.
+
+## Submit a change
+
+Create a branch for your change and open a pull request that links to the relevant issue. Explain the resulting behavior and the checks you actually ran. Remove completed task branches after the pull request is merged.
+
+From the project directory, install development dependencies and run the standard checks:
 
 ```bash
 python -m pip install -r requirements-dev.txt
 cd frontend-app
 npm ci
 npm run build
+npm run test:sync
 cd ..
 python -m pytest -q
 ```
 
-涉及编辑器交互的修改，还应启动服务并运行 `node frontend-app/scripts/browser_smoke.js` 和 `node frontend-app/scripts/settings_smoke.js`。设置检查会创建独立会话并保存一次当前配置，在专用测试服务执行。涉及 Agent 执行的修改，应运行 `python -m scripts.evaluate_studio`；配置真实模型后，运行 `python -m scripts.probe_model`、`python -m scripts.evaluate_agent_edit` 和 `python -m scripts.evaluate_multiagent`。在 Pull Request 中说明实际执行的检查和结果。
+## Check browser changes
 
-Pull Request 合并后及时删除对应的本地和远端任务分支，保持工作分支数量较少。
+Use a dedicated test database. The browser checks create canvases, change drawing content, and may save model settings.
 
-涉及会话列表、名称或页面高度的修改，还应运行 `node frontend-app/scripts/sessions_smoke.js`。使用独立的 `DRAW_AGENT_DB` 启动测试服务，设置 `DRAW_AGENT_URL` 指向该服务。该脚本会创建多个会话和绘图任务，用真实数据检查页面滚动与名称保存。
+To run the browser verification used by CI:
 
-涉及会话删除的修改，还应运行 `node frontend-app/scripts/deletion_smoke.js`。在空白测试数据库中首先运行该脚本，可以同时检查最后一个画布被删除后的空白画布创建。涉及复杂流程图与连续编辑的修改，应配置真实模型并运行 `python -m scripts.evaluate_transformer`，记录图形内容、对象数量、模型耗时和后续编辑检查。
+```bash
+python -m scripts.verify_browser --database runs/contribution-browser.sqlite3
+```
+
+For individual frontend checks, start a separate test service and point `DRAW_AGENT_URL` at that service. Available checks include:
+
+| Area | Script |
+| --- | --- |
+| Editor interactions | `frontend-app/scripts/browser_smoke.js` |
+| Model settings | `frontend-app/scripts/settings_smoke.js` |
+| Canvas names and scrolling | `frontend-app/scripts/sessions_smoke.js` |
+| Canvas deletion | `frontend-app/scripts/deletion_smoke.js` |
+| Export | `frontend-app/scripts/export_smoke.js` |
+| Scene synchronization | `frontend-app/scripts/scene_sync_smoke.js` |
+| Manual edits | `frontend-app/scripts/manual_edit_smoke.js` |
+
+## Check drawing-agent changes
+
+With a real model connection configured, run the checks relevant to your change:
+
+```bash
+python -m scripts.probe_model
+python -m scripts.evaluate_studio
+python -m scripts.evaluate_agent_edit
+python -m scripts.evaluate_multiagent
+```
+
+For complex flowchart or continuous-editing changes, also run `python -m scripts.evaluate_transformer` and record the resulting diagram, model time, and editing behavior.
+
+Model checks perform actual requests and may incur provider charges. Include the commands and observed results in the pull request.
+
+[Development](docs/development.en.md) · [Deployment](docs/deployment.en.md) · [Model setup](docs/model-settings.en.md)

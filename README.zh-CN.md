@@ -6,16 +6,13 @@
 
 ## 演示
 
-**通过对话绘制科研流程图**
-
-https://github.com/user-attachments/assets/d940e09e-315d-4c90-b445-78f5c335a306
-
-<details>
-<summary>通过对话画出海边灯塔</summary>
+**通过对话画出海边灯塔**
 
 https://github.com/user-attachments/assets/7714f650-9fae-4703-bc8d-e0e7c9602668
 
-</details>
+**通过对话绘制科研流程图**
+
+https://github.com/user-attachments/assets/d940e09e-315d-4c90-b445-78f5c335a306
 
 <details>
 <summary>AI 生成草图，手动完成向日葵窗台</summary>
@@ -72,4 +69,4 @@ python run.py
 
 欢迎在 [Issues](https://github.com/bugkeep/ai-draw/issues) 分享作品、提出想法或反馈问题。
 
-[部署说明](docs/deployment.md) · [贡献指南](CONTRIBUTING.md) · [开发文档](docs/development.md) · [MIT License](LICENSE)
+[部署说明](docs/deployment.md) · [贡献指南](CONTRIBUTING.zh-CN.md) · [开发文档](docs/development.md) · [MIT License](LICENSE)
