@@ -21,6 +21,7 @@ def stroke_method(arguments):
         'image_id': arguments.get('observation_id') or arguments.get('reference_view_id'),
         'examples': [
             {'name': path.get('name', ''), 'continuous_points': len(path['points']),
+             'smooth': path.get('smooth', True),
              'span': [round(max(p[axis] for p in path['points']) - min(p[axis] for p in path['points']), 4)
                       for axis in (0, 1)],
              **{key: path[key] if path.get(key) is not None else arguments.get(key,
@@ -62,6 +63,7 @@ def drawing_memory_context(memory, run, messages):
             (run['id'], run['owner_task_id'], run['agent_id'], f"{run['id']}:{len(run['prepared'])}"),
         ).fetchone()[0]
     live_ids = {item['id'] for item in run['draft'] if not item.get('isDeleted')}
+    current_objects = {item['id']: item for item in run['draft'] if not item.get('isDeleted')}
     actions = []
     for call in reversed(calls):
         output = json.loads(call['output'])
@@ -71,6 +73,11 @@ def drawing_memory_context(memory, run, messages):
             'action_count': output.get('action_count', 0), 'changed_count': len(changed),
             'current_object_ids': [item for item in changed if item in live_ids][:8],
             'removed_object_ids': [item for item in changed if item not in live_ids][:8],
+            **({'executed_displacement': {key: json.loads(call['arguments'])[key] for key in ('dx', 'dy')},
+                'current_bounds_after_all_actions': [{'id': key,
+                    'bounds': [current_objects[key][field] for field in ('x', 'y', 'width', 'height')]}
+                    for key in changed if key in current_objects]}
+               if call['tool_name'] == 'move_elements' else {}),
             **({'stroke_method': stroke_method(json.loads(call['arguments']))}
                if call['tool_name'] in {'draw_paths', 'reshape_path'} else {}),
         })
@@ -101,6 +108,11 @@ def drawing_memory_context(memory, run, messages):
     focus = findings[0] if findings else None
     tag = f"drawing_input={run['input_id']}"
     current_notes = tag in (saved.get('notes') or {}).get('constraints', [])
+    with store.lock:
+        saved_here = store.connection.execute('SELECT 1 FROM agent_tool_calls '
+            "WHERE caller_id=? AND task_id=? AND name='compact_context' AND json_extract(output,'$.ok')=1 "
+            "AND json_extract(output,'$.memory_ref')=? LIMIT 1",
+            (run['id'], run['owner_task_id'], saved.get('memory_ref'))).fetchone() is not None
     priority = set(run['selection']) | set(run['relevant_ids']) | set((focus or {}).get('object_ids', []))
     filled = []
     for position, element in enumerate(item for item in run['draft'] if not item.get('isDeleted')):
@@ -113,9 +125,30 @@ def drawing_memory_context(memory, run, messages):
                 'strokeWidth': element.get('strokeWidth'), 'opacity': element.get('opacity', 100)})
     shown_fills = sorted(sorted(filled, key=lambda item: (item['id'] in priority,
         item['position_in_current_draft']), reverse=True)[:24], key=lambda item: item['position_in_current_draft'])
+    object_index = [{'id': item['id'], 'name': item.get('customData', {}).get('name', ''), 'type': item['type'],
+        'bounds': [item[field] for field in ('x', 'y', 'width', 'height')], 'angle': item.get('angle', 0),
+        'version': item.get('version', 1)}
+        for item in run['draft'] if not item.get('isDeleted')]
+    shown_index = object_index if len(object_index) <= 120 else [item for item in object_index
+        if item['id'] in priority or any(item['id'] in action['current_object_ids'] for action in actions)]
     return {'role': 'user', 'content': json.dumps({'drawing_execution_memory': {
         'task_id': run['owner_task_id'], 'agent_id': run['agent_id'], 'input_id': run['input_id'],
         'run_id': run['id'], 'recent_actual_actions': actions, 'delivered_comparisons': comparisons,
+        'pending_review_steps': ({'review_key': prior['review_key'], 'reviewed_scene_hash': reviews[0]['scene_hash'],
+            'assessment': prior['assessment'],
+            'instruction': 'This review describes an EARLIER draft, before subsequent actions. Verify each finding '
+                'against current bounds/images; completed repairs are not fresh defects. Keep the remaining assigned '
+                'steps pending. After the current correction is visible, proceed to the other required forms.'}
+            if not current_review and reviews and (prior := json.loads(reviews[0]['result']))['status'] == 'repair' else None),
+        'current_object_index': {'total_count': len(object_index), 'shown_count': len(shown_index),
+            'objects': shown_index, 'instruction': 'Exact live native IDs and names in this private draft. '
+                'bounds are CURRENT native [x,y,width,height] after ALL executed actions; angle is separate. '
+                'The immutable DrawSpec contains planned targets, not updated object coordinates after edits. '
+                'Use current bounds and executed displacements to compute a correction to the intended contact/plane. '
+                'A successful move already changed the native positions; verify the visible relation before another move. '
+                'Use these receipts for selection and report bindings; names are intent, not visual evidence. '
+                'For omitted objects use a targeted inspect_scene page or recall_memory. Query once for '
+                'the missing identity/geometry; reuse its result until the relevant objects change.'},
         'current_filled_objects': {'total_count': len(filled), 'shown_count': len(shown_fills), 'objects': shown_fills,
             'order': 'Current native draft array, back to front; larger positions are later/front.',
             'instruction': 'These are current filled objects, not logs or proof of a visibility defect. '
@@ -139,7 +172,8 @@ def drawing_memory_context(memory, run, messages):
                 'Use the already attached image and source/landmarks to reconstruct the required contour next. '
                 'For an erasure-only request, preserve that scope and do not add a replacement.'},
         'saved_step': {'revision': saved['revision'], 'memory_ref': saved.get('memory_ref'),
-            'tag_matches_current_input': current_notes, 'current_input_tag': tag},
+            'tag_matches_current_input': current_notes, 'created_in_current_input': saved_here,
+            'current_input_tag': tag},
         'construction_step': {
             'target': 'The assigned form/connection and exact current IDs or actual image region.',
             'evidence': 'Reference/layout/landmarks actually inspected; distinguish picture-left from anatomical side.',
@@ -149,39 +183,32 @@ def drawing_memory_context(memory, run, messages):
             'protect': 'Existing useful forms, highlights, openings and neighboring attachments that must survive.',
             'visible_check': 'A concrete change to inspect in the refreshed close-up AND the whole image.',
         },
-        'instruction': 'Continue THIS input from the actual current drawing. This journal is rebuilt from its SQLite '
-            'receipts after history compaction or restart; executed actions are not proof of visual success. '
-            'The original assignment and current review remain complete elsewhere in this request. '
-            'Choose ONE bounded feature or connection for the NEXT construction_step, within next_step_focus when present. '
-            'The whole assignment remains your goal; keep its other requirements in pending. '
-            'A step must specify the next geometric operation and its visible result, not a list of every future repair. '
-            'Save the current step with the EXISTING compact_context tool: use saved_step.revision as expected_revision, '
-            'retain the current goal, put target/evidence/structure/method/protect/visible_check in summary, '
-            'copy current_input_tag into constraints, record verified progress in completed and all unfinished work in pending. '
-            'Use only present native object IDs in object_ids and actual memory_ref values in evidence_refs. '
-            'Carry forward constraints and pending work when replacing notes. Update notes when a step is verified or '
-            'its method fails; do not rewrite an unchanged plan on every tool call. A save may share a response with '
-            'a related action when the current evidence already resolves its parameters; in that case put the save and '
-            'the action in the same response rather than taking a planning-only round. '
-            'Notes without this input tag are historical: verify any reusable work in the current draft before carrying it forward. '
-            'Read previous comparisons as observations plus suggested methods. Verify their object attribution against '
-            'current IDs, the complete composition and actual images; report a genuine missing construction prerequisite. '
-            'A failed method needs a changed construction, not the same geometry under new names. '
-            'After repeated successful views of an unchanged state, state the single unresolved fact; '
-            'if the images and retrieved geometry already provide it, execute the saved construction instead of changing crops again. '
-            'For an unclear feature with a source reference, inspect that source detail and use its actual view/layout mapping; '
-            'do not infer the intended anatomy only from the damaged draft. '
-            'A convex organic outline needs ordered extrema and turning anchors around the same mass; '
-            'independent head, limb and tail contours need explicit junctions and visible stop points. '
-            'For hatching, each short mark is a separate path; do not connect alternating marks into one tall zigzag. '
-            'For tonal work choose a bounded shadow region, preserve its adjacent light/contours, and build enough '
-            'overlapping marks to make that region visibly darker before adding strand/texture detail. '
-            'For connections establish the two attachment points and which contours are hidden before texture. '
-            'Exact property edits preserve every unrequested property; research-only inputs prepare no drawing. '
-            'Use at most one canvas-image-bound mutation in a response, batching its independent paths or exact targets. '
-            'The next context supplies the refreshed image before another image-bound mutation; '
-            'a note save does not invalidate the image and immutable source views retain their existing rules. '
-            'Use attached current images for verification; repeat a query only to resolve a stated missing fact. '
-            'Keep original tool errors and unresolved work explicit. Tools and continued drawing remain available; '
-            'this journal sets no time, action or round limit and does not change the frozen completion review.',
+        'instruction': 'Continue THIS input from the current drawing and immutable assignment. Receipts prove execution, '
+            'not visual success. Build coherent units with explicit proportions, contacts, occlusion and contour stops; '
+            'batch related forms with known parameters, including a whole stage block-in. After cleanup, complete the '
+            'saved reconstruction before reporting. Use the attached refreshed images to check the visible result. '
+            'Query only a stated missing fact; reuse retrieved IDs/geometry while those objects remain unchanged. '
+            'For uncertain anatomy inspect the source detail with its actual layout mapping. '
+            'Choose native rectangle/ellipse/text for geometric frames, ellipses and lettering. For straight architectural '
+            'edges or angular polygons set smooth=false on EACH draw_paths path. draw_paths/reshape_path default '
+            'smooth=true and bend multi-anchor contours; reserve this for intended curves. Organic contours need ordered '
+            'extrema and turning anchors. Each hatch mark is a separate path; establish shadow masses before texture. '
+            'Create opaque backgrounds/masks BEFORE foreground details/text; use reorder_elements for actual layer defects. '
+            'In canvas coordinates OMIT optional observation_id/coordinate_space/reference_view_id/reference_layout_id; '
+            'never send the string "null". Image coordinates require the actual matching image ID and enum. '
+            'Use at most one canvas-image-bound mutation per response, batching its paths/targets; the next request refreshes '
+            'the mapping. A note save may accompany an already grounded action. '
+            'Save durable progress or a changed strategy through compact_context, without a planning-only save round when '
+            'the next action is known: expected_revision=saved_step.revision; summary contains the construction_step; '
+            'constraints retain prior constraints plus current_input_tag; completed contains verified results; pending retains '
+            'all unfinished work; object_ids/evidence_refs use actual live IDs/receipts. created_in_current_input is verified '
+            'from SQLite call ownership; use it to distinguish current notes from historical notes, even if a written tag differs. '
+            'An unchanged step needs no new save. Preserve errors and genuine missing prerequisites. '
+            'Review checkpoints are candidate reports, verification of a constructed repair, and stagnation/error recovery. '
+            'For a repair, view_canvas explicitly requests verification after its construction; cleanup alone remains intermediate. '
+            'On repair, continue this input '
+            'with a changed method where required. When the assigned pass meets its criteria, return the existing DrawSpec '
+            'report: concise visible evidence, exact current IDs from the index/receipts, representative bindings for every '
+            'required form, explicit unresolved work. A ready review of the same state needs that report. '
+            'Exact edits preserve unrequested properties; research prepares no drawing. No time/action/round limit is imposed.',
     }}, ensure_ascii=False)}

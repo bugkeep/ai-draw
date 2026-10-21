@@ -1,0 +1,52 @@
+{
+  "case": "street-cafe",
+  "date": "2026-10-21",
+  "comparison": "single fixed recorded composition; actual model calls and frozen full-artwork evaluation",
+  "provider": "Ark",
+  "model": "ark-code-latest",
+  "recorded_assignment_sha256": "95d6a3fc7e6f84a03032bd9e2bed02c3c1c17e80c27f040ce42bc32e27ec6007",
+  "fresh_main_composition_generated_in_candidate": false,
+  "original": {
+    "task_id": "04377c4ae52c4981b62e65fb54892e4b",
+    "full_task_ms": 1326665.717,
+    "before_valid_dispatch_ms": 206088.3508,
+    "after_valid_dispatch_ms": 1120577.3662,
+    "first_child_execution_ms": 400851.4261,
+    "requests_after_valid_dispatch": 50,
+    "child_model_requests": 27,
+    "draft_review_requests": 12,
+    "child_tool_errors": 7,
+    "drawing_report_errors": 2,
+    "final_native_objects": 61,
+    "frozen_structural_and_whole_artwork_review_passed": true
+  },
+  "candidate": {
+    "task_id": "e0b91084b0fb45379b0ee0414c4602d3",
+    "fixed_composition_task_ms": 280363.2316,
+    "after_valid_dispatch_ms": 280350.6431,
+    "first_child_execution_ms": 224509.0182,
+    "requests_after_valid_dispatch": 14,
+    "child_model_requests": 7,
+    "draft_review_requests": 1,
+    "child_tool_errors": 1,
+    "drawing_report_errors": 0,
+    "final_native_objects": 70,
+    "frozen_structural_and_whole_artwork_review_passed": true,
+    "all_model_responses_captured": true,
+    "context_tool_protocol_errors": 0,
+    "human_visual_acceptance": "pending_user_review"
+  },
+  "preservation": {
+    "main_agent": true,
+    "tools": true,
+    "model_configuration": true,
+    "drawing_execution_and_ui": true,
+    "storage_and_network": true,
+    "evaluator_code_and_prompts": true,
+    "evaluation_dataset_semantics": true
+  },
+  "remaining_visual_notes": [
+    "The frozen reviewer noted dense intersecting lines inside the awning and a pavement line crossing tabletops, while passing line clarity."
+  ],
+  "scope": "This is one fixed-composition comparison. It does not establish an end-to-end fresh-planning latency or a general success rate."
+}

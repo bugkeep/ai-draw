@@ -16,6 +16,7 @@ from .reference_work import ReferenceWork
 from .drawing_dsl import prepare_assignment, parse_report, result_evidence
 from .child_harness import repair_context, coordinate_context, observation_context
 from .child_drawing_memory import drawing_memory_context
+from .child_execution import checkpoint_reason, continue_repair, current_feedback, execution_context, verification_checkpoint
 
 
 class AgentManager:
@@ -296,8 +297,10 @@ class AgentManager:
                     source_work.prepare_source(run['id'])
                 references, reference_ids = await self.references.prepare_context(run['owner_task_id'], run['id'])
                 repeated = self.memory.repeated_read(run['id'], f"{run['id']}:{len(run['prepared'])}")
-                review = await self.draft_reviews.review(run, models.settings,
-                    {'repeated_read': repeated} if repeated else self.draft_reviews.follow_up(run))
+                trigger = {'repeated_read': repeated} if repeated else self.draft_reviews.follow_up(run)
+                reason = checkpoint_reason(trigger) or verification_checkpoint(self.store, run, trigger)
+                review = (await self.draft_reviews.review(run, models.settings, reason)
+                          if reason else current_feedback(self.store, run))
                 if review and review['status'] != 'error':
                     history = self._review_history(run, review, history)
                     if review['status'] == 'repair':
@@ -314,6 +317,7 @@ class AgentManager:
                 guide = coordinate_context(self.store, run, observations)
                 if guide:
                     messages.append(guide)
+                messages = execution_context(run, messages)
                 messages.append(drawing_memory_context(self.memory, run, messages))
                 message = await models.respond(run["owner_task_id"], run["agent_id"], round_number,
                                                messages, child=True,
@@ -351,6 +355,20 @@ class AgentManager:
                     self.vision.require_review(run['owner_task_id'], run['id'], {
                         **run['document'], 'elements': run['draft'], 'selection': run['selection']})
                 completion = await self._completion(models, run, summary)
+                if continue_repair(completion):
+                    feedback = {'drawing_checkpoint': {
+                        'status': 'repair', 'review_key': completion['completion']['review_key'],
+                        'instruction': 'The independent reviewer found repairable work in this same input. '
+                            'Continue from the current native draft and saved step. The next request contains '
+                            'the full review and refreshed images. Repair the specified structure with a changed '
+                            'method when necessary; preserve completed forms. Return a new report when this '
+                            'assigned pass is ready for review. No actions have been submitted or repeated.',
+                    }}
+                    self.store.log_tool(run['owner_task_id'], run['agent_id'], round_number,
+                        'drawing_repair_continued', {'run_id': run['id'], **feedback})
+                    self.records.finish_response(run['id'], [*history, message,
+                        {'role': 'user', 'content': json.dumps(feedback, ensure_ascii=False)}])
+                    continue
                 if drawing_report is not None:
                     report_unresolved = drawing_report['unresolved'] + [item['evidence'] for item in drawing_report['checks']
                         if item['status'] == 'unresolved']

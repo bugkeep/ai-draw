@@ -46,6 +46,7 @@ def test_actual_native_strokes_and_saved_steps_survive_restart_without_writes(tm
         assert store.connection.total_changes == before_changes
         assert store.agents.get_run(session['id'], child.run['id']) == before_run
         assert journal['saved_step']['tag_matches_current_input']
+        assert journal['saved_step']['created_in_current_input']
         assert journal['saved_step']['memory_ref'] == saved['memory_ref']
         action = journal['recent_actual_actions'][0]
         assert action['current_object_ids'] == output['changed_ids']
@@ -103,6 +104,7 @@ def test_journal_separates_agents_canvases_and_queued_inputs(tmp_path, native_dr
             _, next_journal = context(runtime, first)
             assert next_journal['recent_actual_actions'] == []
             assert not next_journal['saved_step']['tag_matches_current_input']
+            assert not next_journal['saved_step']['created_in_current_input']
             assert next_journal['saved_step']['revision'] == 1
         finally:
             await runtime.close()
