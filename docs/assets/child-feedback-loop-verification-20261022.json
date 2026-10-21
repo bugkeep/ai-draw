@@ -1,0 +1,151 @@
+{
+  "schema": "child-feedback-loop-verification/1",
+  "date": "2026-10-22",
+  "scope": "验证子 Agent 读取修绘反馈并继续执行的流程；整幅画质与完整作画速度仍未验收。",
+  "baseline_commit": "2595a272092abb27f30f43ce72b08c58e868568e",
+  "retained_runtime_changes": [
+    "studio/agent_manager.py: 子 Agent 在结束输入之前送达最新独立反馈",
+    "studio/child_execution.py: 新反馈的继续判定与首次整幅复核触发"
+  ],
+  "original_art_guidance_and_memory_content_unchanged": true,
+  "new_geometry_context_retained": false,
+  "frozen_layers": [
+    "主 Agent 与整幅完成核查",
+    "系统消息",
+    "独立评审提示、解析和评分",
+    "DrawSpec 与工具协议",
+    "原生绘图和几何执行",
+    "存储、网络、模型配置、依赖和前端"
+  ],
+  "new_product_time_action_or_round_limits": false,
+  "confirmed_unread_feedback_event": {
+    "source_stem": "landscape-active-geometry-memory-20261022",
+    "run_id": "run_838c81b88e115d4badba5774c0fb676b",
+    "review_key": "ef84d3513b36227ebfa1cc462e28c3b615fdc520fe16d1d0844d2e4644aa5758",
+    "run_status": "completed",
+    "observed_at": null,
+    "actual_child_responses_containing_this_feedback": 0,
+    "completion_source": "independent_draft_comparison",
+    "interpretation": "输入形成完成结果之前，没有将该条反馈送入实际子 Agent 回复。此记录不评价画面质量。"
+  },
+  "real_continuation": {
+    "stem": "landscape-child-loop-only-20261022",
+    "prompt": "画一幅中国水墨山水线描，有远山、近处松树、溪流和一座小桥。",
+    "source_stem": "landscape-active-targets-live-20261022",
+    "source_checkpoint_sha256": "3f6b17fd3f6802016de4062c0302ab99a24992518cdd067eb03d10d9767db999",
+    "source_contexts_sha256": "39afb38619f5b89992a71b95cb59a634f4450b80fe8476fe460d3a34c0739f62",
+    "source_was_genuinely_running": true,
+    "source_opened_read_only": true,
+    "same_native_progress_and_original_assignment_preserved": true,
+    "fresh_main_composition_generated": false,
+    "model": "ark-code-latest",
+    "model_configuration_without_secret_sha256": "81cce6603543fb2e4e67531e6b8a4630d61ae1925ed770cb720f42570f49fd2b",
+    "dataset_sha256": "908bfc8f904933e29533a64216d7cc0249941a984ba8e4ad7e3d1b52309bc9a5",
+    "task_id": "0561d1a94efc452199032fddef786e11",
+    "run_id": "run_838c81b88e115d4badba5774c0fb676b",
+    "input_id": "input_765ca0bda50a58b1b694bcbf57705cc9",
+    "before_scene_hash": "8e09c8cc339ab8d622cb26b1a972caff0034e309963cf7739d7c8c7689971f70",
+    "final_scene_hash": "c014f280e17438ba70675b4ca9e37a3430700c73350d7f24d79537f632e82d06",
+    "model_requests": 28,
+    "child_model_requests": 24,
+    "main_model_requests": 1,
+    "independent_review_requests": 3,
+    "incomplete_model_requests_at_operator_stop": 1,
+    "new_actual_drawing_write_receipts": 7,
+    "erase_strokes_calls": 4,
+    "successful_zero_change_erasures": 1,
+    "review_status_counts": {
+      "repair": 3
+    },
+    "same_state_equal_argument_read_repetitions": 1,
+    "repeated_read_note": "该次整幅之外的重复区域查看触发原有停滞检查，不能仅根据重复判定无用。",
+    "new_tool_errors": 0,
+    "source_episode_tool_errors_excluded": 13,
+    "feedback_delivery": {
+      "new_ineffective_reviews": 2,
+      "delivered_to_actual_child_responses": 2,
+      "pending_delivery_at_stop": 0,
+      "premature_handoffs": 0,
+      "full_original_assessment_and_next_strategy_verified": true,
+      "records": [
+        {
+          "review_key": "feb146796f1b4b1ea8131e1938aadfb9666c1cf33894ac7ed196c19588177ca3",
+          "review_created_at": 1792615909.6998284,
+          "observed_at": 1792615920.6595695,
+          "actual_child_request_ids": [15]
+        },
+        {
+          "review_key": "252e33d071a9015a2476f5058795bc8a8061c69a4f37ad5d8812f487f8e9ee4d",
+          "review_created_at": 1792615979.9440186,
+          "observed_at": 1792615995.5245595,
+          "actual_child_request_ids": [22, 23]
+        }
+      ]
+    },
+    "full_context_replay_verification": {
+      "source_matches_captured_implementation": true,
+      "child_inputs": 24,
+      "current_native_index_entries": 2423,
+      "current_native_polylines": 2129,
+      "current_canvas_images": 48,
+      "original_assignments_preserved": true,
+      "tool_call_output_pairing_findings": 0,
+      "protocol_errors": 0
+    },
+    "operator_checkpoint": {
+      "database_sha256": "ee11d90b17a4d968ee0f227b805a0cb78ad9d83e75c79b0cfe62c265c946f2e1",
+      "contexts_sha256": "53ec6877a3ce06f00793ed85d8f818ec4918d74902be60c73fc2b52a0a379c5d",
+      "png_matches_final_native_scene": true,
+      "saved_native_draft_and_prepared_actions": true,
+      "separate_live_running_snapshot_stem": "landscape-child-feedback-live-20261022"
+    },
+    "stopped_by": "operator",
+    "natural_completion": false,
+    "whole_artwork_quality_accepted": false,
+    "whole_artwork_latency_improvement_claimed": false,
+    "human_artistic_acceptance": "not_claimed"
+  },
+  "first_whole_view_verification": {
+    "required": "已有实际构造或有效擦除，最近工具回执是成功的整幅 view_canvas。",
+    "first_independent_review_can_be_requested": true,
+    "regional_view_changes_meaning": false,
+    "deletion_only_triggers_verification": false,
+    "regression_cases": 3,
+    "uses_real_native_actions_sqlite_and_png_rendering": true,
+    "generates_or_fabricates_model_reviews": false,
+    "scope": "工程触发条件测试，不作为美术质量评分。"
+  },
+  "unpromoted_context_diagnostic": {
+    "source_stem": "landscape-verified-feedback-loop-20261022",
+    "actual_reshape_calls_in_recorded_prefix": 8,
+    "final_endpoint_preserved_by_all_eight_calls": [1070, 940],
+    "current_native_endpoint_location": "inside the measured right-bank filled shape",
+    "single_response_replay_stem": "landscape-endpoint-logic-replay-20261022",
+    "single_response_model_seconds": 6.54096940002637,
+    "returned_reshape_schema_valid": true,
+    "same_final_endpoint_still_returned": true,
+    "replay_drawing_actions_executed": false,
+    "artistic_or_latency_benefit_established": false,
+    "runtime_extension_retained": false
+  },
+  "engineering_validation": {
+    "backend_tests_passed": 319,
+    "backend_tests_seconds": 82.86,
+    "freeze_boundary_ast_and_file_checks_passed": true,
+    "existing_harness_tests_updated": ["tests/test_child_art_context.py"],
+    "new_harness_tests": ["tests/test_child_first_pass_verification.py"],
+    "independent_evaluation_tests_changed": false
+  },
+  "user_service": {
+    "port": 8001,
+    "health": "ok",
+    "existing_session_count": 6,
+    "restarted_or_written_by_this_trial": false,
+    "trial_used_separate_databases": true
+  },
+  "accepted_human_composition_baseline": {
+    "path": "docs/assets/cafe-current-evidence-continuation-20261021.png",
+    "sha256": "af744442dc655b72d54cdeab01c8301984fd9c26692272195ee5d3807afe7013",
+    "acceptance_scope": "用户确认该咖啡馆线稿达到最低构图要求；不代表山水或一般画质通过。"
+  }
+}

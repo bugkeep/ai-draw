@@ -96,12 +96,12 @@ def recover_repeated_tool_error(memory, run, history):
 
 
 def verification_checkpoint(store, run, reason):
-    if not reason or set(reason) != {'changed_after_review'}:
+    if not reason or set(reason) not in ({'first_changed_draft'}, {'changed_after_review'}):
         return None
     with store.lock:
         review = store.connection.execute('SELECT created_at,result,observed_at FROM draft_reviews '
             'WHERE review_key=? AND run_id=? AND task_id=?',
-            (reason['changed_after_review'], run['id'], run['owner_task_id'])).fetchone()
+            (reason.get('changed_after_review'), run['id'], run['owner_task_id'])).fetchone()
         last = store.connection.execute('SELECT call_id,name,arguments,output FROM agent_tool_calls '
             'WHERE caller_id=? AND task_id=? ORDER BY rowid DESC LIMIT 1',
             (run['id'], run['owner_task_id'])).fetchone()
@@ -110,10 +110,12 @@ def verification_checkpoint(store, run, reason):
             "AND json_extract(output,'$.action_count')>0 AND name IN (SELECT value FROM json_each(?)) "
             'ORDER BY rowid DESC LIMIT 1',
             (run['id'], run['owner_task_id'], json.dumps(DRAWING_WRITES))).fetchone()
+    if not whole_canvas_verification(last) or changed is None or changed['name'] == 'delete_elements':
+        return None
+    if reason.get('first_changed_draft'):
+        return {'first_pass_verification': {'call_id': last['call_id']}}
     if (review is None or review['observed_at'] is None or json.loads(review['result'])['status'] != 'repair'
-            or not whole_canvas_verification(last)
-            or changed is None or changed['created_at'] <= review['created_at']
-            or changed['name'] == 'delete_elements'):
+            or changed['created_at'] <= review['created_at']):
         return None
     return {'repair_verification': {'review_key': reason['changed_after_review'], 'call_id': last['call_id']}}
 
@@ -145,7 +147,7 @@ def execution_context(run, messages):
     return project_execution_context(run, prompt, messages)
 
 
-def continue_repair(completion, report=None):
+def continue_repair(completion, report=None, *, feedback_pending=False):
     unresolved = report and (report['unresolved'] or any(item['status'] == 'unresolved' for item in report['checks']))
     return (completion['completion'].get('review_status') == 'repair' and not unresolved
-            and completion['completion'].get('reason') != 'ineffective_repair')
+            and (completion['completion'].get('reason') != 'ineffective_repair' or feedback_pending))

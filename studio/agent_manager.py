@@ -304,15 +304,6 @@ class AgentManager:
                 review = (await self.draft_reviews.review(run, models.settings, reason)
                           if reason else current_feedback(self.store, run))
                 replan = self.draft_reviews.replan_completion(run, review) if review else None
-                if replan:
-                    result = self.records.complete_run(session_id, run['id'], replan['visible_state'],
-                        completion={**replan, 'source': 'independent_draft_comparison'})
-                    self.store.log_tool(run['owner_task_id'], run['agent_id'], round_number,
-                        'drawing_repair_handoff', {'run_id': run['id'], 'review_key': replan['review_key'],
-                            'result_id': result['result_id'], 'completion': result['completion']})
-                    self.store.log_tool(run['owner_task_id'], run['agent_id'], round_number, 'agent_result', result)
-                    await self._notify(session_id, run['agent_id'], result)
-                    return
                 if review and review['status'] != 'error':
                     history = self._review_history(run, review, history)
                     if review['status'] == 'repair':
@@ -366,7 +357,8 @@ class AgentManager:
                     self.vision.require_review(run['owner_task_id'], run['id'], {
                         **run['document'], 'elements': run['draft'], 'selection': run['selection']})
                 completion = await self._completion(models, run, summary)
-                if continue_repair(completion, drawing_report):
+                feedback_pending = not self.draft_reviews.observed(run['id'], completion['completion'].get('review_key'))
+                if continue_repair(completion, drawing_report, feedback_pending=feedback_pending):
                     feedback = {'drawing_checkpoint': {
                         'status': 'repair', 'review_key': completion['completion']['review_key'],
                         'instruction': 'The independent reviewer found repairable work in this same input. '

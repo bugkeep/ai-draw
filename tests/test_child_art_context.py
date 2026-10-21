@@ -11,6 +11,7 @@ from studio.actions import element_fingerprint
 from studio.child_art_context import artistic_brief, indexed_summary, perspective_references
 from studio.child_drawing_memory import drawing_memory_context
 from studio.child_execution import continue_repair, execution_context, whole_canvas_verification
+from studio.child_harness import repair_context
 from studio.drawing_dsl import DrawingAssignment
 from studio.eraser import element_geometry
 from studio.runtime import DrawingRuntime
@@ -192,7 +193,7 @@ def test_current_polyline_matches_native_path_after_move_and_rotation(tmp_path, 
     asyncio.run(check())
 
 
-def test_compared_ineffective_repair_hands_back_actual_pending_draft_without_a_model_request(tmp_path, native_drawing_child):
+def test_unread_ineffective_feedback_preserves_the_live_draft_for_a_child_response(tmp_path, native_drawing_child):
     async def check():
         store = StudioStore(tmp_path / 'handoff.sqlite3')
         runtime = DrawingRuntime(store, ModelSettings(store))
@@ -202,7 +203,7 @@ def test_compared_ineffective_repair_hands_back_actual_pending_draft_without_a_m
         try:
             assert child.call('create_element', {'type': 'ellipse', 'name': '未提交形体'}, 'actual-outline')['ok']
             before = copy.deepcopy(child.run)
-            # 真实评审记录用于检查交接执行及持久状态，不评价此原生测试形体的画质。
+            # 真实反馈只用于验证上下文传递，不评价此原生测试形体的画质。
             recorded = json.loads((Path(__file__).parent / 'fixtures/draft-review-replan-response.json').read_text(encoding='utf-8'))
             feedback = {**recorded['result'], 'scene_hash': scene_digest(child.document),
                         'selection': child.run['selection']}
@@ -210,22 +211,25 @@ def test_compared_ineffective_repair_hands_back_actual_pending_draft_without_a_m
                 store.connection.execute('INSERT INTO draft_reviews VALUES(?,?,?,?,?,?,NULL)', (
                     feedback['review_key'], task['id'], child.run['id'], feedback['scene_hash'],
                     json.dumps(feedback), time.time()))
-            models = DrawingAgents(store, ModelConfig(provider='ollama', model='llama3.1', api_base='http://localhost:11434'))
-            await runtime.children._execute_run(models, session['id'], child.run)
+            reviews = runtime.children.draft_reviews
+            completion = reviews.replan_completion(child.run, feedback)
+            assert completion['status'] == 'blocked' and completion['reason'] == 'ineffective_repair'
+            assert not reviews.observed(child.run['id'], feedback['review_key'])
+            report = {'unresolved': [], 'checks': []}
+            assert continue_repair({'completion': completion}, report, feedback_pending=True)
+            assert not continue_repair({'completion': completion}, report, feedback_pending=False)
+            assert not continue_repair({'completion': completion},
+                {'unresolved': ['当前指派存在几何冲突'], 'checks': []}, feedback_pending=True)
+            message = json.loads(repair_context(reviews, feedback, child.document, completion)['content'])
+            assert message['current_private_draft_review'] == feedback
+            assert message['repair_strategy']['next_strategy'] == feedback['assessment']['revision']['next_strategy']
             saved = store.agents.get_run(session['id'], child.run['id'])
-            assert saved['status'] == 'completed' and saved['prepared'] == before['prepared']
+            assert saved['status'] == 'running' and saved['prepared'] == before['prepared']
             assert saved['draft'] == before['draft']
-            result = store.agents.get_agent(session['id'], child.agent['agent_id'])['latest_result']
-            assert result['completion']['status'] == 'blocked'
-            assert result['completion']['reason'] == 'ineffective_repair'
-            assert result['completion']['source'] == 'independent_draft_comparison'
+            assert store.agents.get_agent(session['id'], child.agent['agent_id'])['latest_result'] is None
+            assert not reviews.observed(child.run['id'], feedback['review_key'])
             assert not store.connection.execute("SELECT 1 FROM tool_logs WHERE kind='llm_response'").fetchall()
             assert store.get_document(session['document']['id'])['elements'] == []
-            continued = native_drawing_child(store, runtime, session, task, child.agent)
-            assert continued.run['document']['depends_on'] == [result['result_id']]
-            assert [element_fingerprint(item) for item in continued.run['draft']] == [
-                element_fingerprint(item) for item in before['draft']]
-            assert continued.run['prepared'] == []
             assert store.connection.execute('SELECT count(*) FROM agent_tool_calls').fetchone()[0] == 1
         finally:
             await runtime.close()
