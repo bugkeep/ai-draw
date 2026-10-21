@@ -16,7 +16,7 @@ from .reference_work import ReferenceWork
 from .drawing_dsl import prepare_assignment, parse_report, result_evidence
 from .child_harness import repair_context, coordinate_context, observation_context
 from .child_drawing_memory import drawing_memory_context
-from .child_execution import checkpoint_reason, continue_repair, current_feedback, execution_context, verification_checkpoint
+from .child_execution import checkpoint_reason, continue_repair, current_feedback, execution_context, recover_repeated_tool_error, verification_checkpoint
 
 
 class AgentManager:
@@ -287,6 +287,8 @@ class AgentManager:
                         if history[index] == message:
                             history = history[:index]
                         break
+            if message is None:
+                history = recover_repeated_tool_error(self.memory, run, history)
             run["conversation"] = history
             if message is None:
                 agent = self.records.get_agent(session_id, run["agent_id"])

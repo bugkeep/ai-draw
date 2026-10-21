@@ -1,0 +1,395 @@
+{
+  "schema": "child-tool-error-recovery-evidence/1",
+  "decision": "Retain only conditional child error-history recovery and schema guidance. The complete landscape speed and artistic objective remains unmet; no landscape artwork accepted.",
+  "base_commit": "41f09f3e8a840b7bf8f394763cffc2439e277da2",
+  "model_configuration_sha256": "81cce6603543fb2e4e67531e6b8a4630d61ae1925ed770cb720f42570f49fd2b",
+  "frozen_boundary": {
+    "allowed_runtime_changes": [
+      "studio/agent_manager.py",
+      "studio/child_context_projection.py",
+      "studio/child_execution.py"
+    ],
+    "main_role_and_completion_and_evaluators_and_tools_and_models_and_storage_and_network_and_ui_frozen": true,
+    "existing_child_methods_unchanged_except_error_history_hook_and_syntax_hint_footer": true
+  },
+  "implementation_sha256": {
+    "studio/child_context_projection.py": "d5b90ad96b4048097f6f7e14b5eed604681b80da5b218fd8db48fa0b8ff0b264",
+    "tests/fixtures/recorded_repeated_binding_errors.json": "cae42b96f6f28c1b58f8fdd113b9f018a6de11e766b6f62fb0c3758339609ed1",
+    "studio/agent_manager.py": "57e08671f515bafea55a763d8160296c7b5e5666d7f6184bb7e7d486b88e123e",
+    "studio/child_execution.py": "eb2eb221be51dab0371619d796391ce502d8cc1fc5076253bac9f03be5e01b32",
+    "tests/test_child_tool_error_recovery.py": "2fd17756b3e162450ae47285fdad265037e4db3381a7f1b4eb19111cdcea39b7"
+  },
+  "one_real_provider_response": {
+    "scope": "One real provider response to a historical child schema-error context. Source is read-only; a storage copy supports existing memory reads. No completed run is restarted, no tool action is prepared/submitted, no artwork speed or quality claim is made.",
+    "source_request_id": 103,
+    "source_request_sha256": "8f7ffe9ef6b9d2aa9c6e986fbcb11f9ca305e7310959532a62119eb54d71cf9a",
+    "source_database_sha256": "0dead809a7dbcabaec1dfb11267a823600902d3134372954a3a19ad50e8adb13",
+    "source_run_id": "run_4d6a14939ee05281a9c579570c97ad48",
+    "source_prepared_actions": 1,
+    "model_seconds": 7.830866199976299,
+    "historical_exchanges_archived": 5,
+    "all_archived_outputs_proven_delivered_by_prior_completed_provider_requests": true,
+    "latest_full_error_exchange_unchanged": true,
+    "original_assignment_and_images_unchanged": true,
+    "real_retry_schema_and_original_canvas_binding_passed": true,
+    "original_view_id_and_coordinate_space_preserved": true,
+    "raw_response_recorded": true,
+    "grounded_calls": [
+      {
+        "name": "draw_paths",
+        "actual_canvas_mapping_checked": true
+      }
+    ],
+    "original_characters": 266234,
+    "projected_characters": 260207
+  },
+  "replay_limitations": "A single real schema-recovery response. No drawing action was executed or submitted; no claim of identical model-proposed points, finished artwork quality, token savings or whole-run latency.",
+  "recorded_call_fixture": {
+    "path": "tests/fixtures/recorded_repeated_binding_errors.json",
+    "sha256": "cae42b96f6f28c1b58f8fdd113b9f018a6de11e766b6f62fb0c3758339609ed1",
+    "source_requests": [
+      100,
+      101,
+      102,
+      103,
+      104
+    ]
+  },
+  "continuation_actual_hint_responses": [
+    {
+      "request_id": 3,
+      "hints": [
+        {
+          "call_id": "call_qio5swshkcu23l2u05lcn8v6",
+          "tool": "draw_paths",
+          "omit_unused_optional_fields": [
+            "observation_id",
+            "reference_view_id",
+            "reference_layout_id",
+            "coordinate_space"
+          ],
+          "fields_belonging_to_each_path": [],
+          "instruction": "Syntax guidance for this actual rejected call. Omit the listed unused binding fields entirely; native canvas coordinates use no image/reference binding. For image/source work keep the actual current view IDs and their matching coordinate space. Listed per-path fields belong inside each paths entry, not at the call root. Preserve the intended targets and geometry while correcting the call. This hint executes nothing and does not approve any drawing change."
+        }
+      ],
+      "actual_returned_calls": [
+        {
+          "name": "draw_paths",
+          "call_id": "call_29bi059zaag4ng7twnkh3uga",
+          "executed_receipt_ok": true
+        }
+      ]
+    },
+    {
+      "request_id": 17,
+      "hints": [
+        {
+          "call_id": "call_5qpr82t8ki0pdn4kminmdgne",
+          "tool": "erase_strokes",
+          "omit_unused_optional_fields": [
+            "observation_id",
+            "coordinate_space"
+          ],
+          "fields_belonging_to_each_path": [],
+          "instruction": "Syntax guidance for this actual rejected call. Omit the listed unused binding fields entirely; native canvas coordinates use no image/reference binding. For image/source work keep the actual current view IDs and their matching coordinate space. Listed per-path fields belong inside each paths entry, not at the call root. Preserve the intended targets and geometry while correcting the call. This hint executes nothing and does not approve any drawing change."
+        }
+      ],
+      "actual_returned_calls": [
+        {
+          "name": "erase_strokes",
+          "call_id": "call_webkcqjizhbxs05pq71ajp6y",
+          "executed_receipt_ok": true
+        }
+      ]
+    }
+  ],
+  "continuation_repeated_error_checkpoints": [],
+  "trials": [
+    {
+      "stem": "landscape-stage-memory-full-20261022",
+      "natural_completion": false,
+      "artwork_acceptance": false,
+      "comparison_scope": "From blank using the exact recorded initial assignment; initial planning excluded.",
+      "model_requests": 180,
+      "incomplete_requests_at_operator_stop": 1,
+      "completed_request_span_seconds": 1881.4785034656525,
+      "model_categories": {
+        "child": {
+          "request_count": 131,
+          "completed_model_seconds_sum": 1065.7989554405212
+        },
+        "main": {
+          "request_count": 30,
+          "completed_model_seconds_sum": 278.58190631866455
+        },
+        "DraftReview.review": {
+          "request_count": 17,
+          "completed_model_seconds_sum": 297.7568380832672
+        },
+        "DrawingQuality.assess": {
+          "request_count": 2,
+          "completed_model_seconds_sum": 27.235854864120483
+        }
+      },
+      "review_status_counts": {
+        "repair": 13,
+        "error": 3,
+        "ready": 1
+      },
+      "exact_repeated_read_count": 3,
+      "new_tool_errors": [
+        {
+          "request_id": 19,
+          "category": "child",
+          "name": "draw_paths",
+          "error": "smooth: Extra inputs are not permitted"
+        },
+        {
+          "request_id": 24,
+          "category": "main",
+          "name": "send_input",
+          "error": "reference_layout_id: String should match pattern '^layout_[a-f0-9]{32}$'"
+        },
+        {
+          "request_id": 43,
+          "category": "child",
+          "name": "erase_strokes",
+          "error": "observation_id: Extra inputs are not permitted；coordinate_space: Extra inputs are not permitted"
+        },
+        {
+          "request_id": 60,
+          "category": "child",
+          "name": "erase_strokes",
+          "error": "coordinate_space: Input should be 'image_pixels' or 'image_normalized'"
+        },
+        {
+          "request_id": 75,
+          "category": "main",
+          "name": "send_input",
+          "error": "reference_layout_id: String should match pattern '^layout_[a-f0-9]{32}$'"
+        },
+        {
+          "request_id": 97,
+          "category": "child",
+          "name": "erase_strokes",
+          "error": "observation_id: String should match pattern '^view_[a-f0-9]{32}$'；coordinate_space: Input should be 'image_pixels' or 'image_normalized'"
+        },
+        {
+          "request_id": 100,
+          "category": "child",
+          "name": "draw_paths",
+          "error": "reference_view_id: String should match pattern '^refview_[a-f0-9]{32}$'；reference_layout_id: String should match pattern '^layout_[a-f0-9]{32}$'"
+        },
+        {
+          "request_id": 101,
+          "category": "child",
+          "name": "draw_paths",
+          "error": "reference_view_id: String should match pattern '^refview_[a-f0-9]{32}$'；reference_layout_id: String should match pattern '^layout_[a-f0-9]{32}$'"
+        },
+        {
+          "request_id": 102,
+          "category": "child",
+          "name": "draw_paths",
+          "error": "reference_view_id: String should match pattern '^refview_[a-f0-9]{32}$'；reference_layout_id: String should match pattern '^layout_[a-f0-9]{32}$'"
+        },
+        {
+          "request_id": 103,
+          "category": "child",
+          "name": "draw_paths",
+          "error": "reference_view_id: String should match pattern '^refview_[a-f0-9]{32}$'；reference_layout_id: String should match pattern '^layout_[a-f0-9]{32}$'"
+        },
+        {
+          "request_id": 106,
+          "category": "child",
+          "name": "reshape_path",
+          "error": "observation_id: String should match pattern '^view_[a-f0-9]{32}$'；coordinate_space: Input should be 'image_pixels' or 'image_normalized'；reference_view_id: String should match pattern '^refview_[a-f0-9]{32}$'；reference_layout_id: String should match pattern '^layout_[a-f0-9]{32}$'"
+        },
+        {
+          "request_id": 112,
+          "category": "child",
+          "name": "erase_strokes",
+          "error": "observation_id: String should match pattern '^view_[a-f0-9]{32}$'"
+        },
+        {
+          "request_id": 117,
+          "category": "child",
+          "name": "draw_paths",
+          "error": "observation_id: String should match pattern '^view_[a-f0-9]{32}$'；coordinate_space: Input should be 'image_pixels' or 'image_normalized'；reference_view_id: String should match pattern '^refview_[a-f0-9]{32}$'；reference_layout_id: String should match pattern '^layout_[a-f0-9]{32}$'"
+        },
+        {
+          "request_id": 126,
+          "category": "main",
+          "name": "view_agent_result",
+          "error": "Apply dependency result first: result_19aa714fa4645ce49ce24029e55955d5"
+        },
+        {
+          "request_id": 130,
+          "category": "main",
+          "name": "view_agent_result",
+          "error": "Apply dependency result first: result_40bd6fec68d25c1594242eed9053e8f4"
+        },
+        {
+          "request_id": 151,
+          "category": "child",
+          "name": "inspect_scene",
+          "error": "Scene changed or inspection filters differ; restart with offset=0 AND expected_scene_state='' (or omit the token). The old token is bound to the previous exact ids/query/region and scene. Copy next_page unchanged only to continue that same query."
+        },
+        {
+          "request_id": 163,
+          "category": "child",
+          "name": "inspect_scene",
+          "error": "JSON 第 1 行第 74 列：Expecting ',' delimiter"
+        }
+      ],
+      "tool_counts": {
+        "draw_paths": 26,
+        "wait_agent": 9,
+        "view_canvas": 50,
+        "inspect_scene": 8,
+        "reorder_elements": 2,
+        "report_draft_review": 17,
+        "delete_elements": 10,
+        "send_input": 10,
+        "erase_strokes": 14,
+        "reshape_path": 9,
+        "recall_memory": 4,
+        "view_agent_result": 5,
+        "apply_agent_result": 2,
+        "reject_agent_result": 6,
+        "compact_context": 1,
+        "report_drawing_quality": 1
+      },
+      "context_audit": {
+        "source_matches_captured_implementation": true,
+        "natural_completion": false,
+        "child_requests_verified": 131,
+        "native_index_entries_verified": 12397,
+        "current_polylines_verified": 10532,
+        "current_canvas_images_verified": 209,
+        "all_original_assignments_preserved": true,
+        "full_tool_errors_verified": 17,
+        "prior_episode_error_count_excluded": 0,
+        "full_protocol_errors_verified": 0,
+        "continuation_of_existing_draft": false,
+        "all_model_responses_recorded": false,
+        "incomplete_responses_at_operator_stop": 1,
+        "protocol_findings": 0,
+        "automated_original_review_passed": false,
+        "human_artistic_acceptance": "not_claimed"
+      },
+      "checkpoint_sha256": {
+        "sealed-checkpoint.sqlite3": "867296ef187c21a7194ea53f76d5c18cd5fee89b5749f50591021a6c61178480",
+        "contexts.sqlite3": "1e5a46a19f9e05fcf1cb938f005ea8047895e17825fab32f1c195b273f82bb85"
+      }
+    },
+    {
+      "stem": "landscape-error-recovery-continuation-20261022",
+      "natural_completion": false,
+      "artwork_acceptance": false,
+      "comparison_scope": "Continuation of a genuine Running checkpoint; not comparable to a full drawing latency.",
+      "model_requests": 98,
+      "incomplete_requests_at_operator_stop": 1,
+      "completed_request_span_seconds": 989.7184195518494,
+      "model_categories": {
+        "child": {
+          "request_count": 63,
+          "completed_model_seconds_sum": 434.71227407455444
+        },
+        "main": {
+          "request_count": 23,
+          "completed_model_seconds_sum": 269.7797393798828
+        },
+        "DraftReview.review": {
+          "request_count": 12,
+          "completed_model_seconds_sum": 167.1921088695526
+        }
+      },
+      "review_status_counts": {
+        "repair": 10,
+        "error": 1
+      },
+      "exact_repeated_read_count": 3,
+      "new_tool_errors": [
+        {
+          "request_id": 1,
+          "category": "child",
+          "name": "draw_paths",
+          "error": "coordinate_space: Input should be 'image_pixels' or 'image_normalized'"
+        },
+        {
+          "request_id": 16,
+          "category": "child",
+          "name": "erase_strokes",
+          "error": "observation_id: Extra inputs are not permitted；coordinate_space: Extra inputs are not permitted"
+        },
+        {
+          "request_id": 53,
+          "category": "main",
+          "name": "compact_context",
+          "error": "Working memory refers to objects outside this canvas/draft: ['0cf7a3bf97a74f49', '547392dac809492f', '63c1fba78e834974', 'ce7330b5ab3743f1']. object_ids accepts native drawing objects only; keep Agent, result and reference IDs in summary or constraints instead."
+        },
+        {
+          "request_id": 61,
+          "category": "main",
+          "name": "view_agent_result",
+          "error": "Apply dependency result first: result_25c94b688a605b7188f6ee37a44de845"
+        },
+        {
+          "request_id": 69,
+          "category": "main",
+          "name": "send_input",
+          "error": "JSON 第 1 行第 9126 列：Expecting ',' delimiter"
+        }
+      ],
+      "tool_counts": {
+        "draw_paths": 7,
+        "wait_agent": 7,
+        "view_canvas": 29,
+        "report_draft_review": 11,
+        "send_input": 7,
+        "delete_elements": 1,
+        "recall_memory": 7,
+        "erase_strokes": 10,
+        "reshape_path": 6,
+        "compact_context": 1,
+        "view_agent_result": 2,
+        "apply_agent_result": 1,
+        "reject_agent_result": 4
+      },
+      "context_audit": {
+        "source_matches_captured_implementation": true,
+        "natural_completion": false,
+        "child_requests_verified": 63,
+        "native_index_entries_verified": 6437,
+        "current_polylines_verified": 5562,
+        "current_canvas_images_verified": 111,
+        "all_original_assignments_preserved": true,
+        "full_tool_errors_verified": 5,
+        "prior_episode_error_count_excluded": 3,
+        "full_protocol_errors_verified": 1,
+        "continuation_of_existing_draft": true,
+        "all_model_responses_recorded": false,
+        "incomplete_responses_at_operator_stop": 1,
+        "protocol_findings": 0,
+        "automated_original_review_passed": false,
+        "human_artistic_acceptance": "not_claimed"
+      },
+      "checkpoint_sha256": {
+        "sealed-checkpoint.sqlite3": "a04d4dde383490c837ed05de8978ec6a4dcbd9ea9136177b797e462032efdb14",
+        "contexts.sqlite3": "903bf075f2b70253cbd4d273796e491a9db004ae43885ff0bcec967497c1be38"
+      }
+    }
+  ],
+  "verification": {
+    "backend_tests_passed": 316,
+    "backend_test_seconds": 78.72,
+    "existing_tests_and_evaluator_rules_unchanged": true,
+    "scope": "Tests verify durable error delivery, exact latest exchange, run/task ownership and original validation. They are not artificial model replies or artwork quality scores."
+  },
+  "remaining_findings": [
+    "Repeated repairs of bridge/stream occlusion and downstream bank relationships did not converge.",
+    "Current images and native objects were supplied; their presence does not establish model visual understanding.",
+    "Read-only nominal boundary measurements suggest geometric goals can conflict; no geometry rule, score or drawing was changed.",
+    "Main dependency/assignment errors and independent reviewer format errors remain frozen and are recorded."
+  ]
+}

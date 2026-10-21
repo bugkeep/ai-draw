@@ -1,4 +1,5 @@
 import json
+import re
 from collections import Counter
 
 from .drawing_dsl import DrawingReport
@@ -197,6 +198,67 @@ def rejected_report_memories(run, messages):
     return projected
 
 
+def latest_failed_exchange(messages):
+    for position in range(len(messages) - 1, -1, -1):
+        message = messages[position]
+        if message.get('role') != 'assistant':
+            continue
+        calls = message.get('tool_calls') or []
+        if not calls:
+            return None
+        end = position + 1
+        while end < len(messages) and messages[end].get('role') == 'tool':
+            end += 1
+        outputs = messages[position + 1:end]
+        if (len(calls) != len(outputs) or len({call['id'] for call in calls}) != len(calls)
+                or {call['id'] for call in calls} != {item.get('tool_call_id') for item in outputs}):
+            return None
+        failures = {item['tool_call_id']: json.loads(item['content']) for item in outputs
+            if json.loads(item['content']).get('ok') is False}
+        return {'start': position, 'calls': calls, 'failures': failures} if failures else None
+    return None
+
+
+def tool_argument_repairs(messages):
+    exchange = latest_failed_exchange(messages)
+    if exchange is None:
+        return []
+
+    def unused(value):
+        return value is None or isinstance(value, str) and value.strip().casefold() in {'', 'null', 'none', 'undefined'}
+
+    repairs = []
+    for call in exchange['calls']:
+        name = call['function']['name']
+        if call['id'] not in exchange['failures'] or name not in {'draw_paths', 'reshape_path', 'erase_strokes'}:
+            continue
+        try:
+            arguments = json.loads(call['function']['arguments'])
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(arguments, dict):
+            continue
+        bindings = ('observation_id', 'reference_view_id', 'reference_layout_id')
+        native = all(unused(arguments.get(key)) for key in bindings) and (
+            unused(arguments.get('coordinate_space')) or arguments.get('coordinate_space') == 'canvas')
+        omitted = [key for key in (*bindings, 'coordinate_space') if native and key in arguments]
+        if (isinstance(arguments.get('observation_id'), str)
+                and re.fullmatch(r'view_[a-f0-9]{32}', arguments['observation_id'])
+                and arguments.get('coordinate_space') in {'image_pixels', 'image_normalized'}
+                and all(unused(arguments.get(key)) for key in bindings[1:])):
+            omitted = [key for key in bindings[1:] if key in arguments]
+        per_path = ['smooth'] if name == 'draw_paths' and 'smooth' in arguments else []
+        if omitted or per_path:
+            repairs.append({'call_id': call['id'], 'tool': name, 'omit_unused_optional_fields': omitted,
+                'fields_belonging_to_each_path': per_path,
+                'instruction': 'Syntax guidance for this actual rejected call. Omit the listed unused binding fields '
+                    'entirely; native canvas coordinates use no image/reference binding. For image/source work keep '
+                    'the actual current view IDs and their matching coordinate space. Listed per-path fields belong '
+                    'inside each paths entry, not at the call root. Preserve the intended targets and geometry while '
+                    'correcting the call. This hint executes nothing and does not approve any drawing change.'})
+    return repairs
+
+
 def project_execution_context(run, prompt, messages):
     reuse_original_guidance(prompt)
     evidence = visual_evidence(run, messages)
@@ -238,6 +300,10 @@ def project_execution_context(run, prompt, messages):
             prompt['drawing_report_reference'] = 'drawing_execution_memory.drawing_report at the END of this input'
         if binding_repair is not None:
             journal['report_binding_repair'] = binding_repair
+        repairs = tool_argument_repairs(messages)
+        journal.pop('tool_argument_repairs', None)
+        if repairs:
+            journal['tool_argument_repairs'] = repairs
         projected[-1] = {**messages[-1], 'content': json.dumps(payload, ensure_ascii=False)}
     else:
         prompt['current_visual_evidence'] = evidence

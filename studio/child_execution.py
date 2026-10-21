@@ -2,7 +2,7 @@ import json
 
 from .child_drawing_memory import DRAWING_WRITES
 from .child_art_context import artistic_brief, index_scene_once
-from .child_context_projection import project_execution_context
+from .child_context_projection import latest_failed_exchange, project_execution_context
 from .vision import scene_digest
 
 
@@ -36,6 +36,63 @@ def whole_canvas_verification(call):
     return bool(call and call['name'] == 'view_canvas' and call['output']
                 and json.loads(call['output']).get('ok') is True
                 and json.loads(call['arguments']).get('region') is None)
+
+
+def recover_repeated_tool_error(memory, run, history):
+    exchange = latest_failed_exchange(history)
+    if exchange is None:
+        return history
+    prefix = history[:exchange['start']]
+    prior_ids = [call['id'] for message in prefix if message.get('role') == 'assistant'
+        for call in message.get('tool_calls') or []]
+    if not prior_ids:
+        return history
+    repeated = None
+    with memory.store.lock:
+        for call in exchange['calls']:
+            output = exchange['failures'].get(call['id'])
+            if output is None or not isinstance(output.get('error'), str):
+                continue
+            latest = memory.store.connection.execute(
+                'SELECT c.name,c.arguments,c.output FROM agent_tool_calls c JOIN agent_memories m '
+                'ON m.caller_id=c.caller_id AND m.call_id=c.call_id '
+                'WHERE c.caller_id=? AND c.task_id=? AND m.actor_id=? AND m.is_error=1 AND c.call_id=?',
+                (run['id'], run['owner_task_id'], run['agent_id'], call['id']),
+            ).fetchone()
+            if (latest is None or latest['name'] != call['function']['name']
+                    or latest['arguments'] != call['function']['arguments']
+                    or json.loads(latest['output']).get('error') != output['error']):
+                continue
+            found = memory.store.connection.execute(
+                'SELECT c.call_id FROM agent_tool_calls c JOIN agent_memories m '
+                'ON m.caller_id=c.caller_id AND m.call_id=c.call_id '
+                'WHERE c.caller_id=? AND c.task_id=? AND m.actor_id=? AND m.is_error=1 '
+                'AND m.observed_at IS NOT NULL AND c.name=? AND json_extract(c.output,\'$.error\')=? '
+                'AND c.call_id IN (SELECT value FROM json_each(?)) LIMIT 1',
+                (run['id'], run['owner_task_id'], run['agent_id'], call['function']['name'],
+                    output['error'], json.dumps(prior_ids)),
+            ).fetchone()
+            if found is not None:
+                repeated = call
+                break
+    if repeated is None:
+        return history
+    compacted = memory.repair_checkpoint(run['id'], prefix)
+    if compacted == prefix:
+        return history
+    for position in range(len(compacted) - 1, -1, -1):
+        message = compacted[position]
+        if message.get('role') != 'user' or not message.get('content', '').startswith('{"repair_checkpoint":'):
+            continue
+        payload = json.loads(message['content'])
+        payload['repair_checkpoint']['recovery_for_call_id'] = repeated['id']
+        payload['repair_checkpoint']['recovery_tool'] = repeated['function']['name']
+        payload['repair_checkpoint']['instruction'] += (
+            ' The same tool error recurred. Its complete latest exchange follows unchanged. '
+            'Correct that actual error from the current tool schema; do not copy the archived invalid arguments.')
+        compacted[position] = {**message, 'content': json.dumps(payload, ensure_ascii=False)}
+        break
+    return [*compacted, *history[exchange['start']:]]
 
 
 def verification_checkpoint(store, run, reason):

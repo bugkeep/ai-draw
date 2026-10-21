@@ -1,0 +1,118 @@
+{
+  "provenance": {
+    "source_contexts": "runs\\landscape-stage-memory-full-20261022-contexts.sqlite3",
+    "source_database": "runs\\landscape-stage-memory-full-20261022.sqlite3",
+    "context_database_sha256": "04a04fd1c3f26dd0cee1d40fd1c609c7c44e023cf33fcc41632947009b1419c5",
+    "scope": "Actual provider calls and durable tool outputs; no generated or substituted model responses."
+  },
+  "failures": [
+    {
+      "source_request_id": 100,
+      "source_request_sha256": "4ff3761d0c028f6796e0e6f1fca925988934ddaea4a629b9c7d121b81c546975",
+      "call": {
+        "id": "call_qht7zi6frjlpy7kvyhqi03u4",
+        "function": {
+          "arguments": "{\"backgroundColor\": \"transparent\", \"coordinate_space\": \"image_normalized\", \"observation_id\": \"view_bf0b3fc89c7c4876bfdd8fe556149f8d\", \"opacity\": 56, \"origin\": [0, 0], \"paths\": [{\"closed\": false, \"name\": \"stream_lower_right_bank_repair / 下游右岸自右桥墩内缘向前景放宽\", \"points\": [[559, 586], [556, 620], [566, 660], [594, 715], [635, 770], [677, 825], [723, 878]], \"smooth\": true, \"strokeColor\": \"#828990\", \"strokeWidth\": 0.32}], \"reference_layout_id\": \"null\", \"reference_view_id\": \"null\", \"scale\": 1, \"strokeColor\": \"#828990\", \"strokeWidth\": 0.32}",
+          "name": "draw_paths"
+        },
+        "type": "function"
+      },
+      "output": {
+        "error": "reference_view_id: String should match pattern '^refview_[a-f0-9]{32}$'；reference_layout_id: String should match pattern '^layout_[a-f0-9]{32}$'",
+        "ok": false
+      }
+    },
+    {
+      "source_request_id": 101,
+      "source_request_sha256": "512f9dc395304af0ec227ecd95a130e24bf8bc0255012d61d5762b9d6e6dd9a5",
+      "call": {
+        "id": "call_qewkosmfqy0n0035aryz4nhr",
+        "function": {
+          "arguments": "{\"backgroundColor\": \"transparent\", \"coordinate_space\": \"image_normalized\", \"observation_id\": \"view_bf0b3fc89c7c4876bfdd8fe556149f8d\", \"opacity\": 56, \"origin\": [0, 0], \"paths\": [{\"closed\": false, \"name\": \"stream_lower_right_bank_repair / 下游右岸自右桥墩内缘向前景放宽\", \"points\": [[559, 586], [556, 620], [566, 660], [594, 715], [635, 770], [677, 825], [723, 878]], \"smooth\": true, \"strokeColor\": \"#828990\", \"strokeWidth\": 0.32}], \"reference_layout_id\": \"null\", \"reference_view_id\": \"null\", \"scale\": 1, \"strokeColor\": \"#828990\", \"strokeWidth\": 0.32}",
+          "name": "draw_paths"
+        },
+        "type": "function"
+      },
+      "output": {
+        "error": "reference_view_id: String should match pattern '^refview_[a-f0-9]{32}$'；reference_layout_id: String should match pattern '^layout_[a-f0-9]{32}$'",
+        "ok": false
+      }
+    },
+    {
+      "source_request_id": 102,
+      "source_request_sha256": "a93179da54b922aa01f66559a0e8336c1c8e80927e1bf4503688f9e8d04fa378",
+      "call": {
+        "id": "call_fcc3qnyb7312truqwcenwcon",
+        "function": {
+          "arguments": "{\"backgroundColor\": \"transparent\", \"coordinate_space\": \"image_normalized\", \"observation_id\": \"view_bf0b3fc89c7c4876bfdd8fe556149f8d\", \"opacity\": 56, \"origin\": [0, 0], \"paths\": [{\"closed\": false, \"name\": \"stream_lower_right_bank_repair / 下游右岸自右桥墩内缘向前景放宽\", \"points\": [[559, 586], [556, 620], [566, 660], [594, 715], [635, 770], [677, 825], [723, 878]], \"smooth\": true, \"strokeColor\": \"#828990\", \"strokeWidth\": 0.32}], \"reference_layout_id\": \"null\", \"reference_view_id\": \"null\", \"scale\": 1, \"strokeColor\": \"#828990\", \"strokeWidth\": 0.32}",
+          "name": "draw_paths"
+        },
+        "type": "function"
+      },
+      "output": {
+        "error": "reference_view_id: String should match pattern '^refview_[a-f0-9]{32}$'；reference_layout_id: String should match pattern '^layout_[a-f0-9]{32}$'",
+        "ok": false
+      }
+    },
+    {
+      "source_request_id": 103,
+      "source_request_sha256": "8f7ffe9ef6b9d2aa9c6e986fbcb11f9ca305e7310959532a62119eb54d71cf9a",
+      "call": {
+        "id": "call_l9b6ud1oj55mzvh4913mx1b8",
+        "function": {
+          "arguments": "{\"backgroundColor\": \"transparent\", \"coordinate_space\": \"image_normalized\", \"observation_id\": \"view_bf0b3fc89c7c4876bfdd8fe556149f8d\", \"opacity\": 56, \"origin\": [0, 0], \"paths\": [{\"closed\": false, \"name\": \"stream_lower_right_bank_repair / 下游右岸自右桥墩内缘向前景放宽\", \"points\": [[559, 586], [556, 620], [566, 660], [594, 715], [635, 770], [677, 825], [723, 878]], \"smooth\": true, \"strokeColor\": \"#828990\", \"strokeWidth\": 0.32}], \"reference_layout_id\": \"undefined\", \"reference_view_id\": \"undefined\", \"scale\": 1, \"strokeColor\": \"#828990\", \"strokeWidth\": 0.32}",
+          "name": "draw_paths"
+        },
+        "type": "function"
+      },
+      "output": {
+        "error": "reference_view_id: String should match pattern '^refview_[a-f0-9]{32}$'；reference_layout_id: String should match pattern '^layout_[a-f0-9]{32}$'",
+        "ok": false
+      }
+    }
+  ],
+  "success": {
+    "source_request_id": 104,
+    "source_request_sha256": "ac43ba1ffbe2633ca1b96b9f77948362c02a2b94e4052b56ea73e7df82af8e3a",
+    "call": {
+      "id": "call_f1m6rp2r3rz9ml5n7o62dzrp",
+      "function": {
+        "arguments": "{\"backgroundColor\": \"transparent\", \"coordinate_space\": \"image_normalized\", \"observation_id\": \"view_bf0b3fc89c7c4876bfdd8fe556149f8d\", \"opacity\": 56, \"origin\": [0, 0], \"paths\": [{\"closed\": false, \"name\": \"stream_lower_right_bank_repair / 下游右岸自右桥墩内缘向前景放宽\", \"points\": [[559, 586], [556, 620], [566, 660], [594, 715], [635, 770], [677, 825], [723, 878]], \"smooth\": true, \"strokeColor\": \"#828990\", \"strokeWidth\": 0.32}], \"scale\": 1, \"strokeColor\": \"#828990\", \"strokeWidth\": 0.32}",
+        "name": "draw_paths"
+      },
+      "type": "function"
+    },
+    "output": {
+      "action_count": 1,
+      "changed_ids": [
+        "b9156e9450da49e9"
+      ],
+      "coordinate_frame": {
+        "input_space": "image_normalized",
+        "observation_id": "view_bf0b3fc89c7c4876bfdd8fe556149f8d",
+        "output_space": "canvas",
+        "pixels_per_unit": {
+          "x": 0.7486824942825224,
+          "y": 0.7487493329953488
+        },
+        "scene_bounds": {
+          "height": 938.8989999999999,
+          "width": 1709.6699999999998,
+          "x": -38.321,
+          "y": 113.719
+        },
+        "scene_hash": "d807d2a0047fba89a267d7a7b38aa6a67d00e6ae022e308b86645b14a431a22c"
+      },
+      "objects": [
+        {
+          "id": "b9156e9450da49e9",
+          "name": "stream_lower_right_bank_repair / 下游右岸自右桥墩内缘向前景放宽"
+        }
+      ],
+      "ok": true,
+      "selected_ids": [
+        "b9156e9450da49e9"
+      ]
+    }
+  }
+}
