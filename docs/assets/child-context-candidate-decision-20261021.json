@@ -1,0 +1,95 @@
+{
+  "schema": "child-context-candidate-decision/1",
+  "decision": "Retain read-only native eraser targeting after a real no-change receipt. Remove the extra numerical construction context and its dedicated module/tests from default runtime.",
+  "reason": "The extra construction context did not satisfy whole-drawing completion/latency acceptance in these trials. These samples do not establish a statistical causal comparison.",
+  "runtime_base": "748ca49f2121af859bbc697fdb6b2822e5b6a0d5",
+  "retained_runtime_files_sha256": {
+    "studio/child_drawing_memory.py": "08de8d182d9edcfdb2f839b360e34b09f0057c5ec635a069ec0d324313e38415",
+    "studio/child_geometry_context.py": "296f70bb32e5e7cd89a1bdcf9cc198456501d46e28cdf216e07cb2833c82fd7a"
+  },
+  "independent_evaluators_and_other_frozen_layers_unchanged": true,
+  "model_configuration_sha256": "81cce6603543fb2e4e67531e6b8a4630d61ae1925ed770cb720f42570f49fd2b",
+  "original_tests_retained": 301,
+  "new_native_targeting_tests": 4,
+  "current_complete_test_result": {
+    "passed": 305,
+    "seconds": 85.34
+  },
+  "actual_local_targeting_validation": {
+    "same_agent_input_run": true,
+    "original_after_checkpoint_erase_receipts": {
+      "database": "cafe-construction-references-20261021.sqlite3",
+      "erase_calls_after_checkpoint": 3,
+      "successful_native_changes": 1,
+      "zero_change_erase_calls": 2,
+      "tool_errors": 0,
+      "run_status": "completed",
+      "review_status": "repair"
+    },
+    "targeting_after_checkpoint_erase_receipts": {
+      "database": "cafe-native-targeting-continuation-20261021.sqlite3",
+      "erase_calls_after_checkpoint": 2,
+      "successful_native_changes": 2,
+      "zero_change_erase_calls": 0,
+      "tool_errors": 0,
+      "run_status": "completed",
+      "review_status": "ready"
+    },
+    "unrequested_objects_retained_exactly": 32
+  },
+  "whole_drawing_experiments": [
+    {
+      "stem": "cafe-construction-references-20261021",
+      "kind": "extra_construction_context_on_blank_canvas",
+      "whole_drawing_complete": false,
+      "stopped_by": "operator",
+      "request_count": 122,
+      "incomplete_responses_at_stop": 1,
+      "observed_model_trace_span_seconds": 1203.2743258476257,
+      "latency_scope": "Observed request span until operator stop; not a natural completion time.",
+      "final_private_scene_hash": "5d84996e2938679a425b4b1db9e96299270967060b6d4434bb28af7fc1e054f1",
+      "matching_png_and_native_preserved": true,
+      "sealed_checkpoints": {
+        "sealed-checkpoint.sqlite3": "e631ca4ca1f8bbdf2c12c02e65170e320de4e35597c7e2828f7b51af7b5badc9",
+        "contexts.sqlite3": "4cb70da3cad7b4dec05709b46161e9126924d8a05457feb40db13dc23f9eb8ef"
+      },
+      "recorded_assignment_sha256": "95d6a3fc7e6f84a03032bd9e2bed02c3c1c17e80c27f040ce42bc32e27ec6007"
+    },
+    {
+      "stem": "cafe-native-targeting-continuation-20261021",
+      "kind": "local_targeting_then_whole_drawing_continuation",
+      "whole_drawing_complete": false,
+      "stopped_by": "operator",
+      "request_count": 93,
+      "incomplete_responses_at_stop": 1,
+      "observed_model_trace_span_seconds": 911.4071140289307,
+      "latency_scope": "Observed request span until operator stop; not a natural completion time.",
+      "final_private_scene_hash": "22d09c113c223ffdd9dee8237c64cc6a1f71c4de1b3117374af325de98990cf8",
+      "matching_png_and_native_preserved": true,
+      "sealed_checkpoints": {
+        "sealed-checkpoint.sqlite3": "cfb2ccfc71d92816a80da3bd03c5088ea3c7a0a28f9b244b521aa0d18d08b645",
+        "contexts.sqlite3": "6ff6c85ed33ed80da1778c47122024d57c28a82930d1d93ecd5e0b32d359b1fe"
+      },
+      "recorded_assignment_sha256": null
+    },
+    {
+      "stem": "cafe-current-geometry-full-20261021",
+      "kind": "extra_construction_and_targeting_on_blank_canvas",
+      "whole_drawing_complete": false,
+      "stopped_by": "operator",
+      "request_count": 58,
+      "incomplete_responses_at_stop": 1,
+      "observed_model_trace_span_seconds": 811.6109991073608,
+      "latency_scope": "Observed request span until operator stop; not a natural completion time.",
+      "final_private_scene_hash": "06ce2a20da37a957a0f59efaa7d7282fe9418c58876d6cb65514fade9e1888cc",
+      "matching_png_and_native_preserved": true,
+      "sealed_checkpoints": {
+        "sealed-checkpoint.sqlite3": "210dc5619994c5ee96a9a9eae1d1bcfe8caecca5c53254164e513cb431b741ce",
+        "contexts.sqlite3": "344d1d6b23eb9e261882f079ef207006599d476eaa369130d100699f500c0f68"
+      },
+      "recorded_assignment_sha256": "95d6a3fc7e6f84a03032bd9e2bed02c3c1c17e80c27f040ce42bc32e27ec6007"
+    }
+  ],
+  "no_product_action_round_or_time_limits_added": true,
+  "whole_drawing_speed_and_artistic_quality_accepted": false
+}

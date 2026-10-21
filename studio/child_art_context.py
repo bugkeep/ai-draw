@@ -3,7 +3,6 @@ import json
 from shapely import LineString
 from shapely.affinity import rotate, translate
 
-from .child_construction_context import construction_references
 from .path_recall import recall_path_geometry
 
 
@@ -121,7 +120,7 @@ def artistic_brief(prompt):
     stage = next(item for item in composition['stages'] if item['id'] == spec['stage_id'])
     scope = spec.get('form_ids') or stage['form_ids'] or [item['id'] for item in composition['forms']]
     focal = [item for item in composition['subjects'] if item['role'] == 'focal']
-    brief = {'stage_id': stage['id'], 'phase': stage['phase'], 'intent': spec['intent'],
+    return {'stage_id': stage['id'], 'phase': stage['phase'], 'intent': spec['intent'],
         'assigned_form_ids': scope,
         'stage_criteria': stage['criteria'], 'success_criteria': spec['success_criteria'],
         'direction': composition['art_direction'],
@@ -190,7 +189,3 @@ def artistic_brief(prompt):
             'and modeling develop form, and detail selects characteristic accents. A block-in ready flag approves only '
             'that stage. State later planned work and unverified whole-artwork finish in the report summary; '
             'only claim checks supported by the current image. Scope and exact preservation constraints remain binding.'}
-    references = construction_references(spec, scope)
-    if references is not None:
-        brief['construction_reference'] = references
-    return brief
