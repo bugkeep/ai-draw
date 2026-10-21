@@ -2,6 +2,7 @@ import json
 
 from .child_drawing_memory import DRAWING_WRITES
 from .child_art_context import artistic_brief, index_scene_once
+from .child_context_projection import project_execution_context
 from .vision import scene_digest
 
 
@@ -84,7 +85,7 @@ def execution_context(run, messages):
     brief = artistic_brief(prompt)
     if brief is not None:
         prompt['art_execution'] = brief
-    return [messages[0], {**messages[1], 'content': json.dumps(prompt, ensure_ascii=False)}, *messages[2:]]
+    return project_execution_context(run, prompt, messages)
 
 
 def continue_repair(completion, report=None):

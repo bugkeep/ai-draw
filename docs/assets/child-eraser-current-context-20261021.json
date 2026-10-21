@@ -1,0 +1,38 @@
+{
+  "scenario": "Functional eraser test on actual artwork; not a new artistic quality sample.",
+  "source_native_sha256": "7912207af653bcb4a773ba9f20ddfd2fc0bd70cf90c1d80fff536f38cb5017c6",
+  "prompt": "请使用橡皮擦完整擦除这两个已选中的窗棂笔画：left window center vertical mullion（ID a573616405194f57）；left window horizontal mullion（ID 31bec19badd140eb）。必须使用橡皮擦操作。其余对象的位置、形状、样式和图层顺序全部保持原样，不补画其他内容。",
+  "targets": [
+    "a573616405194f57",
+    "31bec19badd140eb"
+  ],
+  "status": "completed",
+  "source_objects": 54,
+  "remaining_objects": 52,
+  "all_other_native_fields_and_order_unchanged": true,
+  "parent_submitted_the_actual_child_result": true,
+  "successful_child_eraser_calls": 2,
+  "child_tool_error_count": 0,
+  "child_used_native_coordinates": true,
+  "all_calls_were_real_and_responses_complete": true,
+  "model_requests": 10,
+  "parent_error_count": 1,
+  "parent_errors_delivered_in_full": [
+    {
+      "call_id": "call_ylaw9kgue18bi0b9x5f3ujnp",
+      "name": "inspect_scene",
+      "output": {
+        "error": "Requested scene objects do not exist: ['31bec19badd140eb', 'a573616405194f57']; inspect the current region or name to refresh object IDs",
+        "ok": false
+      },
+      "next_request_id": 9,
+      "all_error_fields_preserved": true
+    }
+  ],
+  "strict_zero_all_tool_errors_condition_met": false,
+  "native_eraser_and_error_delivery_assertions_passed": true,
+  "elapsed_ms": 90706.31430001231,
+  "source_implementation_verified": true,
+  "original_runtime_and_independent_review_unchanged": true,
+  "final_native_scene_hash": "8bfcb26b591f3d23722d42f6afe79323c7d758cebbd78c675cd3bd97792e44d9"
+}

@@ -1,0 +1,64 @@
+{
+  "schema": "draw-agent-real-stage-scope-behavior/1",
+  "stem": "cafe-stage-scope-continuation-20261021",
+  "scope": "Actual child report and same-input repair continuation only; no whole-artwork acceptance or speed claim.",
+  "source_checkpoint": "E:\\ai-draw\\runs\\cafe-current-stage-checks-full-20261021\\operator-checkpoint\\sealed-checkpoint.sqlite3",
+  "source_opened_read_only": true,
+  "current_stage_id": "block_in",
+  "later_stage_ids": [
+    "contour",
+    "detail"
+  ],
+  "report_request_id": 7,
+  "actual_report_summary": "在当前共享草稿上完成本轮 block-in 修复：保留两点透视建筑外框、人行道和两张圆桌；清理了此前悬浮残框与贯穿门窗的杂线，并以统一墨线补强近角、门框、店招和转角遮阳篷。当前画面中，近角为一条清楚竖棱；门是位于右立面近角侧的完整落地矩形，含上框、左右框和门槛；左右窗洞均为闭合矩形并位于一层立面；店招为跨角的两个闭合透视矩形且位于屋顶线下方；遮阳篷具备斜顶面、贴墙后缘、前横梁、两侧断面、连续垂边和转角包裹，仅保留少量分块线；两张圆桌带桌面、立柱和底座，分置入口外两侧并落在人行道平面。未添加 CAFE 字样、窗棂、门把手等后续细节。",
+  "actual_report_unresolved": [],
+  "independent_review_request_id": 8,
+  "independent_review_status": "repair",
+  "review_findings_retained": [
+    {
+      "defect": "屋顶与上部墙面仍有两条从屋脊斜向左右外沿的长辅助/轮廓线，直接穿过顶部两个店招矩形；顶部小矩形仍像悬浮残框，不符合“店招不与屋顶线交叉、清理交叉长辅助线”的要求。",
+      "repair": "删除或并入这些贯穿屋顶/店招的斜线，只保留明确的屋顶外轮廓和两个闭合店招面；让店招完整安装在上部墙面上，不被任何线穿过。",
+      "object_ids": [
+        "cd38e84a9a4941af",
+        "a3322cf1d74e4121"
+      ],
+      "draft_region": {
+        "x": 270,
+        "y": 20,
+        "width": 465,
+        "height": 180
+      }
+    },
+    {
+      "defect": "遮阳篷虽有斜顶面、垂边和端断面，但缺少清楚连续的贴墙后缘：目前只看到左右两端短竖线，门和两窗上方的悬挑结构没有一眼可辨的完整贴墙/包裹关系，转角处还与中央竖线混杂。",
+      "repair": "沿左右立面补齐遮阳篷贴墙的后缘横线，并与斜顶面、前沿、连续垂边和左右端断面闭合；中央转角只保留一条清楚的包裹交接线，内部仅保留现有少量短分块线。",
+      "object_ids": [
+        "37b767f516b0455f",
+        "bf78bfbb5a5a4f0e",
+        "a246ee4f45144d9c",
+        "a6cf828e19c1467f",
+        "277d200ffcdc405b",
+        "aa4368c3f81746cf"
+      ],
+      "draft_region": {
+        "x": 265,
+        "y": 300,
+        "width": 475,
+        "height": 175
+      }
+    }
+  ],
+  "continued_request_id": 9,
+  "same_agent_input_run_and_original_drawspec": true,
+  "actual_next_tools": [
+    "erase_strokes",
+    "erase_strokes",
+    "delete_elements"
+  ],
+  "full_drawing_repair_feedback_delivered": true,
+  "protocol_findings": 0,
+  "report_parser_and_child_loop_conditions_unchanged": true,
+  "main_and_evaluation_and_tools_frozen": true,
+  "whole_artwork_acceptance": false,
+  "implementation_sha256": "4c21083b0fc5c2b1277cd5806f2584d2b687e9924130cb744586ce5389fa3a66"
+}

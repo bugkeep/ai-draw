@@ -1,0 +1,53 @@
+{
+  "schema": "draw-agent-real-recovery-comparison/1",
+  "scope": "Two real continuations of the same sealed unfinished drawing. Neither is a blank-canvas full creation benchmark.",
+  "same_initial_draft_hash": "ae2a5b3f4530768e6b06cacb9d69c6d37629974e267ab3442d0a5c2633b72516",
+  "runtime_changes_between_episodes": [
+    "studio/child_context_projection.py"
+  ],
+  "episodes": [
+    {
+      "stem": "cafe-current-evidence-continuation-20261021",
+      "real_model_requests": 12,
+      "child_requests": 3,
+      "episode_elapsed_ms": 194025.84147453308,
+      "new_tool_errors": 0,
+      "prior_episode_error_count_excluded": 13,
+      "all_responses_recorded": true,
+      "protocol_findings": 0,
+      "plan_complete": true,
+      "independent_original_review_passed": true
+    },
+    {
+      "stem": "cafe-current-stage-checks-20261021",
+      "real_model_requests": 7,
+      "child_requests": 1,
+      "episode_elapsed_ms": 108910.41922569275,
+      "new_tool_errors": 0,
+      "prior_episode_error_count_excluded": 13,
+      "all_responses_recorded": true,
+      "protocol_findings": 0,
+      "plan_complete": true,
+      "independent_original_review_passed": true
+    }
+  ],
+  "native_element_count": 54,
+  "same_native_ids_and_order": true,
+  "native_differences_by_field": {
+    "updated": 8,
+    "versionNonce": 8
+  },
+  "all_geometry_styles_text_and_other_native_fields_equal": true,
+  "identical_rendered_png_sha256": "af744442dc655b72d54cdeab01c8301984fd9c26692272195ee5d3807afe7013",
+  "human_visual_feedback": {
+    "date": "2026-10-21",
+    "quote": "已经到达我最低要求",
+    "scope": "Minimum composition, proportions and spatial relationships of this exact rendered café image only."
+  },
+  "limitations": [
+    "Single matched-checkpoint comparison, not a stable latency distribution.",
+    "The source drawing episode contained 13 previously observed tool errors.",
+    "The model and host varied in response latency; elapsed time is an observation, not an isolated causal estimate.",
+    "General aesthetics and full creation speed remain unaccepted."
+  ]
+}

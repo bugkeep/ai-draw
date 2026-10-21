@@ -133,9 +133,13 @@ def artistic_brief(prompt):
         'later_planned_stages': [{'id': item['id'], 'phase': item['phase'], 'criteria': item['criteria']}
             for item in composition['stages'][composition['stages'].index(stage) + 1:]],
         'painting_sequence': {
-            'block_in': 'Establish the whole silhouette, gesture and major light/dark masses; compare the main '
-                'proportions and negative spaces at full view. Resolve shared contacts and depth before local features. '
-                'Use restrained temporary guides only where needed and retain their exact IDs for later removal.',
+            'block_in': 'Establish simplified, editable silhouettes and major planes/masses across the whole drawing. '
+                'Give each uninterrupted contour its own path and each disconnected mark another paths entry. '
+                'Keep temporary construction guides in SEPARATE native objects from the subject contours, with '
+                'their actual IDs available for removal. Never concatenate walls, windows, limbs or other separate '
+                'forms into a single tour of landmarks: the connecting travel segments become visible diagonals. '
+                'Compare proportions and negative spaces at full view; resolve shared contacts and depth before '
+                'local features. Reuse a shared edge rather than drawing another copy over it.',
             'contour': 'Develop the visible silhouette and overlapping contours from the established volumes. '
                 'Place a contour\'s start, turns, termination and hidden intervals; use distinct paths for separate '
                 'visible segments. Preserve attachments and openings. Replace temporary guides as their contours resolve.',
@@ -162,7 +166,10 @@ def artistic_brief(prompt):
                 'wireframes, unrelated decorations and arbitrary extra texture.',
         },
         'execution': 'Turn these decisions into the NEXT actual tools and visual changes, batching grounded related '
-            'forms. Durable notes may retain the chosen expression, focal treatment, style and pending work alongside '
+            'forms as separate paths in one batch. A pen lift requires a new path; a returned anchor retraces a '
+            'visible segment. Separate editable form contours let a later pass refine one form without erasing '
+            'neighbors. Temporary guides need their own objects so cleanup preserves the established contours. '
+            'Durable notes may retain the chosen expression, focal treatment, style and pending work alongside '
             'an actual action; an art-plan-only model round is unnecessary. Current native styles below describe the '
             'existing picture, not a requirement to keep an accidental default in an original creation. '
             'Form bounds and ovoid/box/cylinder volumes locate construction; they are not instructions to outline '

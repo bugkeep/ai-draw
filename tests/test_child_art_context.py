@@ -88,7 +88,12 @@ def test_native_styles_roundtrip_and_only_redundant_prefix_metadata_is_removed(t
             assert prompt['scene']['elements'] == [] and not prompt['scene']['has_more']
             assert prompt['scene']['object_index_refs'] == [item['id'] for item in json.loads(original[1]['content'])['scene']['elements']]
             assert prompt['relevant_object_index_refs'] == made['changed_ids']
-            assert result[-3:] == [error, pixels, journal]
+            assert result[-3:-1] == [error, pixels]
+            assert json.loads(journal['content'])['drawing_execution_memory']['current_object_index'] == index
+            delivered = json.loads(result[-1]['content'])['drawing_execution_memory']
+            original_journal = json.loads(journal['content'])['drawing_execution_memory']
+            assert all(delivered[key] == value for key, value in original_journal.items()
+                       if key != 'current_object_index')
             assert execution_context(child.run, [*messages, error])[-1] == error
             exact = copy.deepcopy(messages)
             prefix = json.loads(exact[1]['content'])

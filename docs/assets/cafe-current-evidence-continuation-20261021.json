@@ -1,0 +1,357 @@
+{
+  "schema": "draw-agent-real-artifact/1",
+  "case": "street-cafe",
+  "prompt": "画一幅街角咖啡馆的透视线描，包含遮阳篷、门窗、店招和门口的两张桌子。",
+  "provider": "ark",
+  "model": "ark-code-latest",
+  "model_configuration_sha256": "81cce6603543fb2e4e67531e6b8a4630d61ae1925ed770cb720f42570f49fd2b",
+  "recorded_initial_dispatch": true,
+  "fresh_main_composition_generated": false,
+  "session_id": "0ddf708c4d8d46abb062bd392dbf31df",
+  "task_id": "53bba521823943ecad3b85ce19a4f6fb",
+  "status": "completed",
+  "element_count": 54,
+  "tool_error_count": 13,
+  "structural_checks": {
+    "building": true,
+    "awning": true,
+    "door": true,
+    "windows": true,
+    "sign": true,
+    "tables": true,
+    "native_geometry": true,
+    "arrows": true,
+    "final_model_canvas_inspected": true,
+    "independent_visual_review_passed": true
+  },
+  "independent_visual_review": {
+    "ok": true,
+    "review_key": "68bc1d024308147fdc0be761aee58d6f5224073666c80bfbdf1e2117e4b47a00",
+    "scene_key": "0ef3dc9365330e8485a1359f2c3034726e93dea26c2476d3bde1c2829fea3a56",
+    "assessment": {
+      "visible_subject": "一幅黑白线描的街角咖啡馆转角外立面，含双面“CAFÉ”店招、连续遮阳篷、中央双开门、两侧分格窗和门口前方两张圆桌。",
+      "goal_satisfied": true,
+      "criteria": [
+        {
+          "dimension": "request_match",
+          "applicable": true,
+          "passed": true,
+          "evidence": "画面明确呈现街角咖啡馆的双面透视转角；遮阳篷横贯两面，中央有门，左右各有窗，上方有双面店招，门口前方有两张圆桌，所有指定元素均可见。",
+          "repair": "",
+          "region": null
+        },
+        {
+          "dimension": "proportions_and_connections",
+          "applicable": true,
+          "passed": true,
+          "evidence": "两面墙体在转角交汇，门窗嵌入立面；桌子由圆形桌面、中心支柱和圆形底座连贯组成。店招悬浮于建筑上方且未画吊杆，连接略理想化，但不影响识别和整体成立。",
+          "repair": "可选：为店招添加短吊杆或支架，使其与建筑连接更合理。",
+          "region": null
+        },
+        {
+          "dimension": "essential_details",
+          "applicable": true,
+          "passed": true,
+          "evidence": "遮阳篷有分块竖线和波浪下摆；窗户有外框、竖横窗棂；双开门有门缝和把手；店招“CAFÉ”清晰；两张桌子的桌面、支柱和底座完整。",
+          "repair": "",
+          "region": null
+        },
+        {
+          "dimension": "line_clarity",
+          "applicable": true,
+          "passed": true,
+          "evidence": "全部由统一深色线描构成，建筑、门窗、遮阳篷和桌椅轮廓闭合清楚；窗棂、门板和篷布分块没有明显杂乱重叠或误交。",
+          "repair": "",
+          "region": null
+        },
+        {
+          "dimension": "composition",
+          "applicable": true,
+          "passed": true,
+          "evidence": "建筑转角居中，店招、遮阳篷、门窗和前景桌形成清晰层级；两张桌子位于门口前方，留白充足，整体是完整可读的街角咖啡馆线稿。",
+          "repair": "可选：增加简单人行道或地面透视线，以增强街角空间感。",
+          "region": null
+        }
+      ],
+      "summary": "街角咖啡馆透视线描已完整呈现要求的遮阳篷、门窗、店招和门口两张桌子；线稿清晰、结构基本合理，仅店招吊杆和地面可作为可选增强。"
+    },
+    "image_observation_ids": [
+      "view_a5c3b4ea1d3647518d9790d1203d1165"
+    ],
+    "blind_description": "This is a line-drawn corner storefront, shown in angular perspective, on a blank background.\n\nVisible elements:\n- Above the building floats an L-shaped two-panel sign, with a complete outline; each angled panel contains the legible hand-drawn text **CAFÉ**. The sign is disconnected from the building below.\n- The building has two meeting facade planes forming a corner. Outer wall outlines are complete; the lower corner and base edges are drawn.\n- Centered at the corner is a double door: a complete outer rectangular frame, two narrow door leaves divided by a center line, and two small vertical pull handles. No door fill/detail is shown.\n- On each side facade is a large four-pane window, drawn as a rectangle with one vertical and one horizontal mullion crossing; pane divisions are complete. The far outer side edges of the walls extend beyond the windows.\n- Above the door/windows runs an awning/valance structure: a long rectangular segmented fascia, divided into panels by short vertical lines. Its lower edge is a continuous scalloped/wavy curtain line, with repeated U-shaped loops. Two small open triangular support shapes are drawn under the fascia near each outer end, but their attachment to wall/awning is only implied by line adjacency.\n- In the foreground, two identical small round cafe tables are fully outlined: circular tops, single central stem, and circular bases. They are not connected to the building or to each other.\n- No people, interior contents, color, shading, ground plane, or side/rear building structure are visible. The scene is a clean exterior front-corner elevation only.",
+    "latency_ms": 12572.2
+  },
+  "human_visual_acceptance": "minimum_composition_proportions_and_spatial_relationships_accepted",
+  "human_visual_feedback": {
+    "date": "2026-10-21",
+    "quote": "已经到达我最低要求",
+    "scope": "The user accepted the minimum composition, proportions and spatial relationships of this exact 54-element café image. This does not establish excellence across all five artistic dimensions, general drawing quality, or end-to-end speed.",
+    "png_sha256": "af744442dc655b72d54cdeab01c8301984fd9c26692272195ee5d3807afe7013"
+  },
+  "artifacts": {
+    ".png": {
+      "file": "cafe-current-evidence-continuation-20261021.png",
+      "sha256": "af744442dc655b72d54cdeab01c8301984fd9c26692272195ee5d3807afe7013"
+    },
+    ".excalidraw": {
+      "file": "cafe-current-evidence-continuation-20261021.excalidraw",
+      "sha256": "7912207af653bcb4a773ba9f20ddfd2fc0bd70cf90c1d80fff536f38cb5017c6"
+    }
+  },
+  "implementation_sha256": {
+    "studio/__init__.py": "4ce7a716643e5d9ab1cbfbcb8d338ca4d7f9b727ed84bda79294728a19f0d196",
+    "studio/actions.py": "323d76f82055fa29d7d340b5f1557812ebf982f453b65f5e300f0b872bf9dedf",
+    "studio/agent_manager.py": "6e7a54091bc080af0bb896e56c46810d2b3d23536c7e8cab93d5fbb67327f038",
+    "studio/agent_store.py": "0633bd617d429783ce995fe3bea1aa26a8adec110d0e26aa5d7ee61bcff3ef41",
+    "studio/agent_tools.py": "75c512f259f581e90ff20fa2ac800bc184bc9b4ea8cb2848eddc840afeceb3ce",
+    "studio/agents.py": "791750559515b3a7b90e59922dec955e5bc436acdcbfb47589b3c5abe5fc662c",
+    "studio/api.py": "57127c2e35374f34d1f46516353de78900a93ad902b918a41e3c1769e19f634b",
+    "studio/child_art_context.py": "b55453dc0babb148c0daea493ec27ed9bcc4a3f1b590fad1b015d0721fd3a80a",
+    "studio/child_context_projection.py": "019b65ad028483f42f3940ecfebc43631ad4ae5f5903abac238f0ab98b5bddea",
+    "studio/child_drawing_memory.py": "ca2afbc43e749206a25cea685fd4d5bae6c86d2b1676f88b35a50f5162c947f6",
+    "studio/child_execution.py": "51e7901b05fb35f77009f7ae2ac34a2f6b3d6459e97e7ccf9aa56a62276db316",
+    "studio/child_harness.py": "e20094299bcb81ee33c5b3bdc24f6bf11fb8d16bc5e8c4be9734a90c729f37f9",
+    "studio/completion.py": "21d721fcd6e54996d3f6dd1f5fd430eba97c3eb39ebe95c77195418d80876aea",
+    "studio/coordinates.py": "3a95aaa9f0d352a47273ce16840867192b3f9626715a4ad85bb5806becf8b12f",
+    "studio/draft_review.py": "334345e2553e02fccf97f6cf183a39e7e0a43d5b7df0a3def179cf9acdd4cf3b",
+    "studio/drawing_dsl.py": "2705d5f3af517d54eb910d15bf9782af7ea9b2f15077174273286b71f8de238d",
+    "studio/drawing_progress.py": "3e793f8e0e12442a4ad418e75806c2fea9ddfb6621dd107c95a9f93f222ce743",
+    "studio/eraser.py": "31de013e32de47a2c89f56560028a65b40e1c3db5a2883cebc4200e89e539742",
+    "studio/errors.py": "b14275ddde969d975bb6e092046be463c6bc79a40dd3980365b45a288e93dad2",
+    "studio/fast_path.py": "78d098866aba328793d57ec3f26e6eae99ab874b8d8a0ab16f4ced16ddad6ff3",
+    "studio/image_guide.py": "14be96ac95bbaafb52dbd655e6a609b241157352a2508c05c0f95eef203a6bfe",
+    "studio/llm.py": "c810e3d819f668025609ecadca9691817e3692c7f61d6ed120e62b646875477f",
+    "studio/manual_edits.py": "b62a1c5116054ada4dc10500a47841ac5c8638f75e1107933c361d034299c9bc",
+    "studio/memory.py": "8d3adac8e425cca5aadcdbd5ee325f42487eb2fd65b9c032cbe9e9dd7fd18523",
+    "studio/path_recall.py": "d3c12b12005a323d69e9a5b19102df5eeb291b8111e859b9ed5d6f9a85ac0ed4",
+    "studio/pen.py": "bc97ffb8e9cccd6c1fd3963243dc1e22ed510a413626f309828ec26761c8808e",
+    "studio/pen_geometry.py": "9ca480f2ea75f504f015d67d620df3eaeb8f5371353af7ee9d37f5cb94073cf9",
+    "studio/private_workspace.py": "1fc6058a71754be341ca41f50233fa032a5e11419ffe385ff8bcd89e33179311",
+    "studio/progress_context.py": "84b2702c23b2c4f61fcb0edcaec3e5023ff6445b3f8d184bdefdb3664d3128b9",
+    "studio/prompts.py": "0dcac203d08baa865dcd0204d7f58cf645460756113605421cfea3d7b5ee55c1",
+    "studio/quality.py": "a2d82df5e148266c7c7b3ddb8a102331afe53fb6634a0840771f21c1cc73b2e2",
+    "studio/reference_images.py": "870f2377f24659c31a7f10e5c71086480b0468342fd91f283eb2b90bd084caf9",
+    "studio/reference_layouts.py": "6a20427f1c36f8d83dc87d6f71a7bea8deebc0fcc994e2f3fa0a42f09a299776",
+    "studio/reference_work.py": "c20c1be04a2fc524a9543c880e8b9c3bcdb2295a03e64bf392cb939a5aa259ff",
+    "studio/renderer.py": "3d6ca1af2323a3acbe39cbdce3b852ba95750166c84a840696cffecb9742fcc6",
+    "studio/research.py": "44f3239a620686ad02d699443148c5d343b6828862ad5619d9e78d429ceceadd",
+    "studio/result_review.py": "eb899919a58cea4821bec40a795e7adc1c5e81bb35df53a0aadad604a6566668",
+    "studio/runtime.py": "2a174d1a146b151826056aa421180a0740fdc21921376443901bbff9970000a7",
+    "studio/scene_patch.py": "2ab11e10f2cdb01eb583252cd387ec7a3d9d9156e603cff9fdaf2ddec280e291",
+    "studio/settings.py": "fcb513b7f9a2d24ec2cc9e696bcd2666ca5fc763d696a93057e014bcb73036af",
+    "studio/store.py": "0838d807bca38f6d6704fd1983fc9618a79e2b0dff38b0b9ea584814840e619f",
+    "studio/tool_feedback.py": "abd2cd0229fc43b90fd018d2b6c8e1dec76f5e6e814654f4a4b82ec90c179650",
+    "studio/vision.py": "23d46cd4b30a8f81544af0f19dbe0239ae03cda79edc764b7f87e76d788eba6d",
+    "server/__init__.py": "e513b696fc5166005459f8e28cf28bace37bf6ea1d0279c5781c43c641453dcd",
+    "server/app.py": "ebb29d201d55da4ff50196f466a1b3409a1d67aa9b3580da7f593bca12089f36",
+    "requirements.txt": "958176d5b77413c6403000daa5b5d83533b8a8c311dd43cd8ff2aa3b5530fdf8",
+    "requirements-dev.txt": "1c3d206df96c90084c94ec3d43b3f7bcb89b249f6c4cb4528abba512aa690b5e",
+    "frontend-app/src/renderCanvas.js": "ecb5998894ac4ba74cfd364b61f36770aacb901464870e9eb47148b8739378ad",
+    "frontend-app/package.json": "2442c986142330d519382af8b7eff347e056b39a80f15319779652cfc951d5cd",
+    "frontend-app/package-lock.json": "6e3ea05c73e461377938d3ceebcf839dcfe1fd58f893d9105f984362c84ecd61",
+    "scripts/evaluation_artifacts.py": "fc4ca62cb336c6941dd07b845305e3d0e72e8582ae62a2559c5b79648f5149a1",
+    "scripts/evaluate_quality.py": "a794fc8d38d77781a8eb1ecbc7b9a25c6bcfa40f575f1b51295bbdfc2b037e17",
+    "scripts/evaluate_reference_polygon.py": "d67b31ff9462ec97929b4f82cdbafca94e92460aa842428bcbb4337ea8650c27",
+    "scripts/evaluate_prompt_context.py": "c11fb355b0a718692767607806358087f01f9e322598089ef66fe1b07dfe7f23",
+    "scripts/evaluate_observed_coordinates.py": "108997235baa321401a7960201bf362c16502ccd634c4cef3fef143c4da4f799",
+    "scripts/evaluate_visual_grounding.py": "6c0e57ab0a985ba8dcd8c15ac931e7a3bc414622b1ada626db9c56f08800572a",
+    "scripts/evaluate_read_compaction.py": "bea943d5e6524d0c7cdb5bc29ae969f7cc6fdadd75310305e4378578cf10b4d3",
+    "scripts/evaluate_reference_anchors.py": "64ae6613a05ca05c8cd200442ceae8710b91542752ea34b008db9b0a8b70dc85",
+    "scripts/evaluate_draft_loop.py": "35d0501d3d6c1960f5edb9a439427ea896211d25b26366c0dec1bb81a21a62bf",
+    "scripts/evaluate_replanning.py": "2e4e632dd616951112238748c193cc5cc36a1e5ea355cf33507e5fef8033d859",
+    "scripts/verify_browser.py": "5b535544a4db020c24de1ff1f404355f56c82985409452c90be313d3f87d90a2",
+    "frontend-app/scripts/quality_evaluation.js": "4a2edd01766786f4ce17e2ba3569245c591a62fd41f5cddfdce95e5fe39d77fa"
+  },
+  "dataset_sha256": "908bfc8f904933e29533a64216d7cc0249941a984ba8e4ad7e3d1b52309bc9a5",
+  "implementation_lf_sha256": {
+    "studio/__init__.py": "c4655c88ada3a468da0b67082cd80b52223d0575c0a16f150e34850c2ab192f7",
+    "studio/actions.py": "678179d422d41220f8e8430d9800a9929796a97284282be65a110aaa5acb1216",
+    "studio/agent_manager.py": "415e6444a1ac9c2feed7a5b645fb6acca58a460086f7f88b82b0a7d37cbb48a9",
+    "studio/agent_store.py": "0633bd617d429783ce995fe3bea1aa26a8adec110d0e26aa5d7ee61bcff3ef41",
+    "studio/agent_tools.py": "75c512f259f581e90ff20fa2ac800bc184bc9b4ea8cb2848eddc840afeceb3ce",
+    "studio/agents.py": "791750559515b3a7b90e59922dec955e5bc436acdcbfb47589b3c5abe5fc662c",
+    "studio/api.py": "8f8fc4a5d8c6cc40eba60e0c5ea244a13a092414d0116d326001285e48b731e9",
+    "studio/child_art_context.py": "b55453dc0babb148c0daea493ec27ed9bcc4a3f1b590fad1b015d0721fd3a80a",
+    "studio/child_context_projection.py": "019b65ad028483f42f3940ecfebc43631ad4ae5f5903abac238f0ab98b5bddea",
+    "studio/child_drawing_memory.py": "d9deffab5c7d8f79c1c4e56cce20668e8f9353b7a440c32bb7d0339a180e6e2b",
+    "studio/child_execution.py": "51e7901b05fb35f77009f7ae2ac34a2f6b3d6459e97e7ccf9aa56a62276db316",
+    "studio/child_harness.py": "1ef8f3eabcf1873871b18e0e8a58ee4aa3cc192d50ac3b6bc56165d344fed7b4",
+    "studio/completion.py": "21d721fcd6e54996d3f6dd1f5fd430eba97c3eb39ebe95c77195418d80876aea",
+    "studio/coordinates.py": "3a95aaa9f0d352a47273ce16840867192b3f9626715a4ad85bb5806becf8b12f",
+    "studio/draft_review.py": "334345e2553e02fccf97f6cf183a39e7e0a43d5b7df0a3def179cf9acdd4cf3b",
+    "studio/drawing_dsl.py": "2705d5f3af517d54eb910d15bf9782af7ea9b2f15077174273286b71f8de238d",
+    "studio/drawing_progress.py": "3e793f8e0e12442a4ad418e75806c2fea9ddfb6621dd107c95a9f93f222ce743",
+    "studio/eraser.py": "31de013e32de47a2c89f56560028a65b40e1c3db5a2883cebc4200e89e539742",
+    "studio/errors.py": "b14275ddde969d975bb6e092046be463c6bc79a40dd3980365b45a288e93dad2",
+    "studio/fast_path.py": "3b25920c7bd8e6ec4667a2bc8bf0434efa9a5faa7f517b96b3e65a90abb59bfa",
+    "studio/image_guide.py": "142c02bd6cd6ae8a6ea8912768660c3dd6871de2cf572b1abd9b403f947a1cea",
+    "studio/llm.py": "c810e3d819f668025609ecadca9691817e3692c7f61d6ed120e62b646875477f",
+    "studio/manual_edits.py": "b62a1c5116054ada4dc10500a47841ac5c8638f75e1107933c361d034299c9bc",
+    "studio/memory.py": "8d3adac8e425cca5aadcdbd5ee325f42487eb2fd65b9c032cbe9e9dd7fd18523",
+    "studio/path_recall.py": "d3c12b12005a323d69e9a5b19102df5eeb291b8111e859b9ed5d6f9a85ac0ed4",
+    "studio/pen.py": "bc97ffb8e9cccd6c1fd3963243dc1e22ed510a413626f309828ec26761c8808e",
+    "studio/pen_geometry.py": "9ca480f2ea75f504f015d67d620df3eaeb8f5371353af7ee9d37f5cb94073cf9",
+    "studio/private_workspace.py": "1fc6058a71754be341ca41f50233fa032a5e11419ffe385ff8bcd89e33179311",
+    "studio/progress_context.py": "84b2702c23b2c4f61fcb0edcaec3e5023ff6445b3f8d184bdefdb3664d3128b9",
+    "studio/prompts.py": "0dcac203d08baa865dcd0204d7f58cf645460756113605421cfea3d7b5ee55c1",
+    "studio/quality.py": "a2d82df5e148266c7c7b3ddb8a102331afe53fb6634a0840771f21c1cc73b2e2",
+    "studio/reference_images.py": "b69843c3d601abb39700a1f01bdd91c1f675c2663e91524f3dacb138575bf4b2",
+    "studio/reference_layouts.py": "6a20427f1c36f8d83dc87d6f71a7bea8deebc0fcc994e2f3fa0a42f09a299776",
+    "studio/reference_work.py": "c20c1be04a2fc524a9543c880e8b9c3bcdb2295a03e64bf392cb939a5aa259ff",
+    "studio/renderer.py": "3d6ca1af2323a3acbe39cbdce3b852ba95750166c84a840696cffecb9742fcc6",
+    "studio/research.py": "44f3239a620686ad02d699443148c5d343b6828862ad5619d9e78d429ceceadd",
+    "studio/result_review.py": "eb899919a58cea4821bec40a795e7adc1c5e81bb35df53a0aadad604a6566668",
+    "studio/runtime.py": "4ec7f2443085506a7a58a9494201254ddab566817e99c6d4f3e307d048ae39c3",
+    "studio/scene_patch.py": "2ab11e10f2cdb01eb583252cd387ec7a3d9d9156e603cff9fdaf2ddec280e291",
+    "studio/settings.py": "fcb513b7f9a2d24ec2cc9e696bcd2666ca5fc763d696a93057e014bcb73036af",
+    "studio/store.py": "0b4ff701a51d126a61fbf0d88a160871e171d9eca646388fa4578e630964ff0e",
+    "studio/tool_feedback.py": "abd2cd0229fc43b90fd018d2b6c8e1dec76f5e6e814654f4a4b82ec90c179650",
+    "studio/vision.py": "23d46cd4b30a8f81544af0f19dbe0239ae03cda79edc764b7f87e76d788eba6d",
+    "server/__init__.py": "5abaf4212df43f25dcd2e0cef8da2b25a97b6756bdfe28f38f172d64f7c22a3e",
+    "server/app.py": "21b7e956e376129876147af0627375a70b1d32b3761b174f782b1427c8ab3a69",
+    "requirements.txt": "0c2c15cb4b9264054e3a069a22f8e777eacaaf46e4a2a792824d1dba22ef0cb7",
+    "requirements-dev.txt": "ebc319f05921f7d8d196fb93e7e47ffabc2cdda3dbd7e261d76a8fbc5ea099c8",
+    "frontend-app/src/renderCanvas.js": "ecb5998894ac4ba74cfd364b61f36770aacb901464870e9eb47148b8739378ad",
+    "frontend-app/package.json": "d56305fca61b418f3f9434d3aa47d310f7242120ca86f743aa32dcd3f5c459ba",
+    "frontend-app/package-lock.json": "e77b8d1451a3d95ae8c2299a0cf407020437e7a70ebdef8588e8b812b4f87f47",
+    "scripts/evaluation_artifacts.py": "fc4ca62cb336c6941dd07b845305e3d0e72e8582ae62a2559c5b79648f5149a1",
+    "scripts/evaluate_quality.py": "a794fc8d38d77781a8eb1ecbc7b9a25c6bcfa40f575f1b51295bbdfc2b037e17",
+    "scripts/evaluate_reference_polygon.py": "d67b31ff9462ec97929b4f82cdbafca94e92460aa842428bcbb4337ea8650c27",
+    "scripts/evaluate_prompt_context.py": "c11fb355b0a718692767607806358087f01f9e322598089ef66fe1b07dfe7f23",
+    "scripts/evaluate_observed_coordinates.py": "108997235baa321401a7960201bf362c16502ccd634c4cef3fef143c4da4f799",
+    "scripts/evaluate_visual_grounding.py": "6c0e57ab0a985ba8dcd8c15ac931e7a3bc414622b1ada626db9c56f08800572a",
+    "scripts/evaluate_read_compaction.py": "bea943d5e6524d0c7cdb5bc29ae969f7cc6fdadd75310305e4378578cf10b4d3",
+    "scripts/evaluate_reference_anchors.py": "64ae6613a05ca05c8cd200442ceae8710b91542752ea34b008db9b0a8b70dc85",
+    "scripts/evaluate_draft_loop.py": "35d0501d3d6c1960f5edb9a439427ea896211d25b26366c0dec1bb81a21a62bf",
+    "scripts/evaluate_replanning.py": "2e4e632dd616951112238748c193cc5cc36a1e5ea355cf33507e5fef8033d859",
+    "scripts/verify_browser.py": "5b535544a4db020c24de1ff1f404355f56c82985409452c90be313d3f87d90a2",
+    "frontend-app/scripts/quality_evaluation.js": "4a2edd01766786f4ce17e2ba3569245c591a62fd41f5cddfdce95e5fe39d77fa"
+  },
+  "evidence_scope": "Real continuation of a sealed unfinished native draft; original episode and operator interruption remain separate. Human artistic acceptance is pending.",
+  "continuation_of_genuine_unfinished_task": true,
+  "source_database": "E:\\ai-draw\\runs\\cafe-editable-contours-20261021\\operator-checkpoint\\sealed-checkpoint.sqlite3",
+  "source_opened_read_only": true,
+  "initial_prepared_actions": 36,
+  "before_scene_hash": "ae2a5b3f4530768e6b06cacb9d69c6d37629974e267ab3442d0a5c2633b72516",
+  "same_native_progress_preserved": true,
+  "episode_elapsed_ms": 194025.84147453308,
+  "reported_task_latency_ms": 191011.45570003428,
+  "reported_task_first_canvas_update_ms": 98062.6,
+  "latency_scope": "The task timestamp includes the original episode and operator interruption. Use episode_elapsed_ms for this continuation only.",
+  "latency_comparison_allowed": false,
+  "context_verification": {
+    "source_matches_captured_implementation": true,
+    "natural_completion": true,
+    "child_requests_verified": 3,
+    "native_index_entries_verified": 162,
+    "current_polylines_verified": 138,
+    "current_canvas_images_verified": 4,
+    "all_original_assignments_preserved": true,
+    "full_tool_errors_verified": 0,
+    "prior_episode_error_count_excluded": 13,
+    "full_protocol_errors_verified": 0,
+    "continuation_of_existing_draft": true,
+    "all_model_responses_recorded": true,
+    "protocol_findings": 0,
+    "automated_original_review_passed": true,
+    "human_artistic_acceptance": "pending_user_review"
+  },
+  "plan_completion_verification": {
+    "task_id": "53bba521823943ecad3b85ce19a4f6fb",
+    "task_status": "completed",
+    "real_model_request_count": 12,
+    "incomplete_recorded_responses": 0,
+    "actual_completion_candidates_returned_to_main": [],
+    "actual_feedback_deliveries": [
+      {
+        "request_id": 2,
+        "message_indices": [
+          5
+        ]
+      },
+      {
+        "request_id": 5,
+        "message_indices": [
+          9
+        ]
+      },
+      {
+        "request_id": 8,
+        "message_indices": [
+          10
+        ]
+      },
+      {
+        "request_id": 9,
+        "message_indices": [
+          10
+        ]
+      }
+    ],
+    "input_stage_sequence": [
+      {
+        "input_id": "input_b1ec15af6a355055b6c28532dcd65c53",
+        "agent_id": "agent_3eb5821b6c0b5a558fa2ec124dfb3721",
+        "run_id": "run_767855fb8f5258c190dffb8f8730c96d",
+        "stage_id": "block_in",
+        "intent": "execute",
+        "composition_id": "composition_cecc98e11d867fa0076f3a8eefffee1b81825d625940af315762f24bc1540f98"
+      },
+      {
+        "input_id": "input_bb2faece382c59608cd5230677839cbb",
+        "agent_id": "agent_3eb5821b6c0b5a558fa2ec124dfb3721",
+        "run_id": "run_b9ee9f4e5fc654c3b72b15d05c3dae6d",
+        "stage_id": "contour",
+        "intent": "execute",
+        "composition_id": "composition_cecc98e11d867fa0076f3a8eefffee1b81825d625940af315762f24bc1540f98"
+      },
+      {
+        "input_id": "input_f47e5756aa6b5e51a38125e3ffdaaf6d",
+        "agent_id": "agent_3eb5821b6c0b5a558fa2ec124dfb3721",
+        "run_id": "run_0dbb451644bc503ab0e39d54ec57f2f8",
+        "stage_id": "contour",
+        "intent": "repair",
+        "composition_id": "composition_cecc98e11d867fa0076f3a8eefffee1b81825d625940af315762f24bc1540f98"
+      },
+      {
+        "input_id": "input_0048faca5415561caaf13f96b68631eb",
+        "agent_id": "agent_3eb5821b6c0b5a558fa2ec124dfb3721",
+        "run_id": "run_361f0b9c02425662816717328c03d2e6",
+        "stage_id": "detail",
+        "intent": "execute",
+        "composition_id": "composition_cecc98e11d867fa0076f3a8eefffee1b81825d625940af315762f24bc1540f98"
+      },
+      {
+        "input_id": "input_0c29e86633455ce79e01ea465a878a0a",
+        "agent_id": "agent_3eb5821b6c0b5a558fa2ec124dfb3721",
+        "run_id": "run_0e908684d1365f038c105a52869ca944",
+        "stage_id": "detail",
+        "intent": "repair",
+        "composition_id": "composition_cecc98e11d867fa0076f3a8eefffee1b81825d625940af315762f24bc1540f98"
+      },
+      {
+        "input_id": "input_b3aecf4c5aaf551aad0083f9e9229559",
+        "agent_id": "agent_3eb5821b6c0b5a558fa2ec124dfb3721",
+        "run_id": "run_5274146385505993adf18cbb91ea64ec",
+        "stage_id": "contour",
+        "intent": "execute",
+        "composition_id": "composition_cecc98e11d867fa0076f3a8eefffee1b81825d625940af315762f24bc1540f98"
+      }
+    ],
+    "final_plan_completion": {
+      "ok": true,
+      "composition_ref": "composition_cecc98e11d867fa0076f3a8eefffee1b81825d625940af315762f24bc1540f98",
+      "composition_revision": 1,
+      "pending_stages": [],
+      "unresolved_reports": [],
+      "finish_criteria": [
+        "complete readable line drawing, not only construction",
+        "all requested awning, door, windows, sign and two tables are visible",
+        "perspective lines consistently converge toward the two declared vanishing points"
+      ],
+      "stage_checks_are_artist_claims": true,
+      "independent_whole_picture_review_required": true
+    },
+    "scope": "Actual task progress and feedback routing only. Stage claims do not replace independent image review."
+  }
+}

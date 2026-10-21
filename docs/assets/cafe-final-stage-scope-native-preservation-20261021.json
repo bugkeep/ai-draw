@@ -1,0 +1,62 @@
+{
+  "schema": "draw-agent-native-conservation/1",
+  "scope": "Native preservation after real model-generated shop-sign support repair. New picture human acceptance remains pending.",
+  "baseline": "cafe-current-evidence-continuation-20261021.excalidraw",
+  "baseline_sha256": "7912207af653bcb4a773ba9f20ddfd2fc0bd70cf90c1d80fff536f38cb5017c6",
+  "actual_result": "street-cafe.excalidraw",
+  "actual_result_sha256": "c8a3d33b547a42f1e374a3c195fad293fc2091aa89aa5c3a4b86665cc3e25820",
+  "baseline_objects_retained": 54,
+  "original_ids_and_order_retained": true,
+  "original_geometry_styles_text_and_all_other_content_retained": true,
+  "editor_metadata_differences_by_field": {
+    "versionNonce": 8,
+    "updated": 8
+  },
+  "new_native_objects": [
+    {
+      "id": "25c696d0ba8248a0",
+      "name": "left sign outer support rod",
+      "type": "freedraw",
+      "native_bounds": [
+        472.0,
+        246.0,
+        8.0,
+        98.0
+      ]
+    },
+    {
+      "id": "c01682332aa94f4d",
+      "name": "left sign corner support rod",
+      "type": "freedraw",
+      "native_bounds": [
+        662.0,
+        226.0,
+        20.0,
+        136.0
+      ]
+    },
+    {
+      "id": "03f9123f01b8470b",
+      "name": "right sign corner support rod",
+      "type": "freedraw",
+      "native_bounds": [
+        698.0,
+        226.0,
+        20.0,
+        136.0
+      ]
+    },
+    {
+      "id": "6c2c2cd2036f4f25",
+      "name": "right sign outer support rod",
+      "type": "freedraw",
+      "native_bounds": [
+        920.0,
+        246.0,
+        24.0,
+        98.0
+      ]
+    }
+  ],
+  "total_native_objects": 58
+}
