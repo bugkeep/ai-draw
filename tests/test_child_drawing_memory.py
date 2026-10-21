@@ -171,3 +171,37 @@ def test_stroke_summary_distinguishes_image_units_and_separate_pen_lifts():
     assert method['coordinate_space'] == 'image_normalized'
     assert method['examples'][0]['span'] == [55, 770]
     assert method['examples'][0]['opacity'] == 18
+
+
+def test_current_step_rebuilds_from_real_cleanup_and_preserves_inherited_style(tmp_path, native_drawing_child):
+    async def check():
+        store = StudioStore(tmp_path / 'construction.sqlite3')
+        runtime = DrawingRuntime(store, ModelSettings(store))
+        session = store.create_session()
+        task = store.create_task(session['id'])
+        child = native_drawing_child(store, runtime, session, task)
+        try:
+            created = child.call('draw_paths', {'opacity': 23, 'strokeWidth': 0.6, 'backgroundColor': '#ffffff',
+                'paths': [{'name': '前景形体', 'closed': True, 'points': [[0, 0], [50, 0], [25, 50]]}]}, 'filled')
+            target = created['changed_ids'][0]
+            changed = child.call('reshape_path', {'element_id': target,
+                'points': [[0, 0], [60, 0], [30, 60]]}, 'reshaped')
+            assert changed['ok']
+            messages, journal = context(runtime, child)
+            inherited = journal['recent_actual_actions'][-1]['stroke_method']['examples'][0]
+            assert all(inherited[key] == 'inherit_current_object'
+                for key in ('closed', 'backgroundColor', 'strokeWidth', 'opacity'))
+            element = next(item for item in child.run['draft'] if item['id'] == target)
+            assert (element['backgroundColor'], element['opacity'], element['strokeWidth']) == ('#ffffff', 23, 0.6)
+            removed = child.call('erase_strokes', {'ids': [target], 'mode': 'stroke',
+                'points': [[30, 30]], 'radius': 80}, 'cleanup')
+            assert removed['ok'] and removed['action_count']
+            messages, journal = context(runtime, child)
+            assert journal['work_phase']['cleanup_was_last_operation']
+            assert journal['recent_actual_actions'][-1]['removed_object_ids'] == [target]
+            assert 'erasure-only' in journal['work_phase']['instruction']
+            assert journal['next_step_focus'] is None
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())

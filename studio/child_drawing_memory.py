@@ -10,6 +10,7 @@ DRAWING_WRITES = (
 
 def stroke_method(arguments):
     paths = arguments.get('paths', [])
+    inherited = 'element_id' in arguments
     if not paths and 'points' in arguments:
         paths = [arguments]
     return {
@@ -20,8 +21,10 @@ def stroke_method(arguments):
             {'name': path.get('name', ''), 'continuous_points': len(path['points']),
              'span': [round(max(p[axis] for p in path['points']) - min(p[axis] for p in path['points']), 4)
                       for axis in (0, 1)],
-             'strokeWidth': path.get('strokeWidth', arguments.get('strokeWidth', 0.4)),
-             'opacity': path.get('opacity', arguments.get('opacity', 100))}
+             **{key: path[key] if path.get(key) is not None else arguments.get(key,
+                    'inherit_current_object' if inherited else default)
+                for key, default in (('strokeWidth', 0.4), ('opacity', 100),
+                                     ('closed', False), ('backgroundColor', 'transparent'))}}
             for path in paths[:4] if path.get('points')
         ],
         'interpretation': 'Each path is ONE continuous pen stroke; its points do not lift the pen. '
@@ -50,6 +53,12 @@ def drawing_memory_context(memory, run, messages):
             "AND json_extract(result,'$.status') IN ('repair','ready') ORDER BY created_at DESC LIMIT 3",
             (run['id'], run['owner_task_id']),
         ).fetchall()
+        current_reads = store.connection.execute(
+            'SELECT count(*) FROM agent_memories WHERE caller_id=? AND task_id=? AND actor_id=? '
+            'AND state_key=? AND is_error=0 AND observed_at IS NOT NULL '
+            "AND tool_name IN ('view_canvas','inspect_scene','recall_memory','view_reference_image')",
+            (run['id'], run['owner_task_id'], run['agent_id'], f"{run['id']}:{len(run['prepared'])}"),
+        ).fetchone()[0]
     live_ids = {item['id'] for item in run['draft'] if not item.get('isDeleted')}
     actions = []
     for call in reversed(calls):
@@ -74,48 +83,82 @@ def drawing_memory_context(memory, run, messages):
             'suggested_method': revision.get('next_strategy', '')[:600],
         })
     saved = {'revision': 0, 'notes': None}
+    saved_found = False
+    current_review = {}
     for message in reversed(messages):
         content = message.get('content')
-        if message.get('role') == 'user' and isinstance(content, str) and '"working_memory"' in content:
+        if (message.get('role') == 'user' and isinstance(content, str)
+                and ('"working_memory"' in content or '"current_private_draft_review"' in content)):
             payload = json.loads(content)
-            if 'working_memory' in payload:
+            if 'working_memory' in payload and not saved_found:
                 saved = payload['working_memory']
-                break
+                saved_found = True
+            if 'current_private_draft_review' in payload and not current_review:
+                current_review = payload['current_private_draft_review']
+    findings = current_review.get('assessment', {}).get('findings', []) if current_review.get('status') == 'repair' else []
+    focus = findings[0] if findings else None
     tag = f"drawing_input={run['input_id']}"
     current_notes = tag in (saved.get('notes') or {}).get('constraints', [])
     return {'role': 'user', 'content': json.dumps({'drawing_execution_memory': {
         'task_id': run['owner_task_id'], 'agent_id': run['agent_id'], 'input_id': run['input_id'],
         'run_id': run['id'], 'recent_actual_actions': actions, 'delivered_comparisons': comparisons,
+        'next_step_focus': ({'review_key': current_review.get('review_key'),
+            'reported_defect': focus['defect'], 'canvas_region': focus.get('canvas_region'),
+            'current_object_ids': [item for item in focus.get('object_ids', []) if item in live_ids],
+            'removed_object_ids': [item for item in focus.get('object_ids', []) if item not in live_ids],
+            'authority': 'A scoped review observation to verify against the immutable plan and actual image.'}
+            if focus else None),
+        'work_phase': {'last_successful_operation': actions[-1]['tool'] if actions else None,
+            'cleanup_was_last_operation': bool(actions and actions[-1]['tool'] in {'erase_strokes', 'delete_elements'}
+                and actions[-1]['action_count']),
+            'delivered_evidence_reads_at_current_prepared_count': current_reads,
+            'instruction': 'These are execution facts, not completion claims or call limits. '
+                'When the assignment requires rebuilding, cleanup leaves that construction pending. '
+                'Use the already attached image and source/landmarks to reconstruct the required contour next. '
+                'For an erasure-only request, preserve that scope and do not add a replacement.'},
         'saved_step': {'revision': saved['revision'], 'memory_ref': saved.get('memory_ref'),
             'tag_matches_current_input': current_notes, 'current_input_tag': tag},
         'construction_step': {
             'target': 'The assigned form/connection and exact current IDs or actual image region.',
             'evidence': 'Reference/layout/landmarks actually inspected; distinguish picture-left from anatomical side.',
             'structure': 'Endpoints, major masses, relative proportions, contacts, occlusion and visible contour breaks.',
-            'method': 'Ordered native operations that will change that structure; use separate paths for separate marks.',
+            'method': 'The NEXT tool, exact current targets or grounded anchors, contour start/turn/end and hidden intervals; '
+                'use separate paths for separate marks.',
             'protect': 'Existing useful forms, highlights, openings and neighboring attachments that must survive.',
             'visible_check': 'A concrete change to inspect in the refreshed close-up AND the whole image.',
         },
         'instruction': 'Continue THIS input from the actual current drawing. This journal is rebuilt from its SQLite '
             'receipts after history compaction or restart; executed actions are not proof of visual success. '
             'The original assignment and current review remain complete elsewhere in this request. '
-            'Turn the assigned goal into the construction_step above before extended drawing. '
+            'Choose ONE bounded feature or connection for the NEXT construction_step, within next_step_focus when present. '
+            'The whole assignment remains your goal; keep its other requirements in pending. '
+            'A step must specify the next geometric operation and its visible result, not a list of every future repair. '
             'Save the current step with the EXISTING compact_context tool: use saved_step.revision as expected_revision, '
             'retain the current goal, put target/evidence/structure/method/protect/visible_check in summary, '
             'copy current_input_tag into constraints, record verified progress in completed and all unfinished work in pending. '
             'Use only present native object IDs in object_ids and actual memory_ref values in evidence_refs. '
             'Carry forward constraints and pending work when replacing notes. Update notes when a step is verified or '
             'its method fails; do not rewrite an unchanged plan on every tool call. A save may share a response with '
-            'a related action when the current evidence already resolves its parameters. '
+            'a related action when the current evidence already resolves its parameters; in that case put the save and '
+            'the action in the same response rather than taking a planning-only round. '
             'Notes without this input tag are historical: verify any reusable work in the current draft before carrying it forward. '
             'Read previous comparisons as observations plus suggested methods. Verify their object attribution against '
             'current IDs, the complete composition and actual images; report a genuine missing construction prerequisite. '
             'A failed method needs a changed construction, not the same geometry under new names. '
+            'After repeated successful views of an unchanged state, state the single unresolved fact; '
+            'if the images and retrieved geometry already provide it, execute the saved construction instead of changing crops again. '
+            'For an unclear feature with a source reference, inspect that source detail and use its actual view/layout mapping; '
+            'do not infer the intended anatomy only from the damaged draft. '
+            'A convex organic outline needs ordered extrema and turning anchors around the same mass; '
+            'independent head, limb and tail contours need explicit junctions and visible stop points. '
             'For hatching, each short mark is a separate path; do not connect alternating marks into one tall zigzag. '
             'For tonal work choose a bounded shadow region, preserve its adjacent light/contours, and build enough '
             'overlapping marks to make that region visibly darker before adding strand/texture detail. '
             'For connections establish the two attachment points and which contours are hidden before texture. '
             'Exact property edits preserve every unrequested property; research-only inputs prepare no drawing. '
+            'Use at most one canvas-image-bound mutation in a response, batching its independent paths or exact targets. '
+            'The next context supplies the refreshed image before another image-bound mutation; '
+            'a note save does not invalidate the image and immutable source views retain their existing rules. '
             'Use attached current images for verification; repeat a query only to resolve a stated missing fact. '
             'Keep original tool errors and unresolved work explicit. Tools and continued drawing remain available; '
             'this journal sets no time, action or round limit and does not change the frozen completion review.',
