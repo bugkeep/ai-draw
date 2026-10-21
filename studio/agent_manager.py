@@ -15,6 +15,7 @@ from .draft_review import DraftReview
 from .reference_work import ReferenceWork
 from .drawing_dsl import prepare_assignment, parse_report, result_evidence
 from .child_harness import repair_context, coordinate_context, observation_context
+from .child_drawing_memory import drawing_memory_context
 
 
 class AgentManager:
@@ -313,6 +314,7 @@ class AgentManager:
                 guide = coordinate_context(self.store, run, observations)
                 if guide:
                     messages.append(guide)
+                messages.append(drawing_memory_context(self.memory, run, messages))
                 message = await models.respond(run["owner_task_id"], run["agent_id"], round_number,
                                                messages, child=True,
                                                observation_ids=observations, reference_image_ids=reference_ids,
