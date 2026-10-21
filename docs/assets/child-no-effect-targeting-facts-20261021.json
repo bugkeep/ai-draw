@@ -1,0 +1,225 @@
+{
+  "schema": "draw-agent-real-no-effect-targeting/1",
+  "scope": "Offline context replay and isolated real native hit checks on a genuine live checkpoint; no model reply, artwork score or drawing-speed claim.",
+  "source_checkpoint_sha256": "4601ce103fb53e2c9aa19c5b83b550a4b900e8249e88b87b28d8a8af76451848",
+  "source_opened_read_only": true,
+  "original_receipt": {
+    "action_count": 0,
+    "changed_ids": [],
+    "objects": [],
+    "ok": true,
+    "selected_ids": [
+      "1e6df5f082114e6e"
+    ]
+  },
+  "erase_targeting": {
+    "coordinate_space": "canvas",
+    "mode": "segment",
+    "radius_canvas": 2.0,
+    "attempted_gesture_bounds": [
+      690.0,
+      681.458,
+      770.0,
+      689.614
+    ],
+    "requested_ids": [
+      "d165c646b8b74281"
+    ],
+    "eligible_object_count": 33,
+    "selected_geometry": [
+      {
+        "id": "d165c646b8b74281",
+        "name": "paving_plane",
+        "type": "freedraw",
+        "native_array_position": 5,
+        "geometry_kind": "LineString",
+        "nearest_native_point": [
+          595.2306249350796,
+          689.614284426876
+        ],
+        "nearby_path_parts": [],
+        "dense_path_parts_omitted": 0,
+        "distance_to_attempted_gesture": 94.7693750653472,
+        "strokeWidth": 0.45,
+        "opacity": 100,
+        "backgroundColor": "transparent",
+        "locked": false,
+        "eligible_for_requested_mode": true
+      }
+    ],
+    "nearest_geometry": [
+      {
+        "id": "59632a80098e40be",
+        "name": "door_rebuilt_center_meeting_seam",
+        "type": "freedraw",
+        "native_array_position": 30,
+        "geometry_kind": "LineString",
+        "nearest_native_point": [
+          690.0,
+          689.614
+        ],
+        "nearby_path_parts": [
+          {
+            "points": [
+              [
+                690.0,
+                687.603633065831
+              ],
+              [
+                690.0,
+                691.6136753381801
+              ]
+            ],
+            "max_centerline_error": 1
+          }
+        ],
+        "dense_path_parts_omitted": 0,
+        "distance_to_attempted_gesture": 0.0,
+        "strokeWidth": 0.55,
+        "opacity": 100,
+        "backgroundColor": "transparent",
+        "locked": false,
+        "eligible_for_requested_mode": true
+      },
+      {
+        "id": "e232a742699e4e6b",
+        "name": "door_rebuilt_right_leaf_frame",
+        "type": "freedraw",
+        "native_array_position": 27,
+        "geometry_kind": "LineString",
+        "nearest_native_point": [
+          770.0,
+          681.458
+        ],
+        "nearby_path_parts": [
+          {
+            "points": [
+              [
+                770.0,
+                679.4583246618199
+              ],
+              [
+                770.0,
+                683.468366934169
+              ]
+            ],
+            "max_centerline_error": 1
+          },
+          {
+            "points": [
+              [
+                690.0,
+                691.6136753381801
+              ],
+              [
+                690.0,
+                687.603633065831
+              ]
+            ],
+            "max_centerline_error": 1
+          }
+        ],
+        "dense_path_parts_omitted": 0,
+        "distance_to_attempted_gesture": 0.0,
+        "strokeWidth": 0.55,
+        "opacity": 100,
+        "backgroundColor": "transparent",
+        "locked": false,
+        "eligible_for_requested_mode": true
+      },
+      {
+        "id": "86f8cf4784bb425d",
+        "name": "door_rebuilt_left_leaf_frame",
+        "type": "freedraw",
+        "native_array_position": 26,
+        "geometry_kind": "LineString",
+        "nearest_native_point": [
+          690.0,
+          689.614
+        ],
+        "nearby_path_parts": [
+          {
+            "points": [
+              [
+                690.0,
+                691.6136753381801
+              ],
+              [
+                690.0,
+                687.603633065831
+              ]
+            ],
+            "max_centerline_error": 1
+          }
+        ],
+        "dense_path_parts_omitted": 0,
+        "distance_to_attempted_gesture": 0.0,
+        "strokeWidth": 0.55,
+        "opacity": 100,
+        "backgroundColor": "transparent",
+        "locked": false,
+        "eligible_for_requested_mode": true
+      },
+      {
+        "id": "51d1e78f06de5dc6",
+        "name": "paving_plane",
+        "type": "freedraw",
+        "native_array_position": 6,
+        "geometry_kind": "LineString",
+        "nearest_native_point": [
+          755.8917186658578,
+          682.8963392820158
+        ],
+        "nearby_path_parts": [
+          {
+            "points": [
+              [
+                769.6702221442657,
+                683.5019877865611
+              ],
+              [
+                742.1132151874507,
+                682.2906907774703
+              ]
+            ],
+            "max_centerline_error": 1
+          }
+        ],
+        "dense_path_parts_omitted": 0,
+        "distance_to_attempted_gesture": 0.0,
+        "strokeWidth": 0.45,
+        "opacity": 100,
+        "backgroundColor": "transparent",
+        "locked": false,
+        "eligible_for_requested_mode": true
+      }
+    ],
+    "instruction": "The recorded erase call changed ZERO native objects. The rows describe the CURRENT native geometry and exact nearest canvas points to that attempted gesture, including every equally nearest object. Inspect the actual mark, names, fills and layer order to identify its source within the assignment. Use a live target ID and a relevant current point for a native gesture; omit observation_id/coordinate_space for these canvas coordinates. Reuse a correct existing contour. Keep the gesture inside the requested region; a selected object's nearest point can lie outside that region. Use the actual mark to choose its source. Preserve unrequested objects. Segment mode supports unfilled pen/line objects; stroke mode removes a whole target. Fills and visible_only affect what can be erased. nearby_path_parts are current centerline pieces inside the attempted brush region. Use their canvas points for a local sweep of the unwanted fragment. Retrieve a dense omitted path through recall_memory when its full geometry is needed. These geometric rows locate objects; the current picture establishes visibility and which part is unwanted. Repeating an unchanged gesture at the same selected empty location cannot repair the mark. Full original arguments and receipt remain available through memory_ref.",
+    "call_id": "call_dv9yxp2fnc7lnsrxuoisf1ax",
+    "memory_ref": "memory_4f7311156cb95c6f8ef79d047c089f2f"
+  },
+  "context_and_source_native_state_unchanged": true,
+  "isolated_native_hit_checks": [
+    {
+      "id": "59632a80098e40be",
+      "actual_native_action_count": 1
+    },
+    {
+      "id": "e232a742699e4e6b",
+      "actual_native_action_count": 1
+    },
+    {
+      "id": "86f8cf4784bb425d",
+      "actual_native_action_count": 1
+    },
+    {
+      "id": "51d1e78f06de5dc6",
+      "actual_native_action_count": 1
+    }
+  ],
+  "context_construction_ms": 32.20159996999428,
+  "implementation_sha256": {
+    "studio/child_geometry_context.py": "296f70bb32e5e7cd89a1bdcf9cc198456501d46e28cdf216e07cb2833c82fd7a",
+    "studio/child_drawing_memory.py": "08de8d182d9edcfdb2f839b360e34b09f0057c5ec635a069ec0d324313e38415"
+  }
+}

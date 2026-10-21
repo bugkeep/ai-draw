@@ -2,6 +2,7 @@ import json
 
 from .eraser import filled_path
 from .child_art_context import appearance_index
+from .child_geometry_context import no_effect_erase_context
 
 
 DRAWING_WRITES = (
@@ -46,7 +47,7 @@ def drawing_memory_context(memory, run, messages):
         if owner is None or tuple(owner) != (run['owner_task_id'], run['agent_id'], run['input_id']):
             raise ValueError('Drawing memory requires the exact current child input')
         calls = store.connection.execute(
-            'SELECT m.id,m.tool_name,c.call_id,c.arguments,c.output FROM agent_memories m '
+            'SELECT m.id,m.tool_name,m.state_key,c.call_id,c.arguments,c.output FROM agent_memories m '
             'JOIN agent_tool_calls c ON c.caller_id=m.caller_id AND c.call_id=m.call_id '
             "WHERE m.caller_id=? AND m.task_id=? AND m.actor_id=? AND m.is_error=0 AND json_extract(c.output,'$.ok')=1 "
             'AND m.tool_name IN (SELECT value FROM json_each(?)) ORDER BY m.created_at DESC,m.rowid DESC LIMIT 3',
@@ -65,6 +66,22 @@ def drawing_memory_context(memory, run, messages):
         ).fetchone()[0]
     live_ids = {item['id'] for item in run['draft'] if not item.get('isDeleted')}
     current_objects = {item['id']: item for item in run['draft'] if not item.get('isDeleted')}
+    erase_targeting = None
+    if calls and calls[0]['tool_name'] == 'erase_strokes' and calls[0]['state_key'] == f"{run['id']}:{len(run['prepared'])}":
+        receipt = json.loads(calls[0]['output'])
+        if receipt.get('action_count') == 0:
+            arguments = json.loads(calls[0]['arguments'])
+            metadata = None
+            if arguments.get('observation_id'):
+                with store.lock:
+                    observed = store.connection.execute('SELECT metadata FROM canvas_observations '
+                        'WHERE id=? AND caller_id=? AND task_id=?',
+                        (arguments['observation_id'], run['id'], run['owner_task_id'])).fetchone()
+                if observed is None:
+                    raise ValueError('Eraser targeting requires this input\'s original observation')
+                metadata = json.loads(observed['metadata'])
+            erase_targeting = {**no_effect_erase_context(run['draft'], arguments, receipt, metadata),
+                'call_id': calls[0]['call_id'], 'memory_ref': calls[0]['id']}
     actions = []
     for call in reversed(calls):
         output = json.loads(call['output'])
@@ -142,6 +159,7 @@ def drawing_memory_context(memory, run, messages):
                 'against current bounds/images; completed repairs are not fresh defects. Keep the remaining assigned '
                 'steps pending. After the current correction is visible, proceed to the other required forms.'}
             if not current_review and reviews and (prior := json.loads(reviews[0]['result']))['status'] == 'repair' else None),
+        **({'erase_targeting': erase_targeting} if erase_targeting is not None else {}),
         'current_object_index': {'total_count': len(object_index), 'shown_count': len(shown_index),
             'objects': shown_index, 'styles': styles,
             'instruction': 'Exact live native IDs and names in this private draft. style_id resolves to THIS index\'s native styles table; '

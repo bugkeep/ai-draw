@@ -1,0 +1,446 @@
+{
+  "schema": "draw-agent-construction-reference-facts/1",
+  "scope": "Recorded tool arguments and calculated read-only context. No artwork score or latency claim.",
+  "base": "748ca49f2121af859bbc697fdb6b2822e5b6a0d5",
+  "source_fixture": "tests\\fixtures\\drawing-progress-recorded-cafe.json",
+  "source_fixture_sha256": "478ab6ffab957f7b82643e65289e4c976156c32ee5e87c08b48d06fc1bd0a8a0",
+  "source_drawspec_path": [
+    "samples",
+    "unfinished",
+    "current",
+    "drawspec"
+  ],
+  "recorded_tool_source": "cafe-current-stage-checks-full-20261021.sqlite3",
+  "recorded_call_id": "call_yd9jnyfi914ne81zytsf6hj5",
+  "recorded_four_corner_paths": [
+    {
+      "name": "Sign left face polygon",
+      "points": [
+        [
+          440,
+          232
+        ],
+        [
+          690,
+          180
+        ],
+        [
+          690,
+          248
+        ],
+        [
+          440,
+          292
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "name": "Sign right face polygon",
+      "points": [
+        [
+          690,
+          180
+        ],
+        [
+          960,
+          210
+        ],
+        [
+          960,
+          278
+        ],
+        [
+          690,
+          248
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "name": "Awning left sloping canopy",
+      "points": [
+        [
+          430,
+          350
+        ],
+        [
+          690,
+          325
+        ],
+        [
+          690,
+          420
+        ],
+        [
+          430,
+          438
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "name": "Awning right sloping canopy",
+      "points": [
+        [
+          690,
+          325
+        ],
+        [
+          1025,
+          350
+        ],
+        [
+          1025,
+          432
+        ],
+        [
+          690,
+          420
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "name": "Door frame block",
+      "points": [
+        [
+          668,
+          475
+        ],
+        [
+          738,
+          468
+        ],
+        [
+          744,
+          760
+        ],
+        [
+          665,
+          760
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "name": "Left window opening",
+      "points": [
+        [
+          348,
+          490
+        ],
+        [
+          548,
+          470
+        ],
+        [
+          552,
+          690
+        ],
+        [
+          350,
+          670
+        ]
+      ],
+      "closed": false
+    },
+    {
+      "name": "Right window opening",
+      "points": [
+        [
+          878,
+          476
+        ],
+        [
+          1130,
+          488
+        ],
+        [
+          1132,
+          676
+        ],
+        [
+          876,
+          692
+        ]
+      ],
+      "closed": false
+    }
+  ],
+  "construction_reference": {
+    "coordinate_space": "canvas",
+    "coplanar_forms": [
+      {
+        "form_id": "left_window",
+        "parent_form_id": "left_facade",
+        "axis_landmarks": [
+          "corner_top",
+          "corner_base"
+        ],
+        "vanishing_point_index": 0,
+        "near_edge_x": 552.95,
+        "far_edge_x": 352.05,
+        "near_y_interval": [
+          487.05,
+          727.95
+        ],
+        "reference_inset": 2.05,
+        "status": "coplanar_reference",
+        "path": {
+          "name": "left_window",
+          "smooth": false,
+          "closed": true,
+          "points": [
+            [
+              552.95,
+              487.05
+            ],
+            [
+              352.05,
+              502.11311218459326
+            ],
+            [
+              352.05,
+              693.270771879336
+            ],
+            [
+              552.95,
+              727.95
+            ]
+          ]
+        }
+      },
+      {
+        "form_id": "right_window",
+        "parent_form_id": "right_facade",
+        "axis_landmarks": [
+          "corner_top",
+          "corner_base"
+        ],
+        "vanishing_point_index": 1,
+        "near_edge_x": 882.45,
+        "far_edge_x": 1127.55,
+        "near_y_interval": [
+          487.45,
+          727.0083564200042
+        ],
+        "reference_inset": 2.45,
+        "status": "coplanar_reference",
+        "path": {
+          "name": "right_window",
+          "smooth": false,
+          "closed": true,
+          "points": [
+            [
+              882.45,
+              487.45
+            ],
+            [
+              1127.55,
+              503.65154434877684
+            ],
+            [
+              1127.55,
+              689.7127906976744
+            ],
+            [
+              882.45,
+              727.0083564200042
+            ]
+          ]
+        }
+      }
+    ],
+    "planned_connections": [
+      {
+        "relation_id": "sign_on_building",
+        "kind": "attached_to",
+        "landmark_ids": [
+          "sign_center",
+          "corner_top"
+        ],
+        "form_ids": [
+          "sign_board",
+          "near_corner"
+        ],
+        "canvas_points": [
+          [
+            700.0,
+            218.0
+          ],
+          [
+            690.0,
+            130.0
+          ]
+        ],
+        "max_gap": 95.0
+      },
+      {
+        "relation_id": "awning_above_door",
+        "kind": "attached_to",
+        "landmark_ids": [
+          "awning_front_center",
+          "door_top"
+        ],
+        "form_ids": [
+          "awning_valance",
+          "door"
+        ],
+        "canvas_points": [
+          [
+            700.0,
+            455.0
+          ],
+          [
+            707.0,
+            475.0
+          ]
+        ],
+        "max_gap": 25.0
+      },
+      {
+        "relation_id": "door_on_sidewalk",
+        "kind": "supported_by",
+        "landmark_ids": [
+          "door_threshold",
+          "corner_base"
+        ],
+        "form_ids": [
+          "door",
+          "near_corner"
+        ],
+        "canvas_points": [
+          [
+            707.0,
+            760.0
+          ],
+          [
+            690.0,
+            760.0
+          ]
+        ],
+        "max_gap": 20.0
+      },
+      {
+        "relation_id": "furniture1_on_paving",
+        "kind": "supported_by",
+        "landmark_ids": [
+          "table1_base",
+          "paving_under_table1"
+        ],
+        "form_ids": [
+          "table_1",
+          "paving_plane"
+        ],
+        "canvas_points": [
+          [
+            635.0,
+            865.0
+          ],
+          [
+            635.0,
+            865.0
+          ]
+        ],
+        "max_gap": 0.0
+      },
+      {
+        "relation_id": "furniture2_on_paving",
+        "kind": "supported_by",
+        "landmark_ids": [
+          "table2_base",
+          "paving_under_table2"
+        ],
+        "form_ids": [
+          "table_2",
+          "paving_plane"
+        ],
+        "canvas_points": [
+          [
+            965.0,
+            865.0
+          ],
+          [
+            965.0,
+            865.0
+          ]
+        ],
+        "max_gap": 0.0
+      }
+    ],
+    "potential_axis_crossings": [
+      {
+        "form_id": "sign_board",
+        "axis_landmarks": [
+          "corner_top",
+          "corner_base"
+        ],
+        "canvas_segment": [
+          [
+            690.0,
+            185.0
+          ],
+          [
+            690.0,
+            260.0
+          ]
+        ]
+      },
+      {
+        "form_id": "awning_canopy",
+        "axis_landmarks": [
+          "corner_top",
+          "corner_base"
+        ],
+        "canvas_segment": [
+          [
+            690.0,
+            340.0
+          ],
+          [
+            690.0,
+            435.0
+          ]
+        ]
+      },
+      {
+        "form_id": "awning_valance",
+        "axis_landmarks": [
+          "corner_top",
+          "corner_base"
+        ],
+        "canvas_segment": [
+          [
+            690.0,
+            420.0
+          ],
+          [
+            690.0,
+            480.0
+          ]
+        ]
+      },
+      {
+        "form_id": "door",
+        "axis_landmarks": [
+          "corner_top",
+          "corner_base"
+        ],
+        "canvas_segment": [
+          [
+            690.0,
+            475.0
+          ],
+          [
+            690.0,
+            760.0
+          ]
+        ]
+      }
+    ],
+    "instruction": "These calculated references use the unchanged original DrawSpec. For a missing or incorrect coplanar opening or panel on the named containing facade, batch its applicable path records inside draw_paths arguments.paths and choose a compatible style from the art direction/current index. A four-corner continuous frame uses closed=true; four distinct anchors with closed=false draw three edges. Intentional hidden contour intervals use separate open paths. Preserve correct existing frames. Verify the intended surface before using this coplanar construction for a projecting volume. no_coplanar_interval gives an empty feasible range under that assumption and its reference_inset (1% of the smaller planned dimension). This inset leaves a visible frame/wall separation; check the actual chosen line thickness. Preserve the plan and report a concrete conflict when needed. potential_axis_crossings locates where a construction axis passes through a planned form envelope. Inspect the actual foreground silhouette and visible contour stops there; the axis locates structure and the envelope locates a form. Planned connection points locate attachments and support surfaces; construct the actual material contact, overlap and visible edges. Establish coherent forms and connections across the whole drawing before focal detail. Current images and original scope remain binding."
+  },
+  "added_reference_characters": 4052,
+  "construction_context_sha256": "f3f338352667167e5a0ca8abd5e5b88d4d228f6c46d303c5368e702a905e3402"
+}
