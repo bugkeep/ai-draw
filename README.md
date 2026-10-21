@@ -6,7 +6,7 @@
 
 An open-source AI drawing app. Draw with words, refine through conversation, and export editable artwork.
 
-[![纯语言绘制科研流程图：多模态 RAG 科研工作流](docs/assets/research-preview.gif)](docs/assets/research-demo.mp4?raw=true)
+https://github.com/user-attachments/assets/d940e09e-315d-4c90-b445-78f5c335a306
 
 [科研流程图 · 2K 原片](docs/assets/research-demo.mp4?raw=true) · [纯语言绘画 · 2K 原片](docs/assets/language-demo.mp4?raw=true) · [手动完善草图 · 2K 原片](docs/assets/drawing-demo.mp4?raw=true) · [快速启动](#快速启动)
 
@@ -15,7 +15,7 @@ An open-source AI drawing app. Draw with words, refine through conversation, and
 <details>
 <summary>观看“海边灯塔”：全程通过文字完成绘画</summary>
 
-[![只用文字画出月光下的海边灯塔](docs/assets/language-preview.gif)](docs/assets/language-demo.mp4?raw=true)
+https://github.com/user-attachments/assets/7714f650-9fae-4703-bc8d-e0e7c9602668
 
 描述海边灯塔的场景，接着用文字完善灯塔、帆船和星星，调整海面配色，在同一张画布上完成整幅插画，再下载高清 PNG。
 
@@ -26,7 +26,7 @@ An open-source AI drawing app. Draw with words, refine through conversation, and
 <details>
 <summary>观看“向日葵窗台”：从草图到完整绘画</summary>
 
-[![从草图到完整绘画：向日葵窗台](docs/assets/drawing-preview.gif)](docs/assets/drawing-demo.mp4?raw=true)
+https://github.com/user-attachments/assets/a49c6592-7d0c-42b2-9ead-c513bdab30bf
 
 让 AI 生成基础轮廓，再在同一张画布上手动补画花瓣、上色、添加窗台和蝴蝶，最后下载高清 PNG。
 
@@ -34,7 +34,7 @@ An open-source AI drawing app. Draw with words, refine through conversation, and
 
 </details>
 
-动态预览展示精选片段，点击可下载 2K 完整视频。三段原片均为 2560 × 1440，已剪去等待时间并加速部分绘制过程。
+三段视频均为 **2560 × 1440**，点击播放，可全屏观看。
 
 ## 可以做什么
 
