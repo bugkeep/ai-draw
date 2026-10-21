@@ -205,3 +205,35 @@ def test_current_step_rebuilds_from_real_cleanup_and_preserves_inherited_style(t
             await runtime.close()
             store.close()
     asyncio.run(check())
+
+
+def test_filled_object_memory_tracks_actual_reordering_and_removal(tmp_path, native_drawing_child):
+    async def check():
+        store = StudioStore(tmp_path / 'layers.sqlite3')
+        runtime = DrawingRuntime(store, ModelSettings(store))
+        session = store.create_session()
+        task = store.create_task(session['id'])
+        child = native_drawing_child(store, runtime, session, task)
+        try:
+            head = child.call('create_element', {'type': 'ellipse', 'x': 20, 'y': 20,
+                'width': 60, 'height': 60, 'backgroundColor': '#ef4444', 'name': '前景形体'}, 'head')['changed_ids'][0]
+            body = child.call('create_element', {'type': 'ellipse', 'x': 0, 'y': 0,
+                'width': 140, 'height': 140, 'backgroundColor': '#ffffff', 'name': '后方形体'}, 'body')['changed_ids'][0]
+            _, before = context(runtime, child)
+            objects = before['current_filled_objects']['objects']
+            assert [item['id'] for item in objects] == [head, body]
+            assert objects[0]['native_bounds'] == [20, 20, 60, 60]
+            assert objects[1]['backgroundColor'] == '#ffffff'
+            changed = child.call('reorder_elements', {'ids': [head], 'position': 'front'}, 'foreground')
+            assert changed['ok'] and changed['action_count'] == 1
+            _, after = context(runtime, child)
+            assert [item['id'] for item in after['current_filled_objects']['objects']] == [body, head]
+            assert after['current_filled_objects']['objects'][-1]['position_in_current_draft'] == 1
+            child.call('delete_elements', {'ids': [body]}, 'remove-body')
+            _, cleaned = context(runtime, child)
+            assert cleaned['current_filled_objects']['total_count'] == 1
+            assert [item['id'] for item in cleaned['current_filled_objects']['objects']] == [head]
+        finally:
+            await runtime.close()
+            store.close()
+    asyncio.run(check())

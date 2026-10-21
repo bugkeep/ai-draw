@@ -1,5 +1,7 @@
 import json
 
+from .eraser import filled_path
+
 
 DRAWING_WRITES = (
     'draw_paths', 'reshape_path', 'erase_strokes', 'delete_elements', 'move_elements',
@@ -99,9 +101,29 @@ def drawing_memory_context(memory, run, messages):
     focus = findings[0] if findings else None
     tag = f"drawing_input={run['input_id']}"
     current_notes = tag in (saved.get('notes') or {}).get('constraints', [])
+    priority = set(run['selection']) | set(run['relevant_ids']) | set((focus or {}).get('object_ids', []))
+    filled = []
+    for position, element in enumerate(item for item in run['draft'] if not item.get('isDeleted')):
+        if (element.get('backgroundColor') not in {None, '', 'transparent'}
+                and (element['type'] in {'rectangle', 'ellipse', 'diamond'} or filled_path(element))):
+            filled.append({'id': element['id'], 'name': element.get('customData', {}).get('name', ''),
+                'type': element['type'], 'position_in_current_draft': position,
+                'native_bounds': [element['x'], element['y'], element['width'], element['height']],
+                'angle': element.get('angle', 0), 'backgroundColor': element['backgroundColor'],
+                'strokeWidth': element.get('strokeWidth'), 'opacity': element.get('opacity', 100)})
+    shown_fills = sorted(sorted(filled, key=lambda item: (item['id'] in priority,
+        item['position_in_current_draft']), reverse=True)[:24], key=lambda item: item['position_in_current_draft'])
     return {'role': 'user', 'content': json.dumps({'drawing_execution_memory': {
         'task_id': run['owner_task_id'], 'agent_id': run['agent_id'], 'input_id': run['input_id'],
         'run_id': run['id'], 'recent_actual_actions': actions, 'delivered_comparisons': comparisons,
+        'current_filled_objects': {'total_count': len(filled), 'shown_count': len(shown_fills), 'objects': shown_fills,
+            'order': 'Current native draft array, back to front; larger positions are later/front.',
+            'instruction': 'These are current filled objects, not logs or proof of a visibility defect. '
+                'An opaque foreground fill can hide earlier details. For an assigned occlusion correction, '
+                'check the actual image, opacity and layer order before erasing or redrawing a correct contour. '
+                'Use existing reorder_elements when order is the actual defect; preserve unrequested stacking in exact edits. '
+                'Native bounds and angle describe the object, not a clipped visible region. '
+                'Shown entries prefer current targets and frontmost fills; use inspect_scene/recall_memory for other objects.'},
         'next_step_focus': ({'review_key': current_review.get('review_key'),
             'reported_defect': focus['defect'], 'canvas_region': focus.get('canvas_region'),
             'current_object_ids': [item for item in focus.get('object_ids', []) if item in live_ids],
