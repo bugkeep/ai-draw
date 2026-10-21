@@ -301,6 +301,16 @@ class AgentManager:
                 reason = checkpoint_reason(trigger) or verification_checkpoint(self.store, run, trigger)
                 review = (await self.draft_reviews.review(run, models.settings, reason)
                           if reason else current_feedback(self.store, run))
+                replan = self.draft_reviews.replan_completion(run, review) if review else None
+                if replan:
+                    result = self.records.complete_run(session_id, run['id'], replan['visible_state'],
+                        completion={**replan, 'source': 'independent_draft_comparison'})
+                    self.store.log_tool(run['owner_task_id'], run['agent_id'], round_number,
+                        'drawing_repair_handoff', {'run_id': run['id'], 'review_key': replan['review_key'],
+                            'result_id': result['result_id'], 'completion': result['completion']})
+                    self.store.log_tool(run['owner_task_id'], run['agent_id'], round_number, 'agent_result', result)
+                    await self._notify(session_id, run['agent_id'], result)
+                    return
                 if review and review['status'] != 'error':
                     history = self._review_history(run, review, history)
                     if review['status'] == 'repair':
@@ -311,14 +321,13 @@ class AgentManager:
                 messages = observation_context(self.memory.prepare_messages(run['owner_task_id'], run['agent_id'], run['id'],
                     f"{run['id']}:{len(run['prepared'])}", document, models.child_messages(run, agent,
                         source_work.context() if source_work else None)), references, pictures)
-                replan = self.draft_reviews.replan_completion(run, review) if review else None
                 if review:
                     messages.append(repair_context(self.draft_reviews, review, document, replan))
                 guide = coordinate_context(self.store, run, observations)
                 if guide:
                     messages.append(guide)
-                messages = execution_context(run, messages)
                 messages.append(drawing_memory_context(self.memory, run, messages))
+                messages = execution_context(run, messages)
                 message = await models.respond(run["owner_task_id"], run["agent_id"], round_number,
                                                messages, child=True,
                                                observation_ids=observations, reference_image_ids=reference_ids,
@@ -355,7 +364,7 @@ class AgentManager:
                     self.vision.require_review(run['owner_task_id'], run['id'], {
                         **run['document'], 'elements': run['draft'], 'selection': run['selection']})
                 completion = await self._completion(models, run, summary)
-                if continue_repair(completion):
+                if continue_repair(completion, drawing_report):
                     feedback = {'drawing_checkpoint': {
                         'status': 'repair', 'review_key': completion['completion']['review_key'],
                         'instruction': 'The independent reviewer found repairable work in this same input. '

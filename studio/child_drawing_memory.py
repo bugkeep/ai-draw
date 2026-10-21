@@ -1,6 +1,7 @@
 import json
 
 from .eraser import filled_path
+from .child_art_context import appearance_index
 
 
 DRAWING_WRITES = (
@@ -131,6 +132,7 @@ def drawing_memory_context(memory, run, messages):
         for item in run['draft'] if not item.get('isDeleted')]
     shown_index = object_index if len(object_index) <= 120 else [item for item in object_index
         if item['id'] in priority or any(item['id'] in action['current_object_ids'] for action in actions)]
+    shown_index, styles = appearance_index(shown_index, current_objects)
     return {'role': 'user', 'content': json.dumps({'drawing_execution_memory': {
         'task_id': run['owner_task_id'], 'agent_id': run['agent_id'], 'input_id': run['input_id'],
         'run_id': run['id'], 'recent_actual_actions': actions, 'delivered_comparisons': comparisons,
@@ -141,10 +143,17 @@ def drawing_memory_context(memory, run, messages):
                 'steps pending. After the current correction is visible, proceed to the other required forms.'}
             if not current_review and reviews and (prior := json.loads(reviews[0]['result']))['status'] == 'repair' else None),
         'current_object_index': {'total_count': len(object_index), 'shown_count': len(shown_index),
-            'objects': shown_index, 'instruction': 'Exact live native IDs and names in this private draft. '
+            'objects': shown_index, 'styles': styles,
+            'instruction': 'Exact live native IDs and names in this private draft. style_id resolves to THIS index\'s native styles table; '
+                'persist selected style properties, not temporary style_id numbers. '
                 'bounds are CURRENT native [x,y,width,height] after ALL executed actions; angle is separate. '
                 'The immutable DrawSpec contains planned targets, not updated object coordinates after edits. '
                 'Use current bounds and executed displacements to compute a correction to the intended contact/plane. '
+                'current_polyline is a compact read-only view of current path centerline samples in CANVAS coordinates, '
+                'after translation/rotation, with at most one canvas unit simplification error. It is not original '
+                'curve-control anchors or proof of visibility. Dense curves are omitted; retrieve their current points '
+                'with recall_memory when needed. Compare geometric claims with these actual samples and the picture '
+                'before redrawing an already correct contour. '
                 'A successful move already changed the native positions; verify the visible relation before another move. '
                 'Use these receipts for selection and report bindings; names are intent, not visual evidence. '
                 'For omitted objects use a targeted inspect_scene page or recall_memory. Query once for '
@@ -201,11 +210,17 @@ def drawing_memory_context(memory, run, messages):
             'Save durable progress or a changed strategy through compact_context, without a planning-only save round when '
             'the next action is known: expected_revision=saved_step.revision; summary contains the construction_step; '
             'constraints retain prior constraints plus current_input_tag; completed contains verified results; pending retains '
-            'all unfinished work; object_ids/evidence_refs use actual live IDs/receipts. created_in_current_input is verified '
+            'all unfinished work. object_ids contains live native IDs. evidence_refs contains actual memory_ references '
+            'from tool receipts; omit it when none is available. Image view_, reference_, result_ and agent_ IDs are '
+            'not evidence_refs. created_in_current_input is verified '
             'from SQLite call ownership; use it to distinguish current notes from historical notes, even if a written tag differs. '
             'An unchanged step needs no new save. Preserve errors and genuine missing prerequisites. '
             'Review checkpoints are candidate reports, verification of a constructed repair, and stagnation/error recovery. '
-            'For a repair, view_canvas explicitly requests verification after its construction; cleanup alone remains intermediate. '
+            'For a repair, view_canvas WITHOUT a region requests whole-pass verification after construction. '
+            'A regional view is a close-up for your next drawing step; current whole and close-up pictures are already '
+            'attached after changes. Reuse them while the state/region is unchanged. Cleanup that removes required '
+            'structure leaves reconstruction pending. Erasing only the actual unwanted segments can complete a '
+            'correction without replacement strokes; request whole-pass verification or return the candidate report. '
             'On repair, continue this input '
             'with a changed method where required. When the assigned pass meets its criteria, return the existing DrawSpec '
             'report: concise visible evidence, exact current IDs from the index/receipts, representative bindings for every '

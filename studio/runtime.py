@@ -22,6 +22,7 @@ from .result_review import AgentResultReview
 from .quality import DrawingQuality, review_scene_key
 from .completion import ReplyCompletion
 from .drawing_dsl import require_current_result
+from .drawing_progress import completion_context, completion_progress
 
 
 class DrawingRuntime:
@@ -169,7 +170,7 @@ class DrawingRuntime:
             messages = self.memory.prepare_messages(task_id, 'main', f'main:{task_id}',
                 f"{document_id}:{document['version']}", document, agents.main_messages(
                 task_id, message, document, history, recent_tool_exchanges(turns),
-            )) + references + pictures + reviews + quality_context
+            )) + references + pictures + reviews + completion_context(self.store, task_id, document, quality_context)
             response = await agents.respond(task_id, "main", round_number, messages, observation_ids=observations,
                                             reference_image_ids=reference_ids,
                                             result_observation_ids=[item for items in review_deliveries.values() for item in items],
@@ -236,6 +237,9 @@ class DrawingRuntime:
     async def _complete_task(self, models, task_id, session_id, document_id, summary):
         if not self._child_work_settled(session_id, task_id):
             raise ValueError('Settle active Agents and pending results before completing')
+        progress = completion_progress(self.store, task_id, self.store.get_document(document_id))
+        if progress is not None and not progress['ok']:
+            return progress
         self.vision.require_review(task_id, f'main:{task_id}', self.store.get_document(document_id))
         review = await self.reply_completion.assess(task_id, models.settings, summary)
         if review is None or review.get('requested_output') == 'canvas':
@@ -250,6 +254,9 @@ class DrawingRuntime:
             raise ValueError('Child work changed during completion review; settle current work before completing')
         if review_scene_key(self.store.get_document(document_id)) != review['scene_key']:
             raise ValueError('Canvas changed during completion review; inspect the current image before completing')
+        progress = completion_progress(self.store, task_id, self.store.get_document(document_id))
+        if progress is not None and not progress['ok']:
+            return progress
         runs = self.store.agents.task_runs(session_id, task_id)
         return {'ok': True, 'summary': summary,
             **({'quality_review_key': review['review_key']} if 'review_key' in review else

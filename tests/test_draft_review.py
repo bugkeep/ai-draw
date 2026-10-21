@@ -8,6 +8,7 @@ import pytest
 
 from studio.agent_tools import CHILD_TOOLS, MAIN_TOOLS, validate_tool
 from studio.actions import element_fingerprint
+from studio.child_execution import continue_repair
 from studio.draft_review import DraftAssessment, DraftFinding, DraftRegion, DraftRevision, parse_draft_assessment
 from studio.runtime import DrawingRuntime
 from studio.settings import ModelConfig, ModelSettings
@@ -216,6 +217,7 @@ def test_replan_uses_saved_current_run_feedback_and_waits_for_full_tool_error_de
             completion = reviews.replan_completion(child.run, result)
             assert completion['status'] == 'blocked' and completion['reason'] == 'ineffective_repair'
             assert completion['next_strategy']
+            assert not continue_repair({'completion': completion}, {'unresolved': [], 'checks': []})
             assert reviews.replan_completion({**child.run, 'id': 'foreign-run'}, result) is None
             assert reviews.replan_completion({**child.run, 'selection': []}, result) is None
             error = child.call('move_elements', {'ids': ['missing'], 'dx': 1, 'dy': 0}, 'bad-move')
