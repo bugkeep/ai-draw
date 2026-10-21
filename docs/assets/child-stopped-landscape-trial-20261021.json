@@ -1,0 +1,91 @@
+{
+  "schema": "real-stopped-whole-landscape-trial/1",
+  "scope": "New blank canvas with an existing genuine valid initial DrawSpec. Initial main composition generation excluded; main follow-up, drawing and reviews unchanged.",
+  "recorded_assignment_sha256": "93605a14909baa981ecaba36298c26402de48d90254ce27fcf40c3cb947401ce",
+  "model_configuration_sha256": "81cce6603543fb2e4e67531e6b8a4630d61ae1925ed770cb720f42570f49fd2b",
+  "whole_drawing_complete": false,
+  "stopped_by": "operator",
+  "artistic_acceptance": false,
+  "actual_model_request_count": 133,
+  "incomplete_responses_at_stop": 1,
+  "observed_model_trace_span_seconds": 1544.7807893753052,
+  "latency_limit": "Observed request span until stop; not a natural completion time or a successful latency sample.",
+  "model_categories": {
+    "child": {
+      "request_count": 101,
+      "completed_model_seconds_sum": 879.5534415245056
+    },
+    "main": {
+      "request_count": 17,
+      "completed_model_seconds_sum": 163.27949571609497
+    },
+    "DraftReview.review": {
+      "request_count": 13,
+      "completed_model_seconds_sum": 250.43571734428406
+    },
+    "DrawingQuality.assess": {
+      "request_count": 2,
+      "completed_model_seconds_sum": 33.41770648956299
+    }
+  },
+  "actual_tool_counts": {
+    "draw_paths": 16,
+    "wait_agent": 5,
+    "view_canvas": 37,
+    "report_draft_review": 12,
+    "reshape_path": 11,
+    "send_input": 3,
+    "recall_memory": 20,
+    "delete_elements": 14,
+    "inspect_scene": 14,
+    "erase_strokes": 12,
+    "compact_context": 2,
+    "view_agent_result": 3,
+    "apply_agent_result": 1,
+    "reject_agent_result": 3,
+    "report_drawing_quality": 1,
+    "spawn_agent": 1,
+    "search_memory": 1
+  },
+  "equal_read_arguments_at_equal_state": 3,
+  "equal_read_limit": "These are exact argument/state repetitions only; other reads are not classified as useless.",
+  "actual_tool_error_count": 7,
+  "stale_image_errors_grouped_by_model_response": [
+    {
+      "request_id": 114,
+      "stale_image_errors": 5,
+      "erase_calls_in_response": 6,
+      "observation_ids_used_by_erase_calls": [
+        "view_57af863fc5b34af79d413ce632bd1e00"
+      ]
+    }
+  ],
+  "erase_calls": 12,
+  "zero_change_erase_receipts": 0,
+  "no_change_targeting_context_appearances_in_this_trial": 0,
+  "interpretation_limit": "The retained no-change eraser targeting context was never triggered in this full trial. This failed trial neither proves an end-to-end gain nor establishes a regression caused by that conditional context.",
+  "context_verification": {
+    "source_matches_captured_implementation": true,
+    "natural_completion": false,
+    "child_requests_verified": 101,
+    "native_index_entries_verified": 4880,
+    "current_polylines_verified": 3321,
+    "current_canvas_images_verified": 158,
+    "all_original_assignments_preserved": true,
+    "full_tool_errors_verified": 7,
+    "prior_episode_error_count_excluded": 0,
+    "full_protocol_errors_verified": 0,
+    "continuation_of_existing_draft": false,
+    "all_model_responses_recorded": false,
+    "incomplete_responses_at_operator_stop": 1,
+    "protocol_findings": 0,
+    "automated_original_review_passed": false,
+    "human_artistic_acceptance": "not_claimed"
+  },
+  "matching_final_png_and_native_preserved": true,
+  "sealed_checkpoint_sha256": {
+    "sealed-checkpoint.sqlite3": "b07e5c8799c8255cabc6637b1c0b6d5a51cfa21b765811d8759ef6c6ca61259e",
+    "contexts.sqlite3": "d46bdd2036e4b0da234112a16881cc252806f7465b2f6eaeec0bb53ef67ea30a"
+  },
+  "no_product_action_round_or_time_limits_added": true
+}
