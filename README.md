@@ -165,6 +165,8 @@ python -m scripts.evaluate_agent_reuse --session-id SESSION_ID
 
 本次真实运行的场景、成功率及耗时见[评测记录](docs/evaluation.md)。
 
+每轮 harness 实验结束后，可按[上下文检查说明](docs/context-inspection.md)记录并查看实际送入模型的完整消息、工具定义、图片和回复，核对历史信息、对象编号、工具错误及重复查询。记录保存在独立 SQLite 数据库，并导出可阅读的完整上下文。
+
 `evaluate_portrait` 默认只发送“画一幅蒙娜丽莎素描图”，记录首次画布更新、总耗时、工具错误反馈及人物部位的结构检查，并导出 `.excalidraw` 文件。结构检查与画面相似程度分别记录；相似程度需要查看实际绘图结果。
 
 `evaluate_quality` 使用 `evaluations/drawing-quality.json` 中的山水、人物、动物、建筑和流程图指令，逐项记录必要对象、首次更新、总耗时、重试与工具错误，并保存原生作品。`--cases` 可选择题目，`--recheck --output-dir runs/drawing-quality` 可重新检查已保存的执行，无需请求模型重新作画。对象结构检查不能代替构图、比例和表达效果的人工评价。
