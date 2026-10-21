@@ -1,0 +1,68 @@
+{
+  "schema": "real-initial-dispatch-failure/1",
+  "stopped_by": "operator",
+  "natural_completion": false,
+  "whole_artwork_accepted": false,
+  "child_agent_runs_created": 0,
+  "all_shared_documents_still_empty": true,
+  "actual_model_request_count": 5,
+  "incomplete_responses_at_stop": 1,
+  "actual_truncated_responses": [
+    {
+      "request_id": 1,
+      "finish_reason": "length",
+      "completion_tokens": 4096,
+      "request_seconds": 87.03009867668152
+    },
+    {
+      "request_id": 4,
+      "finish_reason": "length",
+      "completion_tokens": 4096,
+      "request_seconds": 90.35608339309692
+    }
+  ],
+  "explicit_environment_output_token_cap": false,
+  "database_model_settings_count": 0,
+  "actual_tool_errors": [
+    {
+      "name": "spawn_agent",
+      "call_id": "call_jmgul84lsadyp9iyq3943ceu",
+      "output": {
+        "error": "JSON 第 1 行第 9175 列：Expecting property name enclosed in double quotes",
+        "ok": false
+      }
+    },
+    {
+      "name": "spawn_agent",
+      "call_id": "call_zvz743cb4r3c35o5h9i8mudo",
+      "output": {
+        "error": "JSON 第 1 行第 4894 列：Expecting ',' delimiter",
+        "ok": false
+      }
+    },
+    {
+      "name": "spawn_agent",
+      "call_id": "call_rda7tolqcmcnvgekft50uee9",
+      "output": {
+        "error": "message: Field required",
+        "ok": false
+      }
+    },
+    {
+      "name": "spawn_agent",
+      "call_id": "call_wgnrfcpucqot47utwzzwp59i",
+      "output": {
+        "error": "JSON 第 1 行第 9197 列：Expecting value",
+        "ok": false
+      }
+    }
+  ],
+  "all_errors_delivered_in_full_to_next_main_request": true,
+  "scope": "Failure occurred before any child Agent was created. No child drawing latency/quality sample exists. The observed upstream responses ended at the reported token counts; no claim about the provider model hard maximum.",
+  "frozen_main_model_and_network_unchanged": true,
+  "source_model_configuration_sha256": "81cce6603543fb2e4e67531e6b8a4630d61ae1925ed770cb720f42570f49fd2b",
+  "sealed_checkpoint_sha256": {
+    "sealed-checkpoint.sqlite3": "c99f95cfcd8eae146fa4b23c1607621066f93dbbd0ba1a428d020427c9ff72b5",
+    "contexts.sqlite3": "569acbbe0f05c0aee04c8f9deb0a21dc8cfc84aac7ad1fee521cec7715a11783"
+  }
+}

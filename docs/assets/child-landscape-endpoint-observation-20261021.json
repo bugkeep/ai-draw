@@ -1,0 +1,62 @@
+{
+  "schema": "real-landscape-endpoint-observation/1",
+  "scope": "One exact independently reviewed private draft. Native coordinates and PNG padding only; no artistic score or universal diagnosis.",
+  "stem": "landscape-retained-recorded-full-20261021",
+  "review_request_id": 41,
+  "artist_state_request_id": 40,
+  "run_id": "run_d03cce37070f53128616858d74d0ee4a",
+  "replayed_native_scene_matches_actual_reviewed_scene": true,
+  "scene_hash": "09a353f81216e1459af49731e1a9aba04d30dc357301e0d5d384d85e127492c6",
+  "target_id": "90396a34505f413d",
+  "actual_target_first_point": [
+    820.0,
+    390.0
+  ],
+  "actual_target_last_point": [
+    858.0,
+    1000.0
+  ],
+  "target_opacity": 100,
+  "target_stroke_width": 0.5,
+  "logical_drawing_frame": {
+    "x": 0.0,
+    "y": 0.0,
+    "width": 1600.0,
+    "height": 1000.0
+  },
+  "png_scene_bounds": {
+    "x": -16,
+    "y": 134,
+    "width": 1632,
+    "height": 882
+  },
+  "png_size": [
+    1280,
+    692
+  ],
+  "png_bottom_in_canvas_coordinates": 1016,
+  "endpoint_y_in_full_png_normalized_coordinates": 981.859410430839,
+  "endpoint_to_png_bottom_in_canvas_units": 16.0,
+  "later_opaque_native_occluders_at_endpoint": [],
+  "actual_independent_finding": {
+    "defect": "右岸内缘在画面下缘前提前终止，底部清楚可见端点悬空；全屏看不到两条岸线都真正到达 y=1000 的开放水口，未满足完成标准。",
+    "repair": "不要补短线或加横边；沿当前右岸内缘的同一走势重建成整条连续路径，使其从远山溪源穿过桥下并一直终止在画面 y=1000，同时保持与左岸之间的白色 S 形水口不被封堵。",
+    "object_ids": [
+      "90396a34505f413d"
+    ],
+    "draft_region": {
+      "x": 505.0,
+      "y": 870.0,
+      "width": 55.0,
+      "height": 130.0
+    },
+    "canvas_region": {
+      "x": 808.16,
+      "y": 901.34,
+      "width": 89.76,
+      "height": 114.66
+    }
+  },
+  "confirmed_fact": "The live native path already ends at logical canvas y=1000. The full PNG includes padding below that logical endpoint.",
+  "limit": "This does not by itself measure pixel visibility or prove why the reviewer requested another reconstruction. The review and runtime were not changed."
+}
