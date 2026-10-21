@@ -10,8 +10,6 @@ https://github.com/user-attachments/assets/d940e09e-315d-4c90-b445-78f5c335a306
 
 [科研流程图 · 2K 原片](docs/assets/research-demo.mp4?raw=true) · [纯语言绘画 · 2K 原片](docs/assets/language-demo.mp4?raw=true) · [手动完善草图 · 2K 原片](docs/assets/drawing-demo.mp4?raw=true) · [快速启动](#快速启动)
 
-用文字生成分组流程，补充并行分支、质量判断和反馈循环，整理成完整的科研流程示意图，再下载高清图片。[查看流程图](docs/assets/research-flowchart.png) · [下载 SVG 矢量图](docs/assets/research-flowchart.svg)
-
 <details>
 <summary>观看“海边灯塔”：全程通过文字完成绘画</summary>
 
