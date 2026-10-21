@@ -109,6 +109,27 @@ def perspective_references(composition, scope):
             'immutable composition or authorize changing unrelated existing contours.'}
 
 
+def painting_method(phase):
+    return {
+        'block_in': 'Establish simplified, editable silhouettes and major planes/masses across the whole drawing. '
+            'Give each uninterrupted contour its own path and each disconnected mark another paths entry. '
+            'Keep temporary construction guides in SEPARATE native objects from the subject contours, with '
+            'their actual IDs available for removal. Never concatenate walls, windows, limbs or other separate '
+            'forms into a single tour of landmarks: the connecting travel segments become visible diagonals. '
+            'Compare proportions and negative spaces at full view; resolve shared contacts and depth before '
+            'local features. Reuse a shared edge rather than drawing another copy over it.',
+        'contour': 'Develop the visible silhouette and overlapping contours from the established volumes. '
+            'Place a contour\'s start, turns, termination and hidden intervals; use distinct paths for separate '
+            'visible segments. Preserve attachments and openings. Replace temporary guides as their contours resolve.',
+        'modeling': 'Group light, middle tone and shadow to describe the main planes under the intended lighting. '
+            'Connect shadow masses coherently, preserve paper highlights, and distinguish form shadows from cast '
+            'and contact shadows. Add directional hatching only after the value design reads at full view.',
+        'detail': 'Refine characteristic features and material marks where they support the focal reading. '
+            'Simplify subordinate edges/texture; finish contacts, occlusion and contour stops. Remove remaining '
+            'visible construction marks and check the whole image for consistent visual emphasis.',
+    }[phase]
+
+
 def artistic_brief(prompt):
     spec = prompt.get('drawspec')
     if not spec:
@@ -130,26 +151,23 @@ def artistic_brief(prompt):
         'value_design': composition.get('value_groups', []),
         'perspective_reference': perspective_references(composition, scope),
         'protected_negative_space_ids': [item['id'] for item in composition.get('negative_spaces', [])],
-        'later_planned_stages': [{'id': item['id'], 'phase': item['phase'], 'criteria': item['criteria']}
+        'later_planned_stages': [{'id': item['id'], 'phase': item['phase'], 'criteria': item['criteria'],
+            'assigned_form_ids': [key for key in scope if not item['form_ids'] or key in item['form_ids']],
+            'method': painting_method(item['phase'])}
             for item in composition['stages'][composition['stages'].index(stage) + 1:]],
-        'painting_sequence': {
-            'block_in': 'Establish simplified, editable silhouettes and major planes/masses across the whole drawing. '
-                'Give each uninterrupted contour its own path and each disconnected mark another paths entry. '
-                'Keep temporary construction guides in SEPARATE native objects from the subject contours, with '
-                'their actual IDs available for removal. Never concatenate walls, windows, limbs or other separate '
-                'forms into a single tour of landmarks: the connecting travel segments become visible diagonals. '
-                'Compare proportions and negative spaces at full view; resolve shared contacts and depth before '
-                'local features. Reuse a shared edge rather than drawing another copy over it.',
-            'contour': 'Develop the visible silhouette and overlapping contours from the established volumes. '
-                'Place a contour\'s start, turns, termination and hidden intervals; use distinct paths for separate '
-                'visible segments. Preserve attachments and openings. Replace temporary guides as their contours resolve.',
-            'modeling': 'Group light, middle tone and shadow to describe the main planes under the intended lighting. '
-                'Connect shadow masses coherently, preserve paper highlights, and distinguish form shadows from cast '
-                'and contact shadows. Add directional hatching only after the value design reads at full view.',
-            'detail': 'Refine characteristic features and material marks where they support the focal reading. '
-                'Simplify subordinate edges/texture; finish contacts, occlusion and contour stops. Remove remaining '
-                'visible construction marks and check the whole image for consistent visual emphasis.',
-        }[stage['phase']],
+        'painting_sequence': painting_method(stage['phase']),
+        **({'block_in_completion': {
+            'large_forms': 'Establish the whole gesture, proportions, major planes and negative spaces together. '
+                'Simplified forms retain a readable primary silhouette and complete structural boundaries.',
+            'openings_and_contacts': 'Establish the coherent boundaries of major openings such as doors, windows '
+                'and bridge voids on their declared planes. Give contour breaks an actual occlusion/contact or '
+                'frame boundary. These spatial relationships belong to this structural pass.',
+            'occlusion': 'Use only visible volume edges. Keep temporary guides separate. Where an assigned front '
+                'form hides background marks, use a closed paper-filled silhouette and the correct layer order; '
+                'preserve foreground details and the planned contacts.',
+            'handoff': 'Check the current whole image against this stage\'s original criteria before returning. '
+                'Fine features and surface treatment follow their declared stages. Main assigns later passes.',
+        }} if stage['phase'] == 'block_in' and spec['intent'] == 'execute' else {}),
         'decisions': {
             'visual_focus': 'Choose the primary reading within focal_intent. Use relative contrast, edge emphasis, '
                 'overlap and spacing to lead there; supporting forms remain legible without equal emphasis.',
@@ -187,5 +205,7 @@ def artistic_brief(prompt):
             'Use filled foreground silhouettes and deliberate contour breaks where background lines would cross them; '
             'keep interior details visible. Match the requested stage: block-in establishes the whole design, contour '
             'and modeling develop form, and detail selects characteristic accents. A block-in ready flag approves only '
-            'that stage. State later planned work and unverified whole-artwork finish in the report summary; '
+            'that stage. Later methods describe subsequent main-assigned inputs; use them to keep the current '
+            'structure compatible with that refinement while completing ONLY this assigned pass and its criteria. '
+            'State later planned work and unverified whole-artwork finish in the report summary; '
             'only claim checks supported by the current image. Scope and exact preservation constraints remain binding.'}

@@ -1,6 +1,7 @@
 import json
 from collections import Counter
 
+from .drawing_dsl import DrawingReport
 from .vision import scene_digest
 
 
@@ -102,10 +103,104 @@ def visual_evidence(run, messages):
             'request before claiming its visible criteria are met.')}
 
 
+def report_binding_repair(run, messages, index):
+    error = None
+    for message in reversed(messages):
+        if message.get('role') == 'assistant':
+            if error is None or message.get('tool_calls'):
+                return None
+            content = json.loads(message['content'])
+            if 'rejected_drawing_report_memory' in content:
+                bindings = [{'form_id': binding['form_id'],
+                    'object_ids': binding['current_object_ids'],
+                    'unavailable_reference_count': binding['unavailable_reference_count']}
+                    for binding in content['rejected_drawing_report_memory']['reference_bindings']]
+            else:
+                bindings = [binding.model_dump() for binding in DrawingReport.model_validate(content).bindings]
+            break
+        content = message.get('content')
+        if (error is None and message.get('role') == 'user' and isinstance(content, str)
+                and content.startswith('{') and '"drawing_protocol"' in content):
+            payload = json.loads(content)
+            if (payload.get('error_kind') == 'drawing_protocol'
+                    and payload.get('error') == 'Report object_ids must exist in this exact private draft'):
+                error = payload
+    else:
+        return None
+    live = {item['id']: item for item in run['draft'] if not item.get('isDeleted')}
+    shown = {item['id'] for item in index['objects']}
+    invalid = []
+    for binding in bindings:
+        absent_count = sum(key not in live for key in binding['object_ids']) + binding.get('unavailable_reference_count', 0)
+        if not absent_count:
+            continue
+        present = [key for key in binding['object_ids'] if key in live]
+        invalid.append({'form_id': binding['form_id'], 'unavailable_reference_count': absent_count,
+            'still_live_binding_ids': present,
+            'current_name_matches': [{'id': item['id'], 'name': item.get('customData', {}).get('name', ''),
+                'binding_candidate': {'form_id': binding['form_id'], 'object_ids': [*present, item['id']]}}
+                for item in live.values() if item['id'] in shown and item['id'] not in binding['object_ids']
+                and binding['form_id'].casefold() in str(item.get('customData', {}).get('name', '')).casefold()]})
+    if not invalid:
+        return None
+    return {'run_id': run['id'], 'invalid_bindings': invalid,
+        'instruction': 'Resolve each absent reference using the actual current form and its COMPLETE native ID. '
+            'current_name_matches are literal name matches among unbound objects in the shown current index. '
+            'Confirm the form in the current picture or retrieve its native geometry when needed. '
+            'Preserve every required form binding and genuine unresolved work. If a form was actually removed, '
+            'reconstruct it before reporting. A binding_candidate combines the unchanged live parts with ONE '
+            'literal name match; it is a candidate for verification, not an approved association. With multiple '
+            'absent parts, resolve them all before reporting. Copy verified bindings with their complete native '
+            'IDs. Do not copy unavailable IDs from rejected historical reports.'}
+
+
+def rejected_report_memories(run, messages):
+    live = {item['id'] for item in run['draft'] if not item.get('isDeleted')}
+    projected = list(messages)
+    assistants = [position for position, message in enumerate(messages) if message.get('role') == 'assistant']
+    latest = assistants[-1] if assistants else None
+    previous = None
+    for position, message in enumerate(messages):
+        if message.get('role') == 'assistant':
+            previous = position
+            continue
+        content = message.get('content')
+        if (previous is None or messages[previous].get('tool_calls')
+                or message.get('role') != 'user' or not isinstance(content, str)
+                or not content.startswith('{') or '"drawing_protocol"' not in content):
+            continue
+        error = json.loads(content)
+        if (error.get('error_kind') != 'drawing_protocol'
+                or error.get('error') != 'Report object_ids must exist in this exact private draft'):
+            continue
+        original = json.loads(messages[previous]['content'])
+        if 'rejected_drawing_report_memory' in original:
+            continue
+        report = DrawingReport.model_validate(original)
+        memory = {'summary': report.summary, 'unresolved': report.unresolved,
+            'unresolved_checks': [check.model_dump() for check in report.checks if check.status == 'unresolved'],
+            'reported_form_ids': [binding.form_id for binding in report.bindings],
+            'unavailable_reference_count': sum(key not in live for binding in report.bindings for key in binding.object_ids)}
+        memory['status'] = 'rejected_report_claims'
+        if previous == latest:
+            memory['checks'] = [check.model_dump() for check in report.checks]
+            memory['reference_bindings'] = [{'form_id': binding.form_id,
+                'current_object_ids': [key for key in binding.object_ids if key in live],
+                'unavailable_reference_count': sum(key not in live for key in binding.object_ids)}
+                for binding in report.bindings]
+        memory['instruction'] = (
+            'This historical report was rejected. Its claims do not establish completion. '
+            'Unavailable IDs are omitted from this memory; use the current index and latest repair evidence. '
+            'The original report remains in SQLite. Preserve its unresolved work and current assignment.')
+        projected[previous] = {**messages[previous], 'content': json.dumps(
+            {'rejected_drawing_report_memory': memory}, ensure_ascii=False)}
+    return projected
+
+
 def project_execution_context(run, prompt, messages):
     reuse_original_guidance(prompt)
     evidence = visual_evidence(run, messages)
-    projected = list(messages)
+    projected = rejected_report_memories(run, messages)
     last = messages[-1].get('content')
     if (messages[-1].get('role') == 'user' and isinstance(last, str)
             and last.startswith('{"drawing_execution_memory":')):
@@ -114,6 +209,8 @@ def project_execution_context(run, prompt, messages):
         journal['current_object_index'] = compact_object_index(journal['current_object_index'])
         prompt.pop('current_visual_evidence', None)
         journal['current_visual_evidence'] = evidence
+        binding_repair = report_binding_repair(run, messages[:-1], journal['current_object_index'])
+        journal.pop('report_binding_repair', None)
         journal['native_eraser_coordinates'] = (
             'current_object_index current_polyline.points are current CANVAS centerline samples. '
             'For an erase_strokes gesture at a known sample, copy that pair into points and use the intended '
@@ -139,6 +236,8 @@ def project_execution_context(run, prompt, messages):
                 'conflicting constraints of THIS assignment honestly; never omit them to obtain a ready result.')
             journal['drawing_report'] = report
             prompt['drawing_report_reference'] = 'drawing_execution_memory.drawing_report at the END of this input'
+        if binding_repair is not None:
+            journal['report_binding_repair'] = binding_repair
         projected[-1] = {**messages[-1], 'content': json.dumps(payload, ensure_ascii=False)}
     else:
         prompt['current_visual_evidence'] = evidence

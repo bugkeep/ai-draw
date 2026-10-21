@@ -1,0 +1,362 @@
+{
+  "provenance": {
+    "source_database": "runs\\cafe-report-binding-recovery-20261022-contexts.sqlite3",
+    "source_request_id": 17,
+    "source_request_sha256": "65a47283b1d0ce588f86cbc80a41712abc159d3221d08fb59d4f44acbc1e8c1f",
+    "source_database_sha256": "8e16930f25ee64988560318917adf3a186b1f633c0a4997aaf121fa70bfbc39c",
+    "scope": "Three actual rejected provider reports and original error feedback. Only current native identity metadata is included; this fixture does not evaluate geometry or art."
+  },
+  "run_id": "run_d00ca468a810588a813bdff5e7392baa",
+  "messages": [
+    {
+      "content": "{\"protocol\":\"drawspec/1\",\"kind\":\"report\",\"summary\":\"完成 detail 阶段的可见细节：在转角招牌左右两面新增清晰原生文字“CAFÉ”，并保留原手绘 CAFÉ 标识；遮阳篷前檐补入连续扇贝/波浪垂边、转角回收线及少量竖向分隔；门把由竖杆与安装横钮明确表示；左右橱窗的水平、垂直分格可读；两张桌的柱脚、支脚与少量透视铺砖线保持简洁。contour 阶段证据：当前建筑轮廓、门窗、招牌、遮阳篷、桌椅和人行道均为干净单色墨线，未改变既有两点透视和构图。detail 阶段证据：新增店招文字、波浪垂边、条纹分隔与明确门把在当前图中可见，窗格、桌脚、铺砖线克制可读。\",\"bindings\":[{\"form_id\":\"sign_board\",\"object_ids\":[\"8d22e394bb144542\",\"4d7ae81a703349f1\",\"6c14a8978059442e\",\"cc2a9b6ec3ce4745\"]},{\"form_id\":\"awning_canopy\",\"object_ids\":[\"454a0babea0a40fd\",\"9b124a5a6ab24846\"]},{\"form_id\":\"awning_valance\",\"object_ids\":[\"082ef015d1d84279\",\"88286630a8f64e22\",\"552f6abc9eab443e\",\"c82bdf2423134e4c\",\"ab9821aaa2cb4f14\",\"03f8c55bdb1848e1\",\"b1c424831bc74739\",\"680f561ccd3c40c8\",\"91bd7fad6a614278\",\"c5ee0a002cc542bc\",\"2f3b768f49d34817\",\"a31c94288b76455c\",\"317769d09d4c4b86\"]},{\"form_id\":\"door\",\"object_ids\":[\"e96d5e1ba0be4255\",\"a0537feee64f4cd7\",\"1ed2f00bcc8a4e54\",\"d2cf5311dbcf4efe\"]},{\"form_id\":\"left_window\",\"object_ids\":[\"49fb6ef89dcb439b\",\"941333a608d24897\",\"e6107e339c874b74\"]},{\"form_id\":\"right_window\",\"object_ids\":[\"08f339bbd762477b\",\"5249a3e1fa92452a\",\"72de1a5a71734494\"]},{\"form_id\":\"paving_plane\",\"object_ids\":[\"eeeeb3c17db5482e\",\"c92f6aeaeb8a4bca\",\"11e8a8746062491f\",\"a30589fbe4b34be4\",\"fa73f3031eec4f58\",\"4d9dafe061504ea5\"]},{\"form_id\":\"table_1\",\"object_ids\":[\"fe8f5b4b73492d\",\"7d2dc19e52cc42ab\",\"63ffc2d138b547ee\",\"ae0bd4ef713040b3\"]},{\"form_id\":\"table_2\",\"object_ids\":[\"fdb65c0f9cdb40d2\",\"3a76994deba94b7e\",\"6fe113dc98974dc8\",\"7e572520ecf24efa\"]}],\"checks\":[{\"constraint_id\":\"contour\",\"status\":\"addressed\",\"evidence\":\"建筑、门窗、招牌、遮阳篷、桌子和人行道的最终轮廓在整幅图中清楚可读；保留少量铺砖线，整体仍为单色线描，没有新增重影或实体填充。\"},{\"constraint_id\":\"detail\",\"status\":\"addressed\",\"evidence\":\"招牌两面均有可读 CAFÉ 原生文字；遮阳篷有连续波浪垂边和短竖分隔；门把以竖杆加横钮明确显示；左右窗分格、两张桌子柱脚支脚以及克制铺砖线均可读。\"},{\"constraint_id\":\"sign_on_building\",\"status\":\"addressed\",\"evidence\":\"两组新增 CAFÉ 文本位于跨角招牌板内部，分别贴合左右招牌面，未超出招牌边界。\"},{\"constraint_id\":\"awning_above_door\",\"status\":\"addressed\",\"evidence\":\"扇贝垂边沿入口上方左右两侧前檐连续包裹转角，分隔短线位于垂边内。\"},{\"constraint_id\":\"door_on_sidewalk\",\"status\":\"addressed\",\"evidence\":\"门仍落在建筑基线与人行道接触处，新增门把位于门扇中下部且未改变门位。\"},{\"constraint_id\":\"furniture1_on_paving\",\"status\":\"addressed\",\"evidence\":\"左桌柱脚垂直落到人行道透视面，支脚与铺砖线关系保持可读。\"},{\"constraint_id\":\"furniture2_on_paving\",\"status\":\"addressed\",\"evidence\":\"右桌柱脚垂直落到人行道透视面，支脚与铺砖线关系保持可读。\"}],\"unresolved\":[]}",
+      "role": "assistant"
+    },
+    {
+      "content": "{\"ok\": false, \"error_kind\": \"drawing_protocol\", \"error\": \"Report object_ids must exist in this exact private draft\", \"instruction\": \"The input is unfinished. Continue drawing if needed; when returning without tools, provide the DrawSpec report format in your current input. Keep tool errors and unresolved work explicit.\"}",
+      "role": "user"
+    },
+    {
+      "content": "{\"protocol\":\"drawspec/1\",\"kind\":\"report\",\"summary\":\"完成 detail 阶段可见细节：转角招牌左右两面均有清晰原生文字“CAFÉ”；遮阳篷前檐补入连续扇贝/波浪垂边、转角回收线及少量竖向分隔；门把由竖杆与安装横钮明确表示；左右橱窗的水平、垂直分格可读；两张桌的柱脚、支脚与少量透视铺砖线保持简洁。当前整体为单色两点透视线描，建筑、门窗、招牌、遮阳篷、桌脚和人行道轮廓均保留且可读。\",\"bindings\":[{\"form_id\":\"sign_board\",\"object_ids\":[\"8d22e394bb144542\",\"4d7ae81a703349f1\",\"6c14a8978059442e\",\"cc2a9b6ec3ce4745\"]},{\"form_id\":\"awning_canopy\",\"object_ids\":[\"454a0babea0a40fd\",\"9b124a5a6ab24846\"]},{\"form_id\":\"awning_valance\",\"object_ids\":[\"082ef015d1d84279\",\"88286630a8f64e22\",\"552f6abc9eab443e\",\"c82bdf2423134e4c\",\"ab9821aaa2cb4f14\",\"03f8c55bdb1848e1\",\"b1c424831bc74739\",\"680f561ccd3c40c8\",\"91bd7fad6a614278\",\"c5ee0a002cc542bc\",\"2f3b768f49d34817\",\"a31c94288b76455c\",\"317769d09d4c4b86\"]},{\"form_id\":\"door\",\"object_ids\":[\"e96d5e1ba0be4255\",\"a0537feee64f4cd7\",\"1ed2f00bcc8a4e54\",\"d2cf5311dbcf4efe\"]},{\"form_id\":\"left_window\",\"object_ids\":[\"49fb6ef89dcb439b\",\"941333a608d24897\",\"e6107e339c874b74\"]},{\"form_id\":\"right_window\",\"object_ids\":[\"08f339bbd762477b\",\"5249a3e1fa92452a\",\"72de1a5a71734494\"]},{\"form_id\":\"paving_plane\",\"object_ids\":[\"eeeeb3c17db5482e\",\"c92f6aeaeb8a4bca\",\"11e8a8746062491f\",\"a30589fbe4b34be4\",\"fa73f3031eec4f58\",\"4d9dafe061504ea5\"]},{\"form_id\":\"table_1\",\"object_ids\":[\"fe8f5b4b73492d\",\"7d2dc19e52cc42ab\",\"63ffc2d138b547ee\",\"ae0bd4ef713040b3\"]},{\"form_id\":\"table_2\",\"object_ids\":[\"fdb65c0f9cdb40d2\",\"3a76994deba94b7e\",\"6fe113dc98974dc8\",\"7e572520ecf24efa\"]}],\"checks\":[{\"constraint_id\":\"contour\",\"status\":\"addressed\",\"evidence\":\"建筑近角、左右立面、门窗、招牌、遮阳篷、圆桌和人行道均保持干净单色墨线；新增细节没有引入填充或重影，铺砖线数量克制。\"},{\"constraint_id\":\"detail\",\"status\":\"addressed\",\"evidence\":\"招牌两面有可读 CAFÉ；遮阳篷有连续扇贝垂边和少量分隔；门把清楚；左右窗格、两桌柱脚支脚和透视铺砖线可读。\"},{\"constraint_id\":\"sign_on_building\",\"status\":\"addressed\",\"evidence\":\"两组 CAFÉ 文本位于跨角招牌板内部，分别贴合左右招牌面，未超出招牌边界。\"},{\"constraint_id\":\"awning_above_door\",\"status\":\"addressed\",\"evidence\":\"扇贝垂边沿入口上方左右前檐连续包裹转角，竖向分隔短线位于垂边区域内。\"},{\"constraint_id\":\"door_on_sidewalk\",\"status\":\"addressed\",\"evidence\":\"门仍与建筑基线和人行道接触，新增门把位于门扇中下部，未改变门位。\"},{\"constraint_id\":\"furniture1_on_paving\",\"status\":\"addressed\",\"evidence\":\"左桌柱脚垂直落到人行道透视面，两支脚与铺砖线关系可读。\"},{\"constraint_id\":\"furniture2_on_paving\",\"status\":\"addressed\",\"evidence\":\"右桌柱脚垂直落到人行道透视面，两支脚与铺砖线关系可读。\"}],\"unresolved\":[]}",
+      "role": "assistant"
+    },
+    {
+      "content": "{\"ok\": false, \"error_kind\": \"drawing_protocol\", \"error\": \"Report object_ids must exist in this exact private draft\", \"instruction\": \"The input is unfinished. Continue drawing if needed; when returning without tools, provide the DrawSpec report format in your current input. Keep tool errors and unresolved work explicit.\"}",
+      "role": "user"
+    },
+    {
+      "content": "{\"protocol\":\"drawspec/1\",\"kind\":\"report\",\"summary\":\"完成 detail 阶段：转角招牌左右两面均有清晰原生文字“CAFÉ”；遮阳篷前檐补入连续扇贝/波浪垂边、转角回收线及少量竖向分隔；门把由竖杆与安装横钮明确表示；左右橱窗的水平、垂直分格可读；两张圆桌的柱脚、支脚与少量透视铺砖线保持简洁。整幅仍为干净单色两点透视线描，未重建构图。\",\"bindings\":[{\"form_id\":\"sign_board\",\"object_ids\":[\"8d22e394bb144542\",\"4d7ae81a703349f1\",\"6c14a8978059442e\",\"cc2a9b6ec3ce4745\"]},{\"form_id\":\"awning_canopy\",\"object_ids\":[\"454a0babea0a40fd\",\"9b124a5a6ab24846\"]},{\"form_id\":\"awning_valance\",\"object_ids\":[\"082ef015d1d84279\",\"88286630a8f64e22\",\"552f6abc9eab443e\",\"c82bdf2423134e4c\",\"ab9821aaa2cb4f14\",\"03f8c55bdb1848e1\",\"b1c424831bc74739\",\"680f561ccd3c40c8\",\"91bd7fad6a614278\",\"c5ee0a002cc542bc\",\"2f3b768f49d34817\",\"a31c94288b76455c\",\"317769d09d4c4b86\"]},{\"form_id\":\"door\",\"object_ids\":[\"e96d5e1ba0be4255\",\"a0537feee64f4cd7\",\"8b32edb8265f4981\",\"1ed2f00bcc8a4e54\",\"d2cf5311dbcf4efe\"]},{\"form_id\":\"left_window\",\"object_ids\":[\"49fb6ef89dcb439b\",\"941333a608d24897\",\"e6107e339c874b74\"]},{\"form_id\":\"right_window\",\"object_ids\":[\"08f339bbd762477b\",\"5249a3e1fa92452a\",\"72de1a5a71734494\"]},{\"form_id\":\"paving_plane\",\"object_ids\":[\"eeeeb3c17db5482e\",\"c92f6aeaeb8a4bca\",\"11e8a8746062491f\",\"a30589fbe4b34be4\",\"fa73f3031eec4f58\",\"4d9dafe061504ea5\"]},{\"form_id\":\"table_1\",\"object_ids\":[\"fe8f5b4b73492d\",\"7d2dc19e52cc42ab\",\"63ffc2d138b547ee\",\"ae0bd4ef713040b3\"]},{\"form_id\":\"table_2\",\"object_ids\":[\"fdb65c0f9cdb40d2\",\"3a76994deba94b7e\",\"6fe113dc98974dc8\",\"7e572520ecf24efa\"]}],\"checks\":[{\"constraint_id\":\"detail\",\"status\":\"addressed\",\"evidence\":\"招牌两面有可读 CAFÉ；遮阳篷有连续扇贝垂边和少量竖向分隔；门把为明确竖杆加横钮；左右窗格、两张桌子柱脚支脚和克制铺砖线均可见。\"},{\"constraint_id\":\"contour\",\"status\":\"addressed\",\"evidence\":\"建筑近角、左右立面、门窗、招牌、遮阳篷、圆桌和人行道保留为干净单色墨线，未出现新增填充、重影或密集杂线。\"},{\"constraint_id\":\"sign_on_building\",\"status\":\"addressed\",\"evidence\":\"两组 CAFÉ 文本均位于跨角招牌板内部，分别贴合左右招牌面，未超出招牌边界。\"},{\"constraint_id\":\"awning_above_door\",\"status\":\"addressed\",\"evidence\":\"扇贝垂边沿入口上方左右前檐连续包裹转角，竖向分隔短线位于垂边区域内。\"},{\"constraint_id\":\"door_on_sidewalk\",\"status\":\"addressed\",\"evidence\":\"门仍与建筑基线和人行道接触，新增门把位于门扇中下部，未改变门位。\"},{\"constraint_id\":\"furniture1_on_paving\",\"status\":\"addressed\",\"evidence\":\"左桌柱脚垂直落到人行道透视面，两支脚与铺砖线关系可读。\"},{\"constraint_id\":\"furniture2_on_paving\",\"status\":\"addressed\",\"evidence\":\"右桌柱脚垂直落到人行道透视面，两支脚与铺砖线关系可读。\"},{\"constraint_id\":\"table_apparent_size\",\"status\":\"addressed\",\"evidence\":\"两张圆桌桌面、柱脚与支脚的视觉尺寸基本一致，均位于入口前方两侧。\"}],\"unresolved\":[]}",
+      "role": "assistant"
+    },
+    {
+      "content": "{\"ok\": false, \"error_kind\": \"drawing_protocol\", \"error\": \"Report object_ids must exist in this exact private draft\", \"instruction\": \"The input is unfinished. Continue drawing if needed; when returning without tools, provide the DrawSpec report format in your current input. Keep tool errors and unresolved work explicit.\"}",
+      "role": "user"
+    }
+  ],
+  "native_identities": [
+    {
+      "id": "91efb41a6dab4145",
+      "customData": {
+        "name": "near_corner"
+      }
+    },
+    {
+      "id": "18976c725b9b4af4",
+      "customData": {
+        "name": "left_facade"
+      }
+    },
+    {
+      "id": "9ff40d39346045ad",
+      "customData": {
+        "name": "left_facade"
+      }
+    },
+    {
+      "id": "722c940592aa4ddb",
+      "customData": {
+        "name": "left_facade"
+      }
+    },
+    {
+      "id": "d261caa8ea434968",
+      "customData": {
+        "name": "right_facade"
+      }
+    },
+    {
+      "id": "5f86c77115c34060",
+      "customData": {
+        "name": "right_facade"
+      }
+    },
+    {
+      "id": "1579fb2b70754cef",
+      "customData": {
+        "name": "right_facade"
+      }
+    },
+    {
+      "id": "b2b05209ec6542fe",
+      "customData": {
+        "name": "building_base"
+      }
+    },
+    {
+      "id": "aa03bac762804746",
+      "customData": {
+        "name": "left_facade"
+      }
+    },
+    {
+      "id": "bfced51ccf6b41e2",
+      "customData": {
+        "name": "right_facade"
+      }
+    },
+    {
+      "id": "eeeeb3c17db5482e",
+      "customData": {
+        "name": "paving_plane"
+      }
+    },
+    {
+      "id": "c92f6aeaeb8a4bca",
+      "customData": {
+        "name": "paving_plane"
+      }
+    },
+    {
+      "id": "11e8a8746062491f",
+      "customData": {
+        "name": "paving_plane"
+      }
+    },
+    {
+      "id": "a30589fbe4b34be4",
+      "customData": {
+        "name": "paving_plane"
+      }
+    },
+    {
+      "id": "fa73f3031eec4f58",
+      "customData": {
+        "name": "paving_plane"
+      }
+    },
+    {
+      "id": "4d9dafe061504ea5",
+      "customData": {
+        "name": "paving_plane"
+      }
+    },
+    {
+      "id": "8d22e394bb144542",
+      "customData": {
+        "name": "sign_board"
+      }
+    },
+    {
+      "id": "4d7ae81a703349f1",
+      "customData": {
+        "name": "sign_board"
+      }
+    },
+    {
+      "id": "454a0babea0a40fd",
+      "customData": {
+        "name": "awning_canopy"
+      }
+    },
+    {
+      "id": "9b124a5a6ab24846",
+      "customData": {
+        "name": "awning_canopy"
+      }
+    },
+    {
+      "id": "082ef015d1d84279",
+      "customData": {
+        "name": "awning_valance"
+      }
+    },
+    {
+      "id": "88286630a8f64e22",
+      "customData": {
+        "name": "awning_valance"
+      }
+    },
+    {
+      "id": "e96d5e1ba0be4255",
+      "customData": {
+        "name": "door"
+      }
+    },
+    {
+      "id": "a0537feee64f4cd7",
+      "customData": {
+        "name": "door"
+      }
+    },
+    {
+      "id": "8b32edb8265f4981",
+      "customData": {
+        "name": "door"
+      }
+    },
+    {
+      "id": "49fb6ef89dcb439b",
+      "customData": {
+        "name": "left_window"
+      }
+    },
+    {
+      "id": "941333a608d24897",
+      "customData": {
+        "name": "left_window"
+      }
+    },
+    {
+      "id": "e6107e339c874b74",
+      "customData": {
+        "name": "left_window"
+      }
+    },
+    {
+      "id": "08f339bbd762477b",
+      "customData": {
+        "name": "right_window"
+      }
+    },
+    {
+      "id": "5249a3e1fa92452a",
+      "customData": {
+        "name": "right_window"
+      }
+    },
+    {
+      "id": "72de1a5a71734494",
+      "customData": {
+        "name": "right_window"
+      }
+    },
+    {
+      "id": "fe8f5b5b4b73492d",
+      "customData": {
+        "name": "table_1"
+      }
+    },
+    {
+      "id": "7d2dc19e52cc42ab",
+      "customData": {
+        "name": "table_1"
+      }
+    },
+    {
+      "id": "63ffc2d138b547ee",
+      "customData": {
+        "name": "table_1"
+      }
+    },
+    {
+      "id": "ae0bd4ef713040b3",
+      "customData": {
+        "name": "table_1"
+      }
+    },
+    {
+      "id": "fdb65c0f9cdb40d2",
+      "customData": {
+        "name": "table_2"
+      }
+    },
+    {
+      "id": "3a76994deba94b7e",
+      "customData": {
+        "name": "table_2"
+      }
+    },
+    {
+      "id": "6fe113dc98974dc8",
+      "customData": {
+        "name": "table_2"
+      }
+    },
+    {
+      "id": "7e572520ecf24efa",
+      "customData": {
+        "name": "table_2"
+      }
+    },
+    {
+      "id": "6c14a8978059442e",
+      "customData": {
+        "name": "CAFE sign lettering left face"
+      }
+    },
+    {
+      "id": "cc2a9b6ec3ce4745",
+      "customData": {
+        "name": "CAFE sign lettering right face"
+      }
+    },
+    {
+      "id": "552f6abc9eab443e",
+      "customData": {
+        "name": "awning scalloped lower edge left"
+      }
+    },
+    {
+      "id": "c82bdf2423134e4c",
+      "customData": {
+        "name": "awning scalloped lower edge right"
+      }
+    },
+    {
+      "id": "ab9821aaa2cb4f14",
+      "customData": {
+        "name": "awning scallop return to front left"
+      }
+    },
+    {
+      "id": "03f8c55bdb1848e1",
+      "customData": {
+        "name": "awning panel separator left 1"
+      }
+    },
+    {
+      "id": "b1c424831bc74739",
+      "customData": {
+        "name": "awning panel separator left 2"
+      }
+    },
+    {
+      "id": "680f561ccd3c40c8",
+      "customData": {
+        "name": "awning panel separator left 3"
+      }
+    },
+    {
+      "id": "91bd7fad6a614278",
+      "customData": {
+        "name": "awning scallop return to front right 1"
+      }
+    },
+    {
+      "id": "c5ee0a002cc542bc",
+      "customData": {
+        "name": "awning panel separator right 1"
+      }
+    },
+    {
+      "id": "2f3b768f49d34817",
+      "customData": {
+        "name": "awning panel separator right 2"
+      }
+    },
+    {
+      "id": "a31c94288b76455c",
+      "customData": {
+        "name": "awning panel separator right 3"
+      }
+    },
+    {
+      "id": "317769d09d4c4b86",
+      "customData": {
+        "name": "awning panel separator right 4"
+      }
+    },
+    {
+      "id": "1ed2f00bcc8a4e54",
+      "customData": {
+        "name": "explicit vertical door handle"
+      }
+    },
+    {
+      "id": "d2cf5311dbcf4efe",
+      "customData": {
+        "name": "door handle mounting nub"
+      }
+    }
+  ]
+}
