@@ -4,8 +4,6 @@
 
 描述你的想法，看着画面逐笔出现；接着说“移到右边”“改成蓝色”，在同一张画布上继续完成作品。
 
-An open-source AI drawing app. Draw with words, refine through conversation, and export editable artwork.
-
 **通过对话绘制科研流程图**
 
 https://github.com/user-attachments/assets/d940e09e-315d-4c90-b445-78f5c335a306
