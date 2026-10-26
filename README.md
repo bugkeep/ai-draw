@@ -32,11 +32,18 @@ https://github.com/user-attachments/assets/a49c6592-7d0c-42b2-9ead-c513bdab30bf
 
 Requires **Python 3.11+** and **Node.js 20.19+**. On Windows, install Chrome as well.
 
-### 1. Install and start
-
 ```bash
 git clone https://github.com/bugkeep/ai-draw.git
 cd ai-draw
+```
+
+### Windows
+
+Double-click **`install.bat`**, then **`start.bat`**. Open <http://127.0.0.1:8000>. [Windows setup options](docs/windows-install.md)
+
+### macOS / Linux
+
+```bash
 python -m pip install -r requirements.txt
 cd frontend-app
 npm ci
@@ -48,7 +55,7 @@ python run.py
 
 For later launches, run `python run.py` from the project directory.
 
-### 2. Connect a model
+### Connect a model
 
 Open [http://127.0.0.1:8000](http://127.0.0.1:8000) and click **Settings** (`设置`) in the top-right corner.
 
